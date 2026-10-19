@@ -9,3 +9,8 @@ Desktop.ini
 
 # 本地工具目录
 .mimosa/
+
+# 后端
+server/node_modules/
+server/.env
+server/sandbox/

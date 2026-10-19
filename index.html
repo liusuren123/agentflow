@@ -249,6 +249,19 @@ input,select,textarea{font-family:var(--font);color:var(--text)}
 .wdg .switch input:checked+i::after{left:16px}
 .drag-num{cursor:ew-resize}
 .drag-num:hover::after{content:'↔';margin-left:4px;font-size:9px;color:#fff}
+/* 隐藏数字输入的原生上下箭头，改用与 select 箭头同风格的深色步进按钮 */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.numwrap{position:relative;display:inline-flex;width:100%}
+.numwrap>input[type=number]{padding-right:16px}
+.nspin{position:absolute;right:1px;width:13px;height:calc(50% - 1px);display:flex;align-items:center;justify-content:center;
+  color:#8b8b90;cursor:pointer;border-radius:2px}
+.nspin:first-of-type{top:1px}
+.nspin:last-of-type{bottom:1px}
+.nspin svg{width:7px;height:4.5px;display:block;pointer-events:none}
+.nspin:hover{color:#e2e2e6;background:rgba(255,255,255,.07)}
+.nspin:active{color:#fff}
 input[type=number].num-dragging{cursor:ew-resize;user-select:none;color:#fff!important}
 .node-out{display:none;margin:4px 8px 8px;padding:6px 8px;background:rgba(0,0,0,.3);border-left:2px solid #34d399;
   font-size:11px;color:#9fe0c0;line-height:1.45;word-break:break-all;max-height:66px;overflow:hidden}
@@ -659,6 +672,18 @@ body.running #float-bar{display:block}
       <tr><td><kbd>Home</kbd></td><td>适应视图</td></tr>
     </table>
     <div class="close-row"><button class="ibtn" id="help-close">知道了</button></div>
+  </div>
+</div>
+
+<!-- 人工审批弹窗（真实执行时弹出） -->
+<div class="modal-mask" id="approve-modal">
+  <div class="box">
+    <h2>人工审批</h2>
+    <div id="approve-info" style="font-size:12px;color:var(--text2);line-height:1.7;margin:2px 0 10px"></div>
+    <div class="close-row">
+      <button class="ibtn" id="approve-reject" style="border-color:#7a3d3d">拒绝</button>
+      <button class="ibtn" id="approve-ok">通过</button>
+    </div>
   </div>
 </div>
 
@@ -1185,7 +1210,12 @@ function renderSideSettings(body){
     <div class="side-section-title">存储</div>
     <div class="set-row"><div><div class="sl">自动保存</div><div class="sd">保存到浏览器本地</div></div>
       <label class="switch"><input type="checkbox" data-set="autosave" ${settings.autosave?'checked':''}><i></i></label></div>
-    <div class="side-empty" style="padding:18px 16px">AgentFlow 原型 v0.2<br>布局参考 ComfyUI 新前端<br>纯前端演示 · 无后端</div>`;
+    <div class="side-section-title">执行引擎</div>
+    <div class="side-empty" style="padding:18px 16px;line-height:1.8">${
+      ENGINE.online
+        ? `AgentFlow v1.0 · <span style="color:var(--ok)">真实执行后端已连接</span><br>Vercel AI SDK 7 · Node ${esc(ENGINE.info?.node||'')}<br>${esc(ENGINE.info?.provider?.note||'')}`
+        : `AgentFlow v1.0 · 离线演示模式<br>布局参考 ComfyUI 新前端<br><span style="color:var(--text3)">启动后端（server 目录 npm start）即可接入真实智能体执行</span>`
+    }</div>`;
 }
 $('#side-body').addEventListener('change', e=>{
   const k = e.target.dataset && e.target.dataset.set;
@@ -1267,7 +1297,7 @@ function widgetHtml(node, p){
         <input type="text" data-k="${p.k}" value="${esc(val)}" spellcheck="false"></div></div>`;
     case 'number':
       return `<div class="wdg"><label title="${esc(p.l)}（拖动调节）" class="drag-num">${esc(p.l)}</label><div class="ctl">
-        <input type="number" data-k="${p.k}" value="${esc(val)}" min="${p.min??0}" max="${p.max??9999}" step="${p.step??1}"></div></div>`;
+        <span class="numwrap"><input type="number" data-k="${p.k}" value="${esc(val)}" min="${p.min??0}" max="${p.max??9999}" step="${p.step??1}"><span class="nspin" data-dir="1"><svg viewBox="0 0 8 5"><path d="M0 5l4-5 4 5z" fill="currentColor"/></svg></span><span class="nspin" data-dir="-1"><svg viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></span></span></div></div>`;
     case 'toggle':
       return `<div class="wdg"><label title="${esc(p.l)}">${esc(p.l)}</label><div class="ctl" style="display:flex;justify-content:flex-end">
         <label class="switch"><input type="checkbox" data-k="${p.k}" ${val?'checked':''}><i></i></label></div></div>`;
@@ -1415,7 +1445,7 @@ function renderProps(){
       if(p.t==='combo') return `<div class="prow"><label>${esc(p.l)}</label><select data-k="${p.k}">${p.o.map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
       if(p.t==='toggle') return `<div class="prow"><div class="switchline"><label>${esc(p.l)}</label><label class="switch"><input type="checkbox" data-k="${p.k}" ${v?'checked':''}><i></i></label></div></div>`;
       if(p.t==='textarea') return `<div class="prow"><label>${esc(p.l)}</label><textarea data-k="${p.k}" spellcheck="false">${esc(v)}</textarea></div>`;
-      if(p.t==='number') return `<div class="prow"><label class="drag-num" title="${esc(p.l)}（拖动调节）">${esc(p.l)}</label><input type="number" data-k="${p.k}" value="${esc(v)}" min="${p.min??0}" max="${p.max??9999}" step="${p.step??1}"></div>`;
+      if(p.t==='number') return `<div class="prow"><label class="drag-num" title="${esc(p.l)}（拖动调节）">${esc(p.l)}</label><span class="numwrap"><input type="number" data-k="${p.k}" value="${esc(v)}" min="${p.min??0}" max="${p.max??9999}" step="${p.step??1}"><span class="nspin" data-dir="1"><svg viewBox="0 0 8 5"><path d="M0 5l4-5 4 5z" fill="currentColor"/></svg></span><span class="nspin" data-dir="-1"><svg viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></span></span></div>`;
       return `<div class="prow"><label>${esc(p.l)}</label><input type="text" data-k="${p.k}" value="${esc(v)}" spellcheck="false"></div>`;
     }).join('');
     box.innerHTML = `<h3>属性</h3>
@@ -1882,7 +1912,12 @@ viewport.addEventListener('mousedown', e=>{
     return;
   }
   if(nodeEl){
-    if(e.target.closest('input,select,textarea,button,.ncollapse')) return;
+    if(e.target.closest('input,select,textarea,button,.ncollapse')){
+      /* 点击控件不阻止聚焦/编辑，但同样选中所属节点（滚轮调值等编辑意图的前提） */
+      const cid = +nodeEl.dataset.id;
+      if(!sel.nodes.has(cid)) selectNode(cid, e.shiftKey);
+      return;
+    }
     e.preventDefault();
     const id = +nodeEl.dataset.id;
     dragCtx = { mode:'node', moved:false, sx:e.clientX, sy:e.clientY, undoPushed:false,
@@ -2013,6 +2048,27 @@ window.addEventListener('mouseup', e=>{
   }
 });
 viewport.addEventListener('wheel', e=>{
+  /* 仅当指针位于「已选中节点」的编辑控件上时接管滚轮（点中=编辑意图）：
+     数字框滚轮=步进数值（累积阈值兼容触控板）、textarea 保留原生滚动、其余控件吞掉；
+     未选中节点的控件与空白处一律走画布缩放 */
+  const ctl = e.target.closest('input,select,textarea,[contenteditable=true]');
+  if(ctl && ctl.closest('.node.selected')){
+    if(ctl.tagName==='INPUT' && ctl.type==='number' && !ctl.disabled){
+      const now = performance.now();
+      ctl.__wacc = (now - (ctl.__wt||0) < 300) ? (ctl.__wacc||0) + e.deltaY : e.deltaY;
+      ctl.__wt = now;
+      const steps = Math.trunc(Math.abs(ctl.__wacc) / 100);
+      if(steps > 0){
+        const dir = ctl.__wacc < 0 ? 1 : -1;
+        for(let i=0;i<steps;i++) numStep(ctl, dir);
+        ctl.__wacc -= Math.sign(ctl.__wacc) * steps * 100;
+      }
+    }
+    else if(ctl.tagName!=='TEXTAREA'){ /* 下拉/文本框：仅吞掉 */ }
+    else return;   /* textarea：不阻止默认滚动 */
+    e.preventDefault();
+    return;
+  }
   e.preventDefault();
   if(Math.abs(e.deltaX)>Math.abs(e.deltaY)&&!e.ctrlKey){ view.x-=e.deltaX; view.y-=e.deltaY; applyView(); return; }
   zoomAt(e.deltaY>0?0.9:1.111, e.clientX, e.clientY);
@@ -2215,7 +2271,7 @@ $('#ctxmenu').addEventListener('click', e=>{
  *  顶栏 / 浮动卡 / 工具条 / 菜单按钮
  * ================================================================ */
 $('#float-run').addEventListener('click', ()=>runWorkflow());
-$('#float-stop').addEventListener('click', ()=>{ stopFlag=true; });
+$('#float-stop').addEventListener('click', ()=>{ stopFlag=true; ENGINE.cancelRun(); });
 $('#fl-undo').addEventListener('click', undo);
 $('#fl-redo').addEventListener('click', redo);
 $('#zoom-in').addEventListener('click', ()=>zoomAt(1.2));
@@ -2339,6 +2395,15 @@ function flashEdges(ids){
 async function runWorkflow(){
   if(running) return;
   if(!state.nodes.length){ toast('画布为空，请先添加节点','warn'); return; }
+  if(ENGINE.online){
+    try{ await runReal(); return; }
+    catch(err){ addLog(`⚠ 后端执行异常：${esc(err.message||String(err))} · 回退到模拟执行`,'warn'); toast('后端异常 · 已回退模拟','warn'); }
+  }
+  await runSimulated();
+}
+async function runSimulated(){
+  if(running) return;
+  if(!state.nodes.length){ toast('画布为空，请先添加节点','warn'); return; }
   running = true; stopFlag = false;
   document.body.classList.add('running');
   clearSel();
@@ -2459,6 +2524,222 @@ async function cancellableSleep(ms){
 }
 
 /* ================================================================
+ *  真实执行后端（Vercel AI SDK 7 · SSE 事件驱动）
+ *  · 在线：POST /api/run 提交工作流，事件流驱动与模拟执行完全相同
+ *    的视觉语言（st-running/st-done/st-error、连线流动、打字机、进度）
+ *  · 离线（双击打开 / 后端未启动）：自动使用上方模拟执行
+ * ================================================================ */
+const ENGINE = { online:false, info:null, runId:null, ac:null };
+
+ENGINE.probe = async ()=>{
+  if(location.protocol === 'file:'){ ENGINE.online = false; return; }
+  try{
+    const r = await fetch('/api/health', {signal:AbortSignal.timeout(2500)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j = await r.json();
+    ENGINE.online = true; ENGINE.info = j;
+    const prov = j.provider||{};
+    addLog(`⚡ 执行后端已连接 · Vercel AI SDK 7 · Node ${esc(j.node||'')} · ${esc(prov.note||'')}`,'sys');
+    if(Array.isArray(prov.models) && prov.models.length){
+      DEFS.llm.params[0].o = prov.models.map(m=>m.name);
+      const selIds = [...sel.nodes];
+      const selNode = selIds.length===1 ? nodeById(selIds[0]) : null;
+      if(selNode && selNode.type==='llm' && !prov.models.some(m=>m.name===paramsOf(selNode).model)) renderProps();
+    }
+  }catch(_){ ENGINE.online = false; }
+  if(railTab==='settings') renderSidebar();
+};
+
+ENGINE.cancelRun = ()=>{
+  stopFlag = true;
+  if(ENGINE.ac){ try{ ENGINE.ac.abort(); }catch(_){} }
+  if(ENGINE.runId){ fetch('/api/run/'+ENGINE.runId+'/stop', {method:'POST'}).catch(()=>{}); }
+};
+
+async function runReal(){
+  running = true; stopFlag = false;
+  document.body.classList.add('running');
+  clearSel();
+  state.nodes.forEach(n=>{ const el=nodeEl(n.id); el&&el.classList.remove('st-running','st-done','st-error'); });
+  state.nodes.forEach(n=>{ const el=nodeEl(n.id); el&&el.querySelector('.node-out')&&(el.querySelector('.node-out').textContent=''); });
+  measurePorts(); renderEdges();
+
+  const progTxt = $('#float-prog-txt'), progBar = $('#float-bar i');
+  progBar.style.width = '0%';
+  let rDone = 0, rTotal = state.nodes.length, finalized = false;
+  const t0 = performance.now();
+  const timer = setInterval(()=>{
+    const el = (performance.now()-t0)/1000;
+    progTxt.innerHTML = `<b>${rDone}/${rTotal}</b> · ${el.toFixed(1)}s`;
+    progBar.style.width = (rDone/Math.max(1,rTotal)*100)+'%';
+  }, 100);
+
+  const finalize = (ok, stopped)=>{
+    if(finalized) return; finalized = true;
+    clearInterval(timer);
+    document.body.classList.remove('running');
+    const total = ((performance.now()-t0)/1000).toFixed(1);
+    if(stopped){
+      addLog(`■ 运行已停止 · 已完成 ${rDone} 个节点 · ${total}s`,'warn');
+      toast('运行已停止','warn');
+      runs.unshift({name:state.name, time:now(), dur:total+'s', nodes:rDone, ok:false});
+    } else if(ok){
+      addLog(`● 运行完成 · ${rDone}/${rTotal} 个节点执行 · 总耗时 ${total}s`,'ok');
+      toast(`运行完成 · ${total}s`,'ok');
+      runs.unshift({name:state.name, time:now(), dur:total+'s', nodes:rDone, ok:true});
+    } else {
+      addLog(`■ 运行失败 · 已完成 ${rDone} 个节点 · ${total}s`,'warn');
+      toast('运行失败（详见日志）','warn');
+      runs.unshift({name:state.name, time:now(), dur:total+'s', nodes:rDone, ok:false});
+    }
+    if(runs.length>50) runs.length=50;
+    saveLocal();
+    if(railTab==='history') renderSidebar();
+    $('#approve-modal').classList.remove('show');
+    running = false; stopFlag = false; ENGINE.runId = null; ENGINE.ac = null;
+    updateNodeToolbox();
+  };
+
+  /* ---- 事件 → 画布渲染（与模拟执行同一套视觉语言） ---- */
+  const barStart = el=>{
+    const bar = el.querySelector('.node-progress i');
+    bar.style.transition='none'; bar.style.width='0%'; void bar.offsetWidth;
+    bar.style.transition='width 30s linear'; bar.style.width='96%';
+  };
+  const barDone = el=>{ const bar = el.querySelector('.node-progress i');
+    bar.style.transition='width .2s ease'; bar.style.width='100%'; };
+
+  const onEvent = ev=>{
+    switch(ev.type){
+      case 'run:accepted': ENGINE.runId = ev.runId; break;
+      case 'run:start':
+        rTotal = ev.total||rTotal;
+        addLog(`━━ 开始运行「${esc(state.name)}」 · ${rTotal} 个节点待执行 ━━`,'sys');
+        break;
+      case 'run:progress': rDone = ev.done??rDone; rTotal = Math.max(ev.total??rTotal, rDone); break;
+      case 'node:start': {
+        const el = nodeEl(ev.id); if(!el) break;
+        el.classList.remove('st-done','st-error'); el.classList.add('st-running');
+        measurePorts(); updateEdgesOf([ev.id]);
+        flashEdges(state.edges.filter(e=>e.tn===ev.id).map(e=>e.id));
+        addLog(`▶ ${esc(ev.title)} · ${esc(ev.defName||'')} <span style="color:var(--text3)">#${ev.id}${ev.iteration?` · 迭代${ev.iteration}`:''}</span>`);
+        barStart(el);
+        break;
+      }
+      case 'node:bypass': {
+        const el = nodeEl(ev.id); if(!el) break;
+        el.classList.remove('st-running'); el.classList.add('st-done');
+        setNodeOut(ev.id, '已旁路跳过');
+        flashEdges(state.edges.filter(e=>e.tn===ev.id).map(e=>e.id));
+        addLog(`⏸ ${esc(ev.title)} · 已旁路，跳过执行`,'warn');
+        break;
+      }
+      case 'node:delta': {
+        const t = String(ev.text||'');
+        setNodeOut(ev.id, (t.length>160?t.slice(0,160):t)+'▌');
+        break;
+      }
+      case 'node:done': {
+        const el = nodeEl(ev.id); if(!el) break;
+        el.classList.remove('st-running'); el.classList.add('st-done');
+        setNodeOut(ev.id, ev.out!=null?String(ev.out):'完成');
+        barDone(el);
+        measurePorts(); updateEdgesOf([ev.id]);
+        const n = nodeById(ev.id);
+        flashEdges(state.edges.filter(e=>e.fn===ev.id&&(n&&n.type==='condition'?e.fp===ev.firePort:true)).map(e=>e.id));
+        if(!n || n.type!=='llm'){   /* LLM 的 ✓ 日志由后端带 tokens 统计先行输出 */
+          const s = String(ev.out!=null?ev.out:'');
+          addLog(`✓ ${esc(ev.title)} · ${esc(s.slice(0,44))}${s.length>44?'…':''}`,'ok');
+        }
+        break;
+      }
+      case 'node:error': {
+        const el = nodeEl(ev.id); if(!el) break;
+        el.classList.remove('st-running'); el.classList.add('st-error');
+        setNodeOut(ev.id, '执行失败 · '+String(ev.message||'').slice(0,120));
+        barDone(el);
+        measurePorts(); updateEdgesOf([ev.id]);
+        addLog(`✗ ${esc(ev.title)} · <span style="color:var(--warn)">${esc(String(ev.message||'').slice(0,90))}</span>`,'warn');
+        break;
+      }
+      case 'cond':
+        addLog(`↳ ${esc(ev.title)} · ${esc(ev.expr||'条件')} → <b style="color:#22d3ee">${ev.branch}</b>`,'sys');
+        break;
+      case 'log': addLog(ev.msg||'', ev.lvl||'info'); break;
+      case 'output': {
+        const s = String(ev.text||'');
+        addLog(`◉ 最终输出：${esc(s.slice(0,100))}${s.length>100?'…':''}`,'ok');
+        break;
+      }
+      case 'approval:required': {
+        $('#approve-info').innerHTML =
+          `工作流在 <b style="color:var(--text)">${esc(ev.title)}</b> 处等待人工审批<br>`+
+          `审批人：${esc(ev.role||'-')} · 运行 #${esc(String(ev.runId||'').slice(0,8))}<br>`+
+          `<div style="margin-top:6px;padding:8px 10px;background:rgba(0,0,0,.35);border-left:2px solid var(--accent);color:var(--text2);word-break:break-all">${esc(ev.inputPreview||'(无输入预览)')}</div>`;
+        $('#approve-ok').disabled = false; $('#approve-reject').disabled = false;
+        $('#approve-modal').classList.add('show');
+        $('#approve-ok').onclick = ()=>sendApproval(ev, true);
+        $('#approve-reject').onclick = ()=>sendApproval(ev, false);
+        addLog(`⏳ ${esc(ev.title)} · 等待人工审批（弹窗中通过 / 拒绝）`,'sys');
+        break;
+      }
+      case 'approval:done':
+        $('#approve-modal').classList.remove('show');
+        addLog(`👤 审批已${ev.approve?'通过':'拒绝'}`,'sys');
+        break;
+      case 'run:error':
+        addLog(`✗ 引擎错误：${esc(String(ev.message||'').slice(0,140))}`,'warn');
+        break;
+      case 'run:done':
+        rDone = ev.done??rDone; rTotal = Math.max(ev.total??rTotal, rDone);
+        progBar.style.width = '100%';
+        finalize(ev.ok!==false && !ev.stopped, !!ev.stopped);
+        break;
+    }
+  };
+  const sendApproval = (ev, approve)=>{
+    $('#approve-ok').disabled = true; $('#approve-reject').disabled = true;
+    fetch(`/api/run/${ev.runId}/approve`, {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nodeId:ev.nodeId, approve})})
+      .then(()=>{ if(!approve) $('#approve-modal').classList.remove('show'); })
+      .catch(()=>{ $('#approve-ok').disabled = false; $('#approve-reject').disabled = false; });
+  };
+
+  /* ---- 提交并消费 SSE ---- */
+  ENGINE.ac = new AbortController();
+  let accepted = false;
+  try{
+    const resp = await fetch('/api/run', {
+      method:'POST', headers:{'Content-Type':'application/json'}, signal: ENGINE.ac.signal,
+      body: JSON.stringify({name:state.name, nodes:state.nodes, edges:state.edges, inputs:{}}),
+    });
+    if(!resp.ok || !resp.body) throw new Error('后端返回 HTTP '+resp.status);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder(); let buf = '';
+    for(;;){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      let idx;
+      while((idx = buf.indexOf('\n\n')) >= 0){
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx+2);
+        const line = chunk.split('\n').find(l=>l.startsWith('data: '));
+        if(!line) continue;
+        let ev; try{ ev = JSON.parse(line.slice(6)); }catch(_){ continue; }
+        if(ev.type==='run:accepted') accepted = true;
+        onEvent(ev);
+      }
+    }
+    if(!finalized) finalize(true, stopFlag);   /* 流正常结束但未收到 run:done */
+  }catch(err){
+    if(!accepted) throw err;                    /* 启动失败 → 上层回退模拟 */
+    finalize(false, stopFlag || err.name==='AbortError');  /* 中途断流 → 按中断收尾 */
+    if(!stopFlag && err.name!=='AbortError')
+      addLog(`⚠ 与执行后端的连接中断：${esc(err.message||String(err))}`,'warn');
+  }
+}
+
+/* ================================================================
  *  键盘快捷键
  * ================================================================ */
 window.addEventListener('keydown', e=>{
@@ -2489,6 +2770,34 @@ window.addEventListener('keydown', e=>{
 /* ================================================================
  *  深化交互：数字拖动调节 / 标题重命名 / 坐标信息
  * ================================================================ */
+
+/* 数字输入步进按钮（▲/▼）：单击步进一次，按住 420ms 后连续步进 */
+function numStep(input, dir){
+  const step = Number(input.step)||1;
+  const min = input.min!==''?Number(input.min):-1e9;
+  const max = input.max!==''?Number(input.max):1e9;
+  const dec = (String(input.step).split('.')[1]||'').length;
+  let v = (Number(input.value)||0) + dir*step;
+  v = clamp(v, min, max);
+  input.value = dec ? v.toFixed(dec) : String(Math.round(v*1e6)/1e6);
+  input.dispatchEvent(new Event('input',{bubbles:true}));
+  input.dispatchEvent(new Event('change',{bubbles:true}));
+}
+let nspinTimer=null, nspinDelay=null;
+const nspinStop = ()=>{ clearTimeout(nspinDelay); clearInterval(nspinTimer); nspinDelay=nspinTimer=null; };
+document.addEventListener('pointerdown', e=>{
+  const btn = e.target.closest('.nspin'); if(!btn) return;
+  e.preventDefault();
+  const input = btn.closest('.numwrap')?.querySelector('input[type=number]');
+  if(!input || input.disabled) return;
+  const nodeEl = btn.closest('.node');   /* 点击步进按钮同样确保节点选中 */
+  if(nodeEl && !sel.nodes.has(+nodeEl.dataset.id)) selectNode(+nodeEl.dataset.id, e.shiftKey);
+  const dir = Number(btn.dataset.dir)||1;
+  numStep(input, dir);
+  nspinDelay = setTimeout(()=>{ nspinTimer = setInterval(()=>numStep(input,dir), 70); }, 420);
+});
+document.addEventListener('pointerup', nspinStop);
+document.addEventListener('pointercancel', nspinStop);
 
 /* 数字参数：拖动 label 左右调节（ComfyUI widget 行为） */
 document.addEventListener('mousedown', e=>{
@@ -2583,8 +2892,9 @@ viewport.addEventListener('mousemove', e=>{
   renderTabsBar();
   applyView();
   renderAll();
+  ENGINE.probe();   /* 异步探测后端；成功后追加连接日志并刷新模型下拉 */
   if(fresh){ try{ fitView(); renderAll(); }catch(e){ console.error(e); } }
-  if(fresh) addLog('欢迎使用 AgentFlow 原型 · 点击画布顶部「▶ 运行」观看模拟执行','sys');
+  if(fresh) addLog('欢迎使用 AgentFlow · 点击画布顶部「▶ 运行」开始执行','sys');
 })();
 </script>
 </body>

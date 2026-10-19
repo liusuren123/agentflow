@@ -1,16 +1,48 @@
-# AgentFlow · 智能体工作流原型 UI
+# AgentFlow · 智能体工作流（UI 原型 + 真实执行后端）
 
-参考 **ComfyUI 新前端（ComfyUI_frontend）源码布局** 实现的智能体工作流编辑器**纯前端原型**，聚焦交互与视觉体验，未接入真实智能体（执行为模拟动画）。
+参考 **ComfyUI 新前端（ComfyUI_frontend）源码布局**实现的智能体工作流编辑器。画布/交互/视觉为纯前端单文件实现；`server/` 目录提供基于 **Vercel AI SDK 7** 的真实执行后端——LLM 真实流式生成、条件真实求值、循环真实迭代、代码真实运行、人工审批真实挂起。
 
 > **像素级对齐**：视觉规格（配色/尺寸/形状）通过脚本对 ComfyUI 实机截图逐像素采样提取：
 > 画布 `#171718`、顶栏 `#101018`(37px)、左栏 `#141414`(48px 纯图标)、节点体 `#333`(直角/偏移阴影/300px 宽/同色标题栏+白字+`#202020` 分隔线)、widget 行式样式+`#484848` 底线、端口为**内嵌节点体内**的实心圆（中心距边框 ≈10.5px、直径 11px，node.png/K采样器实采 +9.4~+10.5px）；未连接为类型色暗化（`#602020` 等实采值），已连接为类型色调白 40%（text 实测 `#64b5f6`），any 类型显示实际对端类型色；线画在节点下层、终点为圆点中心，可见部分在边框处被节点体截断、连线为类型亮色（`#0080e0`/`#f0d000`/`#b090d0`/`#f06060`/`#60b0f0`）、运行按钮 `#0b8ce9`、贝塞尔曲线低弧度平缓出入。并排对比迭代 3 轮，视觉相似度 9/10。
+> 接入后端后 UI **零改动**（无 CSS 变更；浏览器 canvas 逐像素对比基线 = 0 差异）。
 
 ## 使用方式
 
-**双击打开 `index.html` 即可**（单文件、零依赖、无需构建、离线可用）。
-首次打开自动加载模板「智能客服助手」，点击画布顶部 **▶ 运行** 观看模拟执行动画。
+**方式一 · 真实智能体执行（推荐）**
+
+```bash
+cd server
+npm install          # ai@7 + @ai-sdk/openai-compatible + express + zod
+npm start            # → http://localhost:3000
+```
+
+模型配置自动探测环境变量（`DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` / `OPENAI_API_KEY` / `MOONSHOT_API_KEY` 任一即可），或复制 `server/.env.example` 为 `.env` 指定任意 OpenAI 兼容端点（GLM / DeepSeek / OpenAI / Ollama / LM Studio…）。打开 http://localhost:3000 点击 **▶ 运行**：节点按真实执行进度点亮、LLM 逐 token 打字机输出、条件按真实求值分流、人工审批弹窗真实挂起等待你在界面上通过/拒绝。
+
+**方式二 · 离线演示**
+
+双击打开 `index.html` 即可（单文件、零依赖、离线可用）。未检测到后端时自动回退内置模拟执行动画，首次打开自动加载模板「智能客服助手」。
 
 也可本地起服务访问：`python -m http.server 8734` → http://localhost:8734
+
+## 真实执行引擎（server/，Vercel AI SDK 7）
+
+| 节点 | 真实实现 |
+| --- | --- |
+| LLM 对话 | `streamText` 逐 token 流式（无工具时）/ `generateText` 多轮工具循环（勾选 MCP 工具时，最多 3 轮）；usage 统计回传日志 |
+| 知识库检索 | 内置 3 个语料库，CJK 二字组 + TF-IDF 余弦相似度真实检索，分数 ×4 归一化后过节点阈值，top 分写入 `confidence` 变量 |
+| 网页搜索 | `BOCHA_API_KEY`（博查）优先，缺省尝试 DuckDuckGo HTML；均不可用时如实降级跳过，不伪造结果 |
+| HTTP 请求 | 真实 fetch（方法/请求体/超时），状态码·耗时·内容类型回显 |
+| 代码执行 | Python(`python -I -c`) / JavaScript(`node -e`) 独立子进程 + 5s 超时强杀 + JSON over stdio；stdout 进日志 |
+| MCP 工具 | filesystem（沙箱目录内读写，路径穿越防护）/ fetch（真实抓取）/ web-search；sqlite、browser 未实现时如实告知模型 |
+| 条件分支 | 自研安全表达式求值器（无 eval：词法+Pratt 语法+求值，支持比较/逻辑/算术/len/str/num/contains） |
+| 循环 | 下游闭包子图按元素逐轮真实执行（支持并发 3），迭代内 `item`/`index` 变量注入 |
+| 人工审批 | 真实挂起（SSE `approval:required` → 前端弹窗 → `/api/run/:id/approve`）；自动通过/拒绝策略立即生效 |
+| 消息通知 | Webhook 渠道为真实 POST；邮件/短信渠道如实标注「未接入，已记录」 |
+| 其余 | 触发器/用户输入/提示词模板（`{{变量}}` 渲染）/延时/合并/变量赋值/直接回复 均按语义真实执行 |
+
+**接口**：`POST /api/run`（SSE 事件流：node:start/delta/done/error、cond、approval、run:progress/done）· `POST /api/run/:id/stop`（AbortController 中止）· `POST /api/run/:id/approve` · `GET /api/health` · `GET /api/models`（前端据此刷新 LLM 模型下拉）。
+
+**安全**：出站 URL 一律经 `guard.js` SSRF 守卫（私网/回环/链路本地默认拦截，`ALLOW_PRIVATE_NET=1` 显式放行）；文件工具限制在 `server/sandbox/`；代码节点子进程隔离 + 超时；前端零密钥（API Key 只在服务端）。
 
 ## 布局还原依据（对应 ComfyUI_frontend 源码）
 
@@ -40,10 +72,11 @@
 | 编辑 | 撤销/重做、复制/粘贴、双击画布搜索添加、右键菜单（含重命名）、选中节点时高亮其连线、数字参数拖动调节（ComfyUI widget 行为）、网格吸附（设置可开关） |
 | 多工作流 | 顶栏标签页切换/新建/关闭/重命名，模板在新标签页打开 |
 | 节点库 | 「全部 / ★ 收藏」双 Tab、搜索、分类树、卡片星标收藏（本地持久化） |
-| 执行模拟 | 拓扑排序逐节点点亮、连线流动、LLM 打字机输出、条件分支、浮动卡进度条、运行历史记录、可停止、三档速度 |
+| 执行模拟 | 离线模式：拓扑排序逐节点点亮、连线流动、LLM 打字机、条件分支、浮动卡进度条、运行历史、可停止、三档速度；在线模式：同一套视觉语言由后端真实事件驱动（见上节） |
 | 微交互 | 侧栏/底部面板开合过渡动画、节点添加弹入/删除淡出动画、连线绘制生长动画、Toast 提示 |
 | 持久化 | 自动保存至 localStorage、JSON 导入导出 |
 
 ## 技术说明
 
-原生 HTML/CSS/JS 单文件实现，SVG 连线 + DOM 节点 + Canvas 小地图，无外部依赖。
+- 前端：原生 HTML/CSS/JS 单文件实现，SVG 连线 + DOM 节点 + Canvas 小地图，无外部依赖。
+- 后端（`server/`）：Node ≥ 20 · Express 5 · Vercel AI SDK 7（`ai@7`）· `@ai-sdk/openai-compatible` · zod。前后端同源托管，`index.html` 保持单文件双击可用。
