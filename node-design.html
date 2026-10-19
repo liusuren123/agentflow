@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>AgentFlow · 节点 Canvas 设计图</title>
+<style>
+  html,body{margin:0;padding:0;background:#101013;overflow:hidden}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<script>
+'use strict';
+/* ================================================================
+ *  节点 Canvas 设计图 —— 与 ComfyUI 实机截图逐像素采样的规格绘制
+ *  规格来源（像素采样）：
+ *    节点体 #333333 / 边框 #252525 / 直角 / 偏移阴影 3,4,blur6
+ *    标题栏 30px（类别色 10% 混入）/ 白字 12.5px / 分隔线 #202020
+ *    widget 行 22px：左标签 #9A9AA2 + 右值 #D8D8DC + 底线 #484848
+ *    端口 Ø11 实心暗色圆（半嵌边缘）+ #171718 描边环
+ *    连线 2px 类型亮色，贝塞尔低弧度（dx=.35·|Δx|, clamp 30~140）
+ * ================================================================ */
+const SPEC = {
+  body:'#353535', border:'#2f2f2f', titleLine:'#2f2f2f', widgetLine:'#545454',
+  widgetBg:'#222222', titleDot:'#7d7d7d', radius:7,
+  titleText:'#f2f2f4', labelText:'#9a9aa2', valueText:'#d8d8dc',
+  canvasBg:'#171718', ring:'#171718',
+  ports:{ any:'#602020', text:'#206090', list:'#785b33', object:'#785776', number:'#2a5070' },
+  links:{ any:'#f06060', text:'#0080e0', list:'#f0d000', object:'#b090d0', number:'#60b0f0' },
+  /* 已连接端口 = 类型色调白 40%（text 实测 #64b5f6） */
+  portsOn:{ any:'#f6a0a0', text:'#64b5f6', list:'#f6ec66', object:'#cfbde3', number:'#a3d2f6' },
+  cats:{ chat:'#a06bff', knowledge:'#22c55e' },
+};
+const mix = (hex, ratio, base=[0x33,0x33,0x33]) => {
+  const n = parseInt(hex.slice(1),16);
+  return `rgb(${Math.round((n>>16)*ratio+base[0]*(1-ratio))},${Math.round(((n>>8)&255)*ratio+base[1]*(1-ratio))},${Math.round((n&255)*ratio+base[2]*(1-ratio))})`;
+};
+const W_NODE = 300, H_TITLE = 30, H_ROW = 22, R_PORT = 5.5;
+
+const cv = document.getElementById('cv');
+const CW = 1180, CH = 560, SS = 2;
+cv.width = CW*SS; cv.height = CH*SS;
+cv.style.width = CW+'px'; cv.style.height = CH+'px';
+const ctx = cv.getContext('2d');
+ctx.scale(SS,SS);
+
+const FONT = '-apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif';
+const MONO = 'ui-monospace,Consolas,monospace';
+
+/* ---------- 节点布局计算 ---------- */
+function layout(node){
+  node.h = H_TITLE + 2 + node.ins.length*H_ROW + 4
+         + node.widgets.reduce((a,w)=>a+(w.rows?w.rows*H_ROW+6:H_ROW)+4,0) - 4 + 2
+         + node.outs.length*H_ROW + 4;
+  node.inPos  = node.ins .map((_,i)=>({x:node.x+10.5,     y:node.y+H_TITLE+4+i*H_ROW+H_ROW/2}));
+  node.outPos = node.outs.map((_,i)=>({x:node.x+W_NODE-10.5, y:node.y+node.h-4-node.outs.length*H_ROW+i*H_ROW+H_ROW/2}));
+}
+
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y, x+w,y+h, r);
+  ctx.arcTo(x+w,y+h, x,y+h, r);
+  ctx.arcTo(x,y+h, x,y, r);
+  ctx.arcTo(x,y, x+w,y, r);
+  ctx.closePath();
+}
+
+/* ---------- 绘制节点 ---------- */
+function drawNode(n){
+  n.bright = n.bright || {};   // 'in-0' / 'out-0' -> true 表示已连接（亮色端口）
+  // 偏移阴影 + 主体（圆角 7px，node.png 实测）
+  ctx.save();
+  ctx.shadowColor='rgba(0,0,0,.55)'; ctx.shadowOffsetX=3; ctx.shadowOffsetY=4; ctx.shadowBlur=5;
+  ctx.fillStyle=SPEC.body; rr(n.x,n.y,W_NODE,n.h,SPEC.radius); ctx.fill();
+  ctx.restore();
+  if(n.selected){ // 选中描边：浮在体边缘外 5px，中灰 1.5px（node-selected.png 实测）
+    ctx.strokeStyle='#8d8d8d'; ctx.lineWidth=1.5;
+    rr(n.x-5.75,n.y-5.75,W_NODE+11.5,n.h+11.5,SPEC.radius+5.5); ctx.stroke();
+  }
+  // 标题栏：同体色 + 标题圆点 + 分隔线 + 文字
+  ctx.save();
+  rr(n.x,n.y,W_NODE,n.h,SPEC.radius); ctx.clip();
+  ctx.fillStyle = SPEC.body;
+  ctx.fillRect(n.x,n.y,W_NODE,H_TITLE);
+  ctx.fillStyle=SPEC.titleLine;
+  ctx.fillRect(n.x,n.y+H_TITLE-.5,W_NODE,1);
+  ctx.restore();
+  // 标题折叠圆点（Ø10 灰）
+  ctx.beginPath(); ctx.arc(n.x+15, n.y+H_TITLE/2, 5, 0, Math.PI*2);
+  ctx.fillStyle = n.collapsed ? '#4d4d4d' : SPEC.titleDot; ctx.fill();
+  ctx.fillStyle=SPEC.titleText;
+  ctx.font='600 12.5px '+FONT; ctx.textBaseline='middle'; ctx.textAlign='left';
+  ctx.fillText(n.title, n.x+28, n.y+H_TITLE/2+.5);
+  // 输入端口 + 标签
+  n.ins.forEach((p,i)=>{
+    const c = n.inPos[i];
+    ctx.fillStyle=SPEC.labelText; ctx.textAlign='left'; ctx.font='11px '+FONT;
+    ctx.fillText(p.n, n.x+22, c.y+.5);
+    const nw = ctx.measureText(p.n).width;
+    ctx.font='9px '+FONT;
+    ctx.fillText(p.t, n.x+13+nw+5, c.y+.5);
+    drawPort(c.x, c.y, n.bright['in-'+i] ? SPEC.portsOn[p.t] : SPEC.ports[p.t]);
+  });
+  // 输出端口 + 标签（右对齐：类型小字 + 名字）
+  n.outs.forEach((p,i)=>{
+    const c = n.outPos[i];
+    ctx.fillStyle=SPEC.labelText; ctx.textAlign='right'; ctx.font='11px '+FONT;
+    ctx.fillText(p.n, n.x+W_NODE-22, c.y+.5);
+    const nw = ctx.measureText(p.n).width;
+    ctx.font='9px '+FONT;
+    ctx.fillText(p.t, n.x+W_NODE-13-nw-5, c.y+.5);
+    drawPort(c.x, c.y, n.bright['out-'+i] ? SPEC.portsOn[p.t] : SPEC.ports[p.t]);
+  });
+  // widget：药丸（内部 #222 / 边框 #545454 / 圆角 6 / 高 21，node.png 实采）
+  let wy = n.y + H_TITLE + 2 + n.ins.length*H_ROW + 4;
+  n.widgets.forEach(w=>{
+    if(w.rows){
+      const h = w.rows*H_ROW + 6;
+      ctx.fillStyle=SPEC.widgetBg;
+      rr(n.x+8, wy, W_NODE-16, h, 6); ctx.fill();
+      ctx.strokeStyle=SPEC.widgetLine; ctx.lineWidth=1;
+      rr(n.x+8.5, wy+.5, W_NODE-17, h-1, 6); ctx.stroke();
+      ctx.fillStyle=SPEC.valueText; ctx.textAlign='left'; ctx.font='11.5px '+FONT;
+      wrapText(w.v, n.x+13, wy+12, W_NODE-26, 16);
+      wy += h + 4;
+    } else {
+      const h = H_ROW;
+      ctx.fillStyle=SPEC.widgetBg;
+      rr(n.x+8, wy, W_NODE-16, h, 6); ctx.fill();
+      ctx.strokeStyle=SPEC.widgetLine; ctx.lineWidth=1;
+      rr(n.x+8.5, wy+.5, W_NODE-17, h-1, 6); ctx.stroke();
+      ctx.fillStyle=SPEC.labelText; ctx.textAlign='left'; ctx.font='11px '+FONT;
+      ctx.fillText(w.k, n.x+17, wy+h/2+.5);
+      ctx.fillStyle=SPEC.valueText; ctx.textAlign='right'; ctx.font='11.5px '+FONT;
+      ctx.fillText(w.v, n.x+W_NODE-17, wy+h/2+.5);
+      wy += h + 4;
+    }
+  });
+}
+function drawPort(x,y,color){
+  ctx.beginPath(); ctx.arc(x,y,R_PORT,0,Math.PI*2);
+  ctx.fillStyle=color; ctx.fill();
+  ctx.lineWidth=2; ctx.strokeStyle=SPEC.ring; ctx.stroke();
+}
+function wrapText(t,x,y,mw,lh){
+  let line='';
+  t.split('').forEach(ch=>{
+    if(ctx.measureText(line+ch).width>mw){ ctx.fillText(line,x,y); line=ch; y+=lh; }
+    else line+=ch;
+  });
+  ctx.fillText(line,x,y);
+}
+
+/* ---------- 连线（低弧度贝塞尔） ---------- */
+function link(p1,p2,color){
+  const dx = Math.max(30, Math.min(140, Math.abs(p2.x-p1.x)*.35));
+  ctx.beginPath();
+  ctx.moveTo(p1.x,p1.y);
+  ctx.bezierCurveTo(p1.x+dx,p1.y, p2.x-dx,p2.y, p2.x,p2.y);
+  ctx.strokeStyle=color; ctx.lineWidth=2; ctx.stroke();
+}
+
+/* ---------- 标注工具 ---------- */
+const ANN='#7a86a0';
+function dim(x1,y1,x2,y2,label,off){
+  ctx.strokeStyle=ANN; ctx.fillStyle=ANN; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  [[x1,y1],[x2,y2]].forEach(([px,py])=>{ ctx.beginPath(); ctx.arc(px,py,1.6,0,7); ctx.fill(); });
+  const mx=(x1+x2)/2, my=(y1+y2)/2;
+  ctx.font='10px '+MONO; ctx.textAlign='center'; ctx.textBaseline='bottom';
+  ctx.fillStyle='#aeb8d0';
+  ctx.fillText(label, mx, my-3+ (off||0));
+}
+function callout(x,y,tx,ty,text){
+  ctx.strokeStyle=ANN; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(tx,ty); ctx.stroke();
+  ctx.beginPath(); ctx.arc(x,y,1.8,0,7); ctx.fillStyle=ANN; ctx.fill();
+  ctx.fillStyle='#aeb8d0'; ctx.font='10.5px '+FONT;
+  ctx.textAlign = tx<x ? 'right':'left'; ctx.textBaseline='middle';
+  ctx.fillText(text, tx+(tx<x?-4:4), ty);
+}
+
+/* ================= 版面 ================= */
+ctx.fillStyle=SPEC.canvasBg; ctx.fillRect(0,0,CW,CH);
+ctx.fillStyle='#c8ccd8'; ctx.font='700 15px '+FONT; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+ctx.fillText('节点设计图 · Canvas 绘制（规格取自 ComfyUI 实机像素采样）', 20, 30);
+ctx.font='11px '+FONT; ctx.fillStyle='#6e7688';
+ctx.fillText('Node Design Sheet — drawn with Canvas 2D, specs sampled from real ComfyUI screenshot', 20, 48);
+
+/* ---- 两个节点 ---- */
+const retrieval = {
+  title:'知识库检索', cat:'knowledge',
+  ins:[{n:'查询',t:'text'}],
+  widgets:[{k:'知识库',v:'产品手册 v2.3'},{k:'Top K',v:'3'},{k:'相似度阈值',v:'0.5'}],
+  outs:[{n:'片段',t:'list'}],
+  x:70, y:110,
+};
+const llm = {
+  title:'LLM 对话', cat:'chat',
+  ins:[{n:'提示词',t:'text'},{n:'上下文',t:'any'}],
+  widgets:[{k:'模型',v:'GLM-4.7'},{k:'温度',v:'0.7'},{k:'系统提示词',v:'你是智能客服助手，回答需准确、简洁、友好。',rows:2}],
+  outs:[{n:'回复',t:'text'}],
+  x:470, y:80,
+};
+retrieval.bright = {'in-0':true, 'out-0':true};   // 查询(有入线) / 片段(已连至LLM)
+llm.bright = {'in-1':true};                        // 上下文(已连)
+llm.selected = true;                               // 选中态示例：亮描边
+layout(retrieval); layout(llm);
+// 悬空入线（模拟外部来源）
+link({x:10,y:retrieval.inPos[0].y}, {x:retrieval.inPos[0].x, y:retrieval.inPos[0].y}, SPEC.links.text);
+// 检索.片段 → LLM.上下文
+link(retrieval.outPos[0], llm.inPos[1], SPEC.links.list);
+drawNode(retrieval); drawNode(llm);
+
+/* ---- 尺寸标注 ---- */
+dim(retrieval.x, retrieval.y-16, retrieval.x+W_NODE, retrieval.y-16, '300px 节点宽');
+dim(retrieval.x+W_NODE+14, retrieval.y, retrieval.x+W_NODE+14, retrieval.y+H_TITLE, '30px 标题栏', 2);
+dim(retrieval.x+W_NODE+14, retrieval.y+H_TITLE+4, retrieval.x+W_NODE+14, retrieval.y+H_TITLE+4+H_ROW, '22px 行高', 2);
+dim(llm.x-14, llm.y, llm.x-14, llm.y+llm.h, llm.h+'px 总高', 2);
+callout(retrieval.x+W_NODE, retrieval.outPos[0].y, retrieval.x+W_NODE+108, retrieval.outPos[0].y+34, '端口 Ø11 实心 · 内嵌 10.5px');
+callout(retrieval.x+10, retrieval.y+H_TITLE+.5, retrieval.x+130, retrieval.y-34, '标题分隔线 #2F2F2F');
+callout(retrieval.x+150, retrieval.y+H_TITLE+4+H_ROW-.5, retrieval.x+320, retrieval.y-8, 'widget 药丸边框 #545454');
+callout(llm.x+9, llm.y+H_TITLE+52+8, llm.x+240, llm.y+H_TITLE-40, '多行文本药丸 #222222 / r6');
+
+/* ---- 色板（右侧规格面板） ---- */
+const px0 = 830;
+ctx.fillStyle='#c8ccd8'; ctx.font='700 13px '+FONT; ctx.textAlign='left';
+ctx.fillText('颜色规格（实采值）', px0, 84);
+const swatches = [
+  ['节点体', SPEC.body], ['边框', SPEC.border], ['标题分隔线', SPEC.titleLine],
+  ['药丸内部', SPEC.widgetBg], ['药丸边框', SPEC.widgetLine], ['端口·已连接', SPEC.portsOn.text], ['标题圆点', SPEC.titleDot],
+  ['端口·任意', SPEC.ports.any], ['端口·文本', SPEC.ports.text], ['端口·列表', SPEC.ports.list],
+  ['端口·对象', SPEC.ports.object], ['连线·任意', SPEC.links.any], ['连线·文本', SPEC.links.text],
+  ['连线·列表', SPEC.links.list], ['连线·对象', SPEC.links.object], ['画布背景', SPEC.canvasBg],
+];
+swatches.forEach(([name,c],i)=>{
+  const y = 100 + i*24;
+  ctx.fillStyle=c; ctx.fillRect(px0, y, 30, 16);
+  ctx.strokeStyle='#000'; ctx.strokeRect(px0+.5,y+.5,30,16);
+  ctx.fillStyle='#aeb8d0'; ctx.font='11px '+MONO; ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText(c.toUpperCase()+'  '+name, px0+40, y+8);
+});
+ctx.fillStyle='#6e7688'; ctx.font='10.5px '+FONT; ctx.textBaseline='alphabetic';
+ctx.fillText('圆角 7px · 已连接端口 = 类型色调白 40% (#64b5f6)', px0, 100+15*24+14);
+ctx.fillText('widget 药丸: #222 内 / #545454 边 / r6 · 标题圆点 Ø10', px0, 100+15*24+30);
+</script>
+</body>
+</html>

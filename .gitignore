@@ -1,0 +1,11 @@
+# OS
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# 编辑器
+.vscode/
+.idea/
+
+# 本地工具目录
+.mimosa/
