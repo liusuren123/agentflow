@@ -17,15 +17,22 @@ import { chromium } from 'playwright';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const GOLDEN_DIR = path.join(ROOT, 'tests', 'golden', 'ui');
 const DIFF_DIR = path.join(ROOT, 'tests', 'golden', 'diff');
-const PORT = 4173;
+const PORT = Number(process.env.GATE_PORT) || 4173;
 const UPDATE = process.argv.includes('--update');
+/* --target <dir>：校验另一目录下的应用（如 apps/web/dist）对同一 golden 的符合度。
+   golden 始终是 2026-10 定稿基线，不随 target 变化 —— React 版必须长得和原版一模一样 */
+const targetIdx = process.argv.indexOf('--target');
+const TARGET_DIR = targetIdx >= 0 ? path.resolve(ROOT, process.argv[targetIdx + 1]) : ROOT;
+if (!TARGET_DIR.startsWith(ROOT) || !existsSync(path.join(TARGET_DIR, 'index.html'))) {
+  console.error(`--target 目录无效（需含 index.html）：${TARGET_DIR}`); process.exit(2);
+}
 
 /* ---------- 极简静态服务（仅 index.html 与同目录资源） ---------- */
 const MIME = { '.html': 'text/html; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml', '.js': 'text/javascript' };
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
-  const file = path.join(ROOT, url === '/' ? 'index.html' : url);
-  if (!file.startsWith(ROOT) || !existsSync(file)) { res.writeHead(404); res.end(); return; }
+  const file = path.join(TARGET_DIR, url === '/' ? 'index.html' : url);
+  if (!file.startsWith(TARGET_DIR) || !existsSync(file)) { res.writeHead(404); res.end(); return; }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
   res.end(readFileSync(file));
 });
