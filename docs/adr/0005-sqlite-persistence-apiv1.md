@@ -85,8 +85,10 @@
   持久化异常不阻断 SSE（降级 + error 日志如实记录）。优雅停机时 `closeStore()`
   关库（WAL checkpoint）。
 - **端点**：`GET/PUT /api/v1/workflows`（另注册 `PUT /api/v1/workflows/:id` 路径式
-  upsert，路径 id 优先于 body.id）、`GET /api/v1/runs?limit=`（1–100，默认 20，
-  非法值 400）、`GET /api/v1/runs/:id`（未知 id 404）。均为新端点，仅 v1 命名空间
+  upsert，路径 id 优先于 body.id）、`GET /api/v1/workflows/:id`（完整内容回读：
+  name/nodes/edges/inputs/updated_at，未知 id 404——验收缺陷 BUG-001 修复）、
+  `GET /api/v1/runs?limit=`（1–100，默认 20，非法值 400）、`GET /api/v1/runs/:id`
+  （未知 id 404）。均为新端点，仅 v1 命名空间
   （无旧别名；既有 5 端点 `/api/*` 别名不变）。
 - **Docker**：`Dockerfile` multi-stage（build：`node:22-bookworm-slim` + python3/
   make/g++ + `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`；runtime：同底镜像、非 root

@@ -7,7 +7,7 @@
  *  · 稳定性等待：连续两帧截图一致才算场景就绪（消化入场动画/字体加载）
  * ================================================================ */
 import http from 'node:http';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PNG } from 'pngjs';
@@ -140,4 +140,8 @@ for (const r of results) {
   console.log(`${r.status === 'pass' ? '✓' : r.status === 'FAIL' ? '✗' : '⊕'} ${r.id.padEnd(16)} ${r.status}${r.numDiff !== undefined ? ` · diffPx=${r.numDiff}` : ''}${r.invDiff ? ' · DOM不变量变化' : ''}`);
 }
 console.log(fail === 0 ? `\n宪法门禁：${UPDATE ? 'golden 已更新（请人工确认符合宪法第 3 条流程）' : '通过 ✓'}` : `\n宪法门禁：${fail} 个场景违宪 ✗（差异详见 tests/golden/diff/）`);
+/* 全部通过时清空历史 diff 残留（BUG-002：陈旧差异图会误导排障） */
+if (fail === 0 && !UPDATE && existsSync(DIFF_DIR)) {
+  for (const f of readdirSync(DIFF_DIR)) rmSync(path.join(DIFF_DIR, f), { recursive: true, force: true });
+}
 process.exit(fail === 0 ? 0 : 1);

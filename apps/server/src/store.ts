@@ -69,6 +69,7 @@ let db: Database.Database | null = null;
 let S: {
   upsertWorkflow: Database.Statement;
   listWorkflows: Database.Statement;
+  getWorkflow: Database.Statement;
   insertRun: Database.Statement;
   insertEvent: Database.Statement;
   patchRun: Database.Statement;
@@ -93,6 +94,7 @@ export function initStore(): void {
       `INSERT INTO workflows(id, text, updated_at) VALUES(?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`),
     listWorkflows: db.prepare(`SELECT id, text, updated_at FROM workflows ORDER BY updated_at DESC`),
+    getWorkflow: db.prepare(`SELECT id, text, updated_at FROM workflows WHERE id = ?`),
 
     insertRun: db.prepare(
       `INSERT INTO runs(id, text, workflow_name, status, started_at) VALUES(?, ?, ?, 'running', ?)`),
@@ -151,6 +153,23 @@ export function listWorkflows(): WorkflowSummary[] {
     try{ name = (JSON.parse(r.text) as { name?: string }).name || name; }catch{ /* 容忍异常文本 */ }
     return { id: r.id, name, updated_at: r.updated_at };
   });
+}
+
+/* 单个工作流完整回读（BUG-001：列表只给摘要，补读取端点的数据层） */
+export function getWorkflow(id: string): { id: string; name: string; nodes: unknown[]; edges: unknown[]; inputs?: Record<string, unknown>; updated_at: number } | null {
+  if (!db || !S) return null;
+  const row = S.getWorkflow.get(id) as { id: string; text: string; updated_at: number } | undefined;
+  if (!row) return null;
+  let doc: { name?: string; nodes?: unknown[]; edges?: unknown[]; inputs?: Record<string, unknown> };
+  try{ doc = JSON.parse(row.text); }catch{ doc = {}; }
+  return {
+    id: row.id,
+    name: doc.name || '未命名工作流',
+    nodes: Array.isArray(doc.nodes) ? doc.nodes : [],
+    edges: Array.isArray(doc.edges) ? doc.edges : [],
+    ...(doc.inputs ? { inputs: doc.inputs } : {}),
+    updated_at: row.updated_at,
+  };
 }
 
 /* ---------- 运行落库钩子（server.ts 事件序列化单一出口处创建） ---------- */

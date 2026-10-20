@@ -2,8 +2,24 @@
  *  util.ts — 引擎小工具（自 engine.js 原文提取，逻辑逐字保留）
  * ================================================================ */
 import { evalExpr } from './expr.js';
+import type { Response } from 'express';
 
 export const ABORT_MSG = 'The operation was aborted';
+
+/* ---------- SSE 帧写出（唯一出口；server.ts 的 run 通道使用） ----------
+ * 纵深防御：JSON.stringify 不产生裸换行（事件注入面为零），但仍显式转义
+ * U+2028/2029（JSON 合法但属行终止符的历史包袱）；帧以纯字符串拼接构造。
+ * 响应 Content-Type 为 text/event-stream 且带 nosniff 头，浏览器不会
+ * 将响应体作为 HTML 执行。 */
+export function sseWriteEvent(res: Response, ev: Record<string, unknown>): void {
+  const payload = JSON.stringify(ev).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
+  const frame = 'data: ' + payload + '\n\n';
+  try{ res.write(frame); }catch{ /* 连接已断 */ }
+}
+export function sseWriteComment(res: Response, text: string): void {
+  const frame = ': ' + String(text).replace(/[\r\n]/g, ' ') + '\n\n';
+  try{ res.write(frame); }catch{ /* 连接已断 */ }
+}
 
 export const isAbort = (e: unknown) => !!(e && (typeof e === 'object' && e !== null) && ((e as { name?: string }).name === 'AbortError' || /abort/i.test(String((e as { message?: unknown }).message || ''))));
 

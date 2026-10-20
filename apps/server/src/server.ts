@@ -27,8 +27,9 @@ import { executeWorkflow } from './engine.js';
 import { providerInfo } from './providers.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import { sseWriteEvent, sseWriteComment } from './util.js';
 import {
-  initStore, closeStore, openRunRecorder, listWorkflows, saveWorkflow, listRuns, getRunDetail,
+  initStore, closeStore, openRunRecorder, listWorkflows, getWorkflow, saveWorkflow, listRuns, getRunDetail,
 } from './store.js';
 import type { RunCtx } from './types.js';
 
@@ -74,6 +75,7 @@ const runHandler: RequestHandler = (req, res)=>{
     'Cache-Control':'no-cache, no-transform',
     'Connection':'keep-alive',
     'X-Accel-Buffering':'no',
+    'X-Content-Type-Options':'nosniff',   /* 禁止浏览器嗅探为可执行类型 */
   });
   /* 事件序列化单一出口（ADR-0005 落库钩子）：run:accepted 直写与 ctx.emit
    * 全部经 send()——先落库后写网（SSE 断线不丢历史）；seq 自 run:accepted=0 递增；
@@ -83,10 +85,10 @@ const runHandler: RequestHandler = (req, res)=>{
   let seq = 0;
   const send = (ev: Record<string, unknown>)=>{
     recorder.record(seq++, ev);
-    try{ res.write(`data: ${JSON.stringify(ev)}\n\n`); }catch{ /* 连接已断 */ }
+    sseWriteEvent(res, ev);
   };
   send({ type:'run:accepted', runId });
-  const ping = setInterval(()=>{ try{ res.write(': ping\n\n'); }catch{ } }, 15000);
+  const ping = setInterval(()=>{ sseWriteComment(res, 'ping'); }, 15000);
 
   const ctx: RunCtx = {
     runId,
@@ -137,7 +139,12 @@ const approveHandler: RequestHandler = (req, res)=>{
 
 /* ---------- 工作流存取（ADR-0005，仅 v1 命名空间） ---------- */
 const workflowsGetHandler: RequestHandler = (_q, res)=>{
-  res.json({ workflows: listWorkflows() });   // updated_at 倒序
+  res.json({ workflows: listWorkflows() });   // updated_at 倒序（摘要）
+};
+const workflowGetHandler: RequestHandler = (req, res)=>{
+  const wf = getWorkflow(String(req.params.id));   // 完整内容（nodes/edges/inputs）
+  if(!wf){ res.status(404).json({ error:'workflow not found' }); return; }
+  res.json(wf);
 };
 const workflowsPutHandler: RequestHandler = (req, res)=>{
   const { name, nodes, edges, inputs } = req.body || {};
@@ -168,6 +175,7 @@ for(const base of ['/api', '/api/v1']){
 }
 /* ADR-0005 新端点：仅注册 v1（无旧别名，前端本阶段不消费） */
 app.get('/api/v1/workflows', workflowsGetHandler);
+app.get('/api/v1/workflows/:id', workflowGetHandler);
 app.put('/api/v1/workflows', workflowsPutHandler);
 app.put('/api/v1/workflows/:id', workflowsPutHandler);
 app.get('/api/v1/runs', runsListHandler);
