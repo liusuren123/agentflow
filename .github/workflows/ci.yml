@@ -1,0 +1,28 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  # 宪法门禁（CONSTITUTION.md 第 2 条）：UI 像素级 1:1 校验，required check
+  ui-constitution:
+    runs-on: windows-latest   # 与 golden 录制环境同字体栈（Segoe UI / Microsoft YaHei）
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run gate
+      - name: 上传违宪证据
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-gate-diff
+          path: tests/golden/diff/
+          if-no-files-found: ignore
+          retention-days: 14
