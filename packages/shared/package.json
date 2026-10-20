@@ -1,0 +1,20 @@
+{
+  "name": "@agentflow/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AgentFlow 单一事实源：节点注册表与 SSE 事件契约（前后端共享）",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  }
+}

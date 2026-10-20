@@ -1,6 +1,6 @@
 {
-  "name": "agentflow-server",
-  "version": "1.0.0",
+  "name": "@agentflow/server",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "AgentFlow 执行后端 · Vercel AI SDK 7 + OpenAI 兼容端点",
@@ -8,6 +8,7 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "@agentflow/shared": "*",
     "ai": "^7.0.0",
     "@ai-sdk/openai-compatible": "^3.0.71",
     "express": "^5.0.0",

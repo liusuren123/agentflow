@@ -17,7 +17,7 @@ import { executeWorkflow } from './engine.js';
 import { providerInfo } from './providers.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');   // apps/server → 仓库根（托管 index.html）
 const PORT = Number(process.env.PORT) || 3000;
 
 const app = express();

@@ -17,6 +17,7 @@ import { retrieve } from './kb.js';
 import { webSearch } from './search.js';
 import { collectTools, TOOL_SPECS } from './tools.js';
 import { guardedFetch } from './guard.js';
+import { NODE_NAMES, paramDefaultsOf } from '@agentflow/shared';
 import { spawn } from 'node:child_process';
 
 const ABORT_MSG = 'The operation was aborted';
@@ -172,36 +173,11 @@ export async function executeWorkflow(ctx){
   return { ms, done: prog.done, outputs, stopped };
 }
 
-/* ---------------- 节点元信息（与前端 DEFS 对齐） ---------------- */
-const DEFS_META = {
-  trigger:{name:'触发器'}, userinput:{name:'用户输入'}, llm:{name:'LLM 对话'}, prompt:{name:'提示词模板'},
-  retrieval:{name:'知识库检索'}, websearch:{name:'网页搜索'}, http:{name:'HTTP 请求'}, code:{name:'代码执行'},
-  notify:{name:'消息通知'}, condition:{name:'条件分支'}, loop:{name:'循环'}, delay:{name:'延时等待'},
-  merge:{name:'合并'}, reply:{name:'直接回复'}, setvar:{name:'变量赋值'}, approval:{name:'人工审批'},
-};
-function paramsDefaults(n){
-  const out = {};
-  const ps = {
-    trigger:[['mode','手动触发'],['cron','0 9 * * 1-5'],['path','/api/run']],
-    userinput:[['var','question'],['vtype','文本'],['req',true],['defv','如何申请退货?']],
-    llm:[['model','GLM-4.7'],['sys','你是智能客服助手，回答需准确、简洁、友好。'],['temp',0.7],['max',2048]],
-    prompt:[['tpl','你是一名金牌客服。请结合以下资料回答用户问题：\n{{context}}\n\n用户问题：{{question}}']],
-    retrieval:[['kb','产品手册 v2.3'],['topk',3],['th',0.5]],
-    websearch:[['eng','Bing'],['max',5]],
-    http:[['m','GET'],['url','https://api.example.com/v1/orders'],['to',30]],
-    code:[['lang','Python'],['code','# 处理输入后返回\nresult = input\nreturn result']],
-    notify:[['ch','邮件'],['to','support@team.com']],
-    condition:[['expr','confidence > 0.7']],
-    loop:[['max',10],['conc',false]],
-    delay:[['s',2]],
-    merge:[['mode','等待全部']],
-    reply:[['tpl','{{content}}']],
-    setvar:[['name','answer']],
-    approval:[['role','值班经理'],['to','挂起']],
-  }[n.type] || [];
-  ps.forEach(([k,v])=>out[k]=v);
-  return out;
-}
+/* ---------------- 节点元信息（来自 @agentflow/shared 单一事实源） ----------------
+ * DEFS_META 与参数默认值原为前端 DEFS 的手工副本（两处同步漂移风险），
+ * 现统一由 packages/shared 的节点注册表派生（契约测试保证一致性）。 */
+const DEFS_META = NODE_NAMES;
+const paramsDefaults = n => paramDefaultsOf(n.type);
 
 /* ================================================================
  *  节点处理器

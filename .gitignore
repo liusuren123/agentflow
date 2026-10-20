@@ -11,10 +11,11 @@ Desktop.ini
 .mimosa/
 
 # 后端
-server/node_modules/
-server/.env
-server/sandbox/
+apps/server/node_modules/
+apps/server/.env
+apps/server/sandbox/
 
 # 本地工具产物
 tests/golden/diff/
 .zcode/
+packages/*/dist/
