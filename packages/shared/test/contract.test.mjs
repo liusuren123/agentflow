@@ -60,22 +60,10 @@ test('SSE 事件契约：全部 15 种事件可解析（真实事件样本回放
   assert.throws(() => validateEvent({ type: 'unknown:event' }));           // 未注册事件
 });
 
-test('注册表与前端 DEFS 逐字一致（宪法结构层）', () => {
-  /* 从权威 index.html 提取 DEFS，与共享注册表交叉校验默认值——
-     消灭前后端 5 处手工同步点的回归防线 */
-  const html = readFileSync(new URL('../../../index.html', import.meta.url), 'utf8');
-  const m = html.match(/const DEFS = \{([\s\S]*?)\n\};/);
-  assert.ok(m, 'index.html 中未找到 DEFS');
-  const types = [...m[1].matchAll(/^  (\w+): \{/gm)].map(x => x[1]);
-  assert.deepEqual([...types].sort(), Object.keys(NODES).sort());
-  for (const t of types) {
-    const seg = m[1].split(new RegExp(`^  ${t}: \\{`, 'm'))[1]?.split(/\n  \w+: \{/)[0] ?? '';
-    const unq = s => s.startsWith("'")
-      ? s.slice(1, -1).replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\')
-      : JSON.parse(s);
-    const defs = [...seg.matchAll(/\{k:'(\w+)'[^\n]*?d:('(?:[^'\\]|\\.)*'|[\d.]+|true|false)/g)]
-      .map(x => [x[1], unq(x[2])]);
-    const sharedDefs = paramDefaultsOf(t);
-    for (const [k, v] of defs) assert.deepEqual(sharedDefs[k], v, `${t}.${k} 前后端默认值不一致`);
-  }
+test('前端 legacy 模块必须从 shared 导入 DEFS（ADR-0003 单一事实源）', () => {
+  /* 原 index.html（已退役进 git 历史）曾是 DEFS 权威源；迁移后前端
+     legacy 模块不得再自带 DEFS 字面量，防止手工副本回流 */
+  const legacy = readFileSync(new URL('../../../apps/web/src/legacy/app.js', import.meta.url), 'utf8');
+  assert.ok(!/const DEFS = \{/.test(legacy), 'legacy/app.js 出现了内联 DEFS 字面量——必须从 @agentflow/shared 导入');
+  assert.ok(legacy.includes("from '@agentflow/shared'"), 'legacy/app.js 未导入 @agentflow/shared');
 });

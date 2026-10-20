@@ -14,15 +14,25 @@
 
 # ADR-0002 · 前端演进策略：机械移植 + 命令式画布保留
 
-- 状态：已接受（2026-10-21，用户选定 React + 全仓 TS）
+- 状态：已接受（2026-10-21，用户选定 React + 全仓 TS）；**CP-B/CP-D 已落地，CP-C 待办**
 - 背景：单文件 2988 行不可长期维护，需框架化；但 ADR-0001 禁止渲染结果变化。
 - 决策：
   1. React 18 只承载**静态骨架**（顶栏/侧栏/属性面板/弹窗）的等价 JSX 化，
-     id/class/层级逐字保留；CSS 切 8 文件字节等价拼接。
+     id/class/层级逐字保留；CSS 单文件逐字引入。
   2. **画布层（#nodes-layer、SVG 连线、端口测量、拖拽/滚轮交互）保持命令式模块**，
-     在 React 组件 useEffect 中挂载——300+ 节点高频 DOM 操作不做响应式化，
-     同时消除虚拟 DOM diff 引入 1:1 漂移与性能风险的可能。
-  3. 分 6-8 个 checkpoint 迁移，每个 checkpoint 过像素门禁后提交。
+     在 React 组件 useEffect 中挂载（bootLegacyApp，幂等）——300+ 节点高频 DOM 操作
+     不做响应式化，同时消除虚拟 DOM diff 引入 1:1 漂移与性能风险的可能。
+  3. 每个 checkpoint 以「对定稿 golden 0 像素差异」验收后提交。
+- 实施记录：
+  - CP-B（2026-10-21 完成）：Vite+React18+TS+singlefile；骨架经 ?raw +
+    dangerouslySetInnerHTML 逐字节注入；挂载适配层内联 height:100% 传递高度链
+    （不改 CSS 源）。产物 262KB 单文件，对原始 golden 4 场景 diffPx=0。
+  - CP-D（2026-10-21 完成）：legacy 的 DEFS 字面量替换为 @agentflow/shared 导入；
+    server 托管 apps/web/dist；原 index.html 与提取工具退役进 git 历史；
+    门禁默认 target 切换为构建产物；离线双击与真实 E2E 复验通过。
+  - **CP-C（待办）**：skeleton.html → 等价 JSX（属性 camelCase/注释/style 对象），
+    分小步做，每步过门禁。当前 ?raw 注入已达像素 1:1，CP-C 不改变渲染，
+    属 React 声明式表达的渐进改善，无排期压力。
 - 备选：全响应式化（拒绝：门禁风险与性能不可控）；继续单文件（拒绝：不可维护）。
 
 # ADR-0003 · 单一事实源 packages/shared

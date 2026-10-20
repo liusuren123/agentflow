@@ -12,6 +12,7 @@
 import express from 'express';
 import crypto from 'node:crypto';
 import path from 'node:path';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { executeWorkflow } from './engine.js';
 import { providerInfo } from './providers.js';
@@ -26,9 +27,16 @@ app.use(express.json({ limit: '4mb' }));
 /* 运行注册表：runId → ctx（对象索引，运行结束即删除） */
 const runsById = Object.create(null);
 
-/* ---------- 静态托管（单文件应用，同源访问） ---------- */
-app.get('/', (_q, res)=>res.sendFile(path.join(ROOT, 'index.html')));
-app.get('/index.html', (_q, res)=>res.sendFile(path.join(ROOT, 'index.html')));
+/* ---------- 静态托管（React 构建产物，同源访问） ----------
+ * 前端已迁移至 apps/web（宪法门禁保证与 2026-10 定稿 UI 像素级一致）；
+ * 首次启动前需在仓库根执行 npm run build:web。 */
+const WEB_INDEX = path.join(ROOT, 'apps', 'web', 'dist', 'index.html');
+if (!existsSync(WEB_INDEX)) {
+  console.error('缺少前端构建产物：请先在仓库根执行  npm run build:web');
+  process.exit(1);
+}
+app.get('/', (_q, res)=>res.sendFile(WEB_INDEX));
+app.get('/index.html', (_q, res)=>res.sendFile(WEB_INDEX));
 
 /* ---------- 状态 ---------- */
 app.get('/api/health', (_q, res)=>{

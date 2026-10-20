@@ -11,7 +11,11 @@
     "gate": "node tools/pixel-gate/gate.mjs",
     "gate:update": "node tools/pixel-gate/gate.mjs --update",
     "build:shared": "npm run build -w @agentflow/shared",
+    "build:web": "npm run build -w @agentflow/web",
+    "build": "npm run build:shared && npm run build:web",
+    "start": "npm run build && npm start -w @agentflow/server",
     "test": "npm run build:shared && npm test -w @agentflow/shared",
+    "dev:web": "npm start -w @agentflow/web",
     "dev:server": "npm run build:shared && npm start -w @agentflow/server"
   },
   "devDependencies": {

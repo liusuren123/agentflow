@@ -19,12 +19,14 @@ const GOLDEN_DIR = path.join(ROOT, 'tests', 'golden', 'ui');
 const DIFF_DIR = path.join(ROOT, 'tests', 'golden', 'diff');
 const PORT = Number(process.env.GATE_PORT) || 4173;
 const UPDATE = process.argv.includes('--update');
-/* --target <dir>：校验另一目录下的应用（如 apps/web/dist）对同一 golden 的符合度。
-   golden 始终是 2026-10 定稿基线，不随 target 变化 —— React 版必须长得和原版一模一样 */
+/* --target <dir>：校验指定目录下的应用。默认 apps/web/dist（当前权威 UI 产物，
+   需先 npm run build:web）。golden 始终是 2026-10 定稿基线（原 index.html 时代录制，
+   该文件已退役进 git 历史），永不重录 —— React 版必须长得和定稿一模一样 */
 const targetIdx = process.argv.indexOf('--target');
-const TARGET_DIR = targetIdx >= 0 ? path.resolve(ROOT, process.argv[targetIdx + 1]) : ROOT;
+const TARGET_DIR = targetIdx >= 0 ? path.resolve(ROOT, process.argv[targetIdx + 1]) : path.join(ROOT, 'apps', 'web', 'dist');
 if (!TARGET_DIR.startsWith(ROOT) || !existsSync(path.join(TARGET_DIR, 'index.html'))) {
-  console.error(`--target 目录无效（需含 index.html）：${TARGET_DIR}`); process.exit(2);
+  console.error(`--target 目录无效（需含 index.html；默认 target 需先 npm run build:web）：${TARGET_DIR}`);
+  process.exit(2);
 }
 
 /* ---------- 极简静态服务（仅 index.html 与同目录资源） ---------- */

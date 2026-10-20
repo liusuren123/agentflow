@@ -6,25 +6,33 @@
 ## 仓库地图
 
 ```
-index.html          前端 UI（宪法保护对象：视觉/DOM/交互三层 1:1，勿动渲染）
-apps/server/        执行后端（Express + Vercel AI SDK 7，本轮 JS，Stage 3 TS 化）
+apps/web/           前端（React 18 + Vite + TS，宪法保护渲染结果 1:1）
+  src/skeleton.html  静态骨架原文（经 dangerouslySetInnerHTML 注入；JSX 化为待办 CP-C）
+  src/legacy/app.js  画布/交互命令式模块（自原单文件逐字提取 + bootLegacyApp 包装）
+  src/app.css        CSS 原文（逐字，勿改）
+apps/server/        执行后端（Express + Vercel AI SDK 7）
 apps/server/engine.js  工作流执行引擎（16 种节点 handler、LLM 流式/工具循环）
 packages/shared/    单一事实源（TS）：节点注册表 + SSE 事件契约（前后端共享）
 tools/pixel-gate/   宪法门禁执行器（Playwright 像素 diff + DOM 不变量）
-tests/golden/ui/    golden 基线（CI 权威，重录需宪法第 3 条流程）
+tests/golden/ui/    golden 基线（2026-10 定稿，永不重录）
 docs/adr/           架构决策记录
 docs/ai-sdk-7-功能汇总.md  AI SDK 7 API 清单（本仓实装版本逐项提取）
 ```
+
+> 原单文件 `index.html` 与提取工具 `tools/extract-web.mjs` 已退役（git 历史可溯）；
+> golden 基线即该时代定稿，是 React 产物的永久对照。
 
 ## 常用命令（在仓库根执行）
 
 | 命令 | 用途 |
 | --- | --- |
-| `npm run gate` | **宪法门禁**（改了任何前端相关代码后必须跑，贴结果） |
-| `npm run gate:update` | 重录 golden —— 仅在 ADR + 用户批准后使用（宪法第 3 条） |
-| `npm run build:shared` | 构建 shared 包（改 packages/shared 后） |
-| `npm test` | shared 契约测试（注册表一致性 + SSE 事件 schema） |
-| `npm run dev:server` | 启动后端 → http://localhost:3000 |
+| `npm run build` | 构建 shared + web（gate/serve 的前置） |
+| `npm run gate` | **宪法门禁**（校验 apps/web/dist 对定稿 golden；先 build） |
+| `npm run gate:update` | 重录 golden —— 仅限宪法第 3 条流程（ADR + 用户批准） |
+| `npm test` | shared 契约测试 |
+| `npm start` | 构建 + 启动后端 → http://localhost:3000 |
+| `npm run dev:web` | Vite 开发服（热更新，/api 代理 :3000，需另跑 dev:server） |
+| `npm run dev:server` | 仅启动后端（自动先构建 shared） |
 
 ## 硬性约定
 
