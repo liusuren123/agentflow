@@ -19,3 +19,4 @@ apps/server/sandbox/
 tests/golden/diff/
 .zcode/
 **/dist/
+node_modules/
