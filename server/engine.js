@@ -135,7 +135,17 @@ export async function executeWorkflow(ctx){
     /* 默认激活全部出边；条件分支只激活所选端口 */
     const firedPort = r && typeof r.firePort === 'number' ? r.firePort : null;
     outEs(id).forEach(e=>{ if(firedPort===null || e.fp===firedPort) scope.firedEdges.add(e.id); });
-    emit('node:done', { id, title, out: r.out, ms: r.ms, tokens: r.tokens, firePort: firedPort, iteration: iteration || null });
+    /* 各输入端口的实际到达值（属性面板「运行数据」） */
+    const inPreview = inEs(id).map((e,i)=>{
+      const src = byId.get(e.fn);
+      return {
+        tp: e.tp,
+        from: (src && (src.title || (DEFS_META[src.type]||{}).name)) || '?',
+        fromFp: e.fp,
+        val: preview(inVals[i], 140),
+      };
+    });
+    emit('node:done', { id, title, out: r.out, ms: r.ms, tokens: r.tokens, firePort: firedPort, iteration: iteration || null, inputs: inPreview });
     if(n.type === 'condition') emit('cond', { id, title, expr: p.expr, branch: r.firePort===0?'真':'假' });
   }
 
@@ -155,7 +165,10 @@ export async function executeWorkflow(ctx){
   }
 
   const ms = Date.now() - prog.t0;
-  emit('run:done', { ms, done: prog.done, total: Math.max(prog.total, prog.done), ok: !stopped, stopped, outputs });
+  /* 变量表快照（属性面板「可用变量」提示的数据来源） */
+  const varsSnap = {};
+  for(const [k,v] of Object.entries(vars)) varsSnap[k] = preview(v, 100);
+  emit('run:done', { ms, done: prog.done, total: Math.max(prog.total, prog.done), ok: !stopped, stopped, outputs, vars: varsSnap });
   return { ms, done: prog.done, outputs, stopped };
 }
 

@@ -347,6 +347,20 @@ body.running #float-prog{display:flex}
 #props .ph .pt{font-size:14px;font-weight:700}
 #props .ph .pid{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px}
 #props .pdesc{font-size:11px;color:var(--text3);line-height:1.6;margin:9px 0 4px}
+/* 属性面板：端口 / 运行数据 / 可用变量（沿用画布色板） */
+#props .psec{margin:14px 0 6px;padding-top:9px;border-top:1px solid var(--border2);font-size:10.5px;color:var(--text3);letter-spacing:.5px}
+#props .pin-row{display:flex;align-items:center;gap:6px;margin:0 0 5px;font-size:11px;min-width:0}
+#props .pdot{width:7px;height:7px;border-radius:50%;flex:none}
+#props .pin-row .pname{color:var(--text2);flex:none;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#props .pin-row .ptype{color:var(--text3);font-size:10px;flex:none;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#props .pin-row .psrc{color:var(--text3);font-size:10px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+#props .pin-row .psrc.off{color:#5a5a62}
+#props .pin-row .pval{color:var(--text2);font-size:10px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:ui-monospace,Consolas,monospace;background:rgba(0,0,0,.25);border-left:2px solid var(--accent);padding:2px 6px;border-radius:3px}
+#props .pvars{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0 6px}
+#props .pvar{font-size:10.5px;font-family:ui-monospace,Consolas,monospace;color:#8fd3ff;background:rgba(0,128,224,.12);
+  border:1px solid rgba(0,128,224,.35);border-radius:4px;padding:2px 7px;cursor:pointer}
+#props .pvar:hover{background:rgba(0,128,224,.25);color:#bfe3ff}
 .prow{display:flex;flex-direction:column;gap:5px;margin-top:11px}
 .prow>label{font-size:11px;color:var(--text2)}
 .prow input[type=text],.prow select,.prow input[type=number]{width:100%;height:30px;background:var(--panel2);
@@ -955,6 +969,8 @@ let activeTab = 0;
 let state = { name:'未命名工作流', nodes:[], edges:[], nextId:1 };
 let view  = { x:60, y:40, scale:1 };
 let runs = [];          // 运行历史 [{name,time,dur,nodes,ok}]
+let lastRunVars = null;         // 最近一次真实运行的变量表快照（run:done 附带）
+const lastRunData = new Map();  // 节点id → {inputs:[{tp,from,val}], out}（node:done 附带）
 let settings = { grid:false, flowAnim:true, speed:1, autosave:true, snap:false, favs:['llm','retrieval','condition'] };
 let railTab = null;     // 当前展开的侧栏: nodes/workflows/templates/history/settings
 let canvasMode = 'pan'; // pan | select
@@ -1423,6 +1439,48 @@ function updateEdgesOf(nodeIds){
 }
 
 /* ----- 属性面板 ----- */
+/* ① 端口/连接摘要 */
+function portsHtml(n, def){
+  const ins = (def.inputs||[]).map((p,i)=>{
+    const e = state.edges.find(x=>x.tn===n.id && x.tp===i);
+    const src = e ? nodeById(e.fn) : null;
+    const txt = src ? `${src.title||defOf(src).name}.${(defOf(src).outputs||[])[e.fp]?.n??''}` : '未连接';
+    return `<div class="pin-row"><i class="pdot" style="background:${PTYPES[p.t].c}"></i><span class="pname">${esc(p.n)}</span><span class="ptype">${PTYPES[p.t].label}</span><span class="psrc ${src?'':'off'}" title="${esc(txt)}">${esc(txt)}</span></div>`;
+  }).join('');
+  const outs = (def.outputs||[]).map((p,i)=>{
+    const ts = state.edges.filter(x=>x.fn===n.id && x.fp===i).map(x=>{
+      const t = nodeById(x.tn); return t?`${t.title||defOf(t).name}.${(defOf(t).inputs||[])[x.tp]?.n??''}`:'?';
+    });
+    const txt = ts.length ? ts.join('、') : '未连接';
+    return `<div class="pin-row"><i class="pdot" style="background:${PTYPES[p.t].c}"></i><span class="pname">${esc(p.n)}</span><span class="ptype">${PTYPES[p.t].label}</span><span class="psrc ${ts.length?'':'off'}" title="${esc(txt)}">${esc(txt)}</span></div>`;
+  }).join('');
+  if(!ins && !outs) return '';
+  return `<div class="psec">端口</div>${ins}${outs}`;
+}
+/* ② 运行时输入/输出值预览（真实执行后可用） */
+function runDataHtml(n){
+  const rd = lastRunData.get(n.id); if(!rd) return '';
+  const def = defOf(n);
+  const rows = rd.inputs.map(ip=>{
+    const pname = (def.inputs||[])[ip.tp]?.n ?? ('入'+ip.tp);
+    return `<div class="pin-row"><span class="pname">${esc(pname)}</span><span class="ptype">← ${esc(ip.from)}</span><span class="pval" title="${esc(ip.val)}">${esc(ip.val)}</span></div>`;
+  }).join('');
+  return `<div class="psec">运行数据</div>${rows}<div class="pin-row"><span class="pname">输出</span><span class="pval" title="${esc(rd.out)}">${esc(String(rd.out).slice(0,160))}</span></div>`;
+}
+/* ③ 模板可用变量（优先用最近真实运行的变量表，否则静态扫描画布） */
+function varNamesFor(){
+  if(lastRunVars && Object.keys(lastRunVars).length) return Object.keys(lastRunVars);
+  const s = new Set(['question','context','confidence','item','index']);
+  state.nodes.forEach(x=>{
+    if(x.type==='userinput') s.add(paramsOf(x).var||'question');
+    if(x.type==='setvar') s.add(paramsOf(x).name||'value');
+  });
+  return [...s];
+}
+function varHintsHtml(n){
+  if(n.type!=='prompt' && n.type!=='reply') return '';
+  return `<div class="psec">可用变量（点击插入）</div><div class="pvars">${varNamesFor().map(k=>`<span class="pvar" data-var="${esc(k)}">{{${esc(k)}}}</span>`).join('')}</div>`;
+}
 function renderProps(){
   const box = $('#props');
   if(sel.nodes.size===0 && sel.edges.size===0){
@@ -1454,6 +1512,9 @@ function renderProps(){
       <div class="pdesc">${esc(def.desc)}</div>
       <div class="prow"><label>节点名称</label><input type="text" id="prop-title" value="${esc(n.title||def.name)}" spellcheck="false"></div>
       ${rows}
+      ${portsHtml(n, def)}
+      ${runDataHtml(n)}
+      ${varHintsHtml(n)}
       ${capsHtml(n, def)}
       <div class="pbtns">
         <button class="ibtn" id="prop-copy">${I('copy')} 复制</button>
@@ -1550,6 +1611,20 @@ $('#props').addEventListener('click', e=>{
     const sid = exp.dataset.expand;
     mcpExpanded.has(sid)?mcpExpanded.delete(sid):mcpExpanded.add(sid);
     renderProps(); return;
+  }
+  /* ③ 可用变量 chip → 在光标处插入 {{变量}} */
+  const vchip = e.target.closest('.pvar');
+  if(vchip){
+    const ta = $('#props textarea[data-k="tpl"]');
+    if(ta){
+      const ins = '{{'+vchip.dataset.var+'}}';
+      const s = ta.selectionStart??ta.value.length, ed = ta.selectionEnd??s;
+      ta.value = ta.value.slice(0,s)+ins+ta.value.slice(ed);
+      ta.focus();
+      ta.setSelectionRange(s+ins.length, s+ins.length);
+      ta.dispatchEvent(new Event('change',{bubbles:true}));
+    }
+    return;
   }
   if(e.target.closest('#prop-del')){ deleteSel(); return; }
   if(e.target.closest('#prop-copy')){ copySel(); toast('已复制节点','ok'); return; }
@@ -2558,6 +2633,7 @@ ENGINE.cancelRun = ()=>{
 
 async function runReal(){
   running = true; stopFlag = false;
+  lastRunData.clear(); lastRunVars = null;
   document.body.classList.add('running');
   clearSel();
   state.nodes.forEach(n=>{ const el=nodeEl(n.id); el&&el.classList.remove('st-running','st-done','st-error'); });
@@ -2609,6 +2685,12 @@ async function runReal(){
   const barDone = el=>{ const bar = el.querySelector('.node-progress i');
     bar.style.transition='width .2s ease'; bar.style.width='100%'; };
 
+  const refreshPropsIfIdle = id=>{
+    /* 用户正在属性面板输入时不打断焦点 */
+    const focused = document.activeElement && $('#props').contains(document.activeElement);
+    if(!focused && sel.nodes.size===1 && (id===undefined || sel.nodes.has(id))) renderProps();
+  };
+
   const onEvent = ev=>{
     switch(ev.type){
       case 'run:accepted': ENGINE.runId = ev.runId; break;
@@ -2651,6 +2733,9 @@ async function runReal(){
           const s = String(ev.out!=null?ev.out:'');
           addLog(`✓ ${esc(ev.title)} · ${esc(s.slice(0,44))}${s.length>44?'…':''}`,'ok');
         }
+        /* ② 运行数据：记录该节点各输入端口的实际到达值并刷新面板 */
+        lastRunData.set(ev.id, { inputs: Array.isArray(ev.inputs)?ev.inputs:[], out: ev.out!=null?String(ev.out):'' });
+        refreshPropsIfIdle(ev.id);
         break;
       }
       case 'node:error': {
@@ -2692,6 +2777,8 @@ async function runReal(){
         break;
       case 'run:done':
         rDone = ev.done??rDone; rTotal = Math.max(ev.total??rTotal, rDone);
+        if(ev.vars) lastRunVars = ev.vars;   /* ③ 变量表快照 → 可用变量提示 */
+        refreshPropsIfIdle();
         progBar.style.width = '100%';
         finalize(ev.ok!==false && !ev.stopped, !!ev.stopped);
         break;
