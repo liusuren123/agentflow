@@ -1,10 +1,10 @@
 /* ================================================================
- *  kb.js — 内置知识库（真实本地语料 + bigram TF-IDF 余弦检索）
+ *  kb.ts — 内置知识库（真实本地语料 + bigram TF-IDF 余弦检索）
  *  三个知识库与前端下拉一致：产品手册 v2.3 / FAQ-售前 / 工单历史 2026
  *  检索为确定性真实计算（非随机模拟），中文按二字组切分
  * ================================================================ */
 
-const KB = {
+const KB: Record<string, { src: string; text: string }[]> = {
   '产品手册 v2.3': [
     { src:'退货政策 §2.1', text:'商品自签收之日起 7 天内可申请无理由退货，需保持商品及包装完好、不影响二次销售；定制类商品与贴身衣物不支持无理由退货。' },
     { src:'退货政策 §2.3', text:'超过 7 天且在保修期（整机 1 年、主要部件 2 年）内出现质量问题，可凭订单号在「我的-售后」发起售后工单，由质检确认后办理退换或维修。' },
@@ -40,8 +40,8 @@ const KB = {
 };
 
 /* ---------- 切词：拉丁词 + CJK 二字组 ---------- */
-function terms(text){
-  const out = [];
+function terms(text: unknown): string[] {
+  const out: string[] = [];
   const s = String(text ?? '');
   const latin = s.toLowerCase().match(/[a-z0-9]+/g) || [];
   out.push(...latin);
@@ -54,21 +54,22 @@ function terms(text){
 }
 
 /* ---------- 索引（启动时构建一次） ---------- */
-const index = new Map(); // kbName -> [{vec, norm, src, text}]
+type DocVec = { vec: Map<string, number>; norm: number; src: string; text: string };
+const index = new Map<string, DocVec[]>(); // kbName -> [{vec, norm, src, text}]
 for(const [name, docs] of Object.entries(KB)){
-  const df = new Map();
+  const df = new Map<string, number>();
   const docVecs = docs.map(d=>{
-    const vec = new Map();
-    for(const t of terms(d.text)) vec.set(t, (vec.get(t)||0)+1);
-    for(const t of vec.keys()) df.set(t, (df.get(t)||0)+1);
+    const vec = new Map<string, number>();
+    for(const t of terms(d.text)) vec.set(t, (vec.get(t) || 0)+1);
+    for(const t of vec.keys()) df.set(t, (df.get(t) || 0)+1);
     return { vec, src:d.src, text:d.text };
   });
   const N = docs.length;
   index.set(name, docVecs.map(d=>{
-    const vec = new Map();
+    const vec = new Map<string, number>();
     let norm = 0;
     for(const [t,tf] of d.vec){
-      const idf = Math.log(1 + N/(df.get(t)||1));
+      const idf = Math.log(1 + N/(df.get(t) || 1));
       const w = (1+Math.log(tf)) * idf;
       vec.set(t, w); norm += w*w;
     }
@@ -77,12 +78,12 @@ for(const [name, docs] of Object.entries(KB)){
 }
 
 /* ---------- 检索 ---------- */
-export function retrieve(kbName, query, topK=3, threshold=0.05){
-  const docs = index.get(kbName) || index.get('产品手册 v2.3');
+export function retrieve(kbName: string, query: string, topK = 3, threshold = 0.05){
+  const docs = index.get(kbName) || index.get('产品手册 v2.3') || [];
   const qTerms = terms(query);
   if(!qTerms.length) return [];
-  const qVec = new Map();
-  for(const t of qTerms) qVec.set(t, (qVec.get(t)||0)+1);
+  const qVec = new Map<string, number>();
+  for(const t of qTerms) qVec.set(t, (qVec.get(t) || 0)+1);
   let qNorm = 0;
   for(const [t,tf] of qVec){ const w = 1+Math.log(tf); qVec.set(t,w); qNorm += w*w; }
   qNorm = Math.sqrt(qNorm)||1;
@@ -94,4 +95,4 @@ export function retrieve(kbName, query, topK=3, threshold=0.05){
   return scored.slice(0, Math.max(1, topK|0));
 }
 
-export function kbNames(){ return Object.keys(KB); }
+export function kbNames(): string[] { return Object.keys(KB); }

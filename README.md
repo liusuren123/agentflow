@@ -22,7 +22,7 @@ docs/adr/           架构决策记录 · AGENTS.md 为 AI 协作约定
 
 ```bash
 npm install
-npm start           # 构建 shared+web 并启动后端 → http://localhost:3000
+npm start           # 构建 shared+web+server 并启动后端 → http://localhost:3000
 ```
 
 模型配置自动探测 `DEEPSEEK_API_KEY` / `ZHIPU_API_KEY` / `OPENAI_API_KEY` / `MOONSHOT_API_KEY`
@@ -41,7 +41,8 @@ npm start           # 构建 shared+web 并启动后端 → http://localhost:300
 | `npm run gate` | **宪法门禁**（改前端后必跑；需先 `npm run build`） |
 | `npm test` | shared 契约测试（注册表/SSE 事件 schema/单一来源防回归） |
 | `npm run build` | 构建 shared + web |
-| `npm start` | 构建 + 启动后端 |
+| `npm run build:server` | 构建后端 TS（tsc → `apps/server/dist`） |
+| `npm start` | 构建（shared+web+server）+ 启动后端 |
 | `npm run gate:update` | 重录 golden —— 仅限宪法第 3 条流程（ADR + 用户批准） |
 
 ## 执行引擎（apps/server，Vercel AI SDK 7）
@@ -61,6 +62,27 @@ npm start           # 构建 shared+web 并启动后端 → http://localhost:300
 **接口**：`POST /api/run`（SSE：node:start/delta/done/error、cond、approval、run:progress/done，
 `node:done` 含各输入端口实际到达值）· `POST /api/run/:id/stop` · `POST /api/run/:id/approve`
 · `GET /api/health`（含模型列表，前端据此刷新下拉）。
+全部端点在 `/api/v1/*` 有等价命名空间（ADR-0004，旧 `/api/*` 保留为别名）。
+
+## 持久化与部署（ADR-0004 已落地 · ADR-0005 规划，落地后更新本节）
+
+- **SQLite 持久化**（规划 · better-sqlite3，本地文件 `data/agentflow.db`，目录不入库）：
+  `workflows` / `runs` / `run_events` 三表；引擎 emit 钩子与 SSE 同点落库，
+  支持运行历史回放。新增 v1 端点：
+  `GET|PUT /api/v1/workflows` · `GET /api/v1/runs?limit=` · `GET /api/v1/runs/:id`（含事件回放）。
+  **localStorage 仍是前端当前事实源**；前端接入服务端属 UI 变更，需宪法第 3 条流程。
+- **后端 TS 化与运行时强化**（已落地 2026-10-20）：tsc 构建 → `node dist/server.js`
+  （`npm run build:server`）；zod 启动期环境校验（非法值 fail-fast）、
+  pino 结构化日志（runId 贯穿、密钥脱敏）、SIGINT/SIGTERM 优雅停机（5s 宽限）。
+- **Docker**（multi-stage，runtime `node:22-bookworm-slim` + data 卷）：
+
+  ```bash
+  docker build -t agentflow .
+  docker run -p 3000:3000 -v agentflow-data:/app/data \
+    -e AI_BASE_URL=... -e AI_API_KEY=... agentflow
+  ```
+
+  密钥只经环境变量传入（`**/.env` 已进 `.dockerignore`，绝不入镜像层）。
 
 ## 工程制度（AI 软件工程）
 

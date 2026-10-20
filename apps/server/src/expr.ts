@@ -1,83 +1,94 @@
 /* ================================================================
- *  expr.js — 条件分支节点的安全表达式求值器（无 eval / 无 Function）
+ *  expr.ts — 条件分支节点的安全表达式求值器（无 eval / 无 Function）
  *  支持：数字/单双引号字符串/布尔/null、标识符、成员访问 a.b、
  *        括号、一元 ! -、* / % + -、比较 > >= < <= == !=、逻辑 && ||
  *        函数 len() str() num() lower() upper() contains(a,b)
  *  标识符从作用域对象解析（工作流变量 + input），未定义 → undefined
  * ================================================================ */
 
-export function evalExpr(src, scope){
+export function evalExpr(src: unknown, scope: unknown): any {
   const s = String(src ?? '').trim();
   if(!s) return true;
   const toks = tokenize(s);
   const p = new Parser(toks);
   const ast = p.parseExpr(0);
-  if(p.peek() != null) throw new SyntaxError(`表达式在位置 ${p.peek().pos} 附近存在多余内容`);
-  return evalNode(ast, scope ?? {});
+  if(p.peek() != null) throw new SyntaxError(`表达式在位置 ${p.peek()!.pos} 附近存在多余内容`);
+  return evalNode(ast, (scope ?? {}) as Record<string, any>);
 }
 
 /* ---------- 词法 ---------- */
-function tokenize(src){
-  const toks = []; let i = 0;
-  const isDigit = c => c >= '0' && c <= '9';
-  const isIdStart = c => /[A-Za-z_\u4e00-\u9fa5]/.test(c);
-  const isId = c => /[A-Za-z0-9_\u4e00-\u9fa5]/.test(c);
+type Tok = { t: 'num' | 'str' | 'id' | 'op'; v: any; pos: number };
+
+function tokenize(src: string): Tok[] {
+  const toks: Tok[] = []; let i = 0;
+  const isDigit = (c: string | undefined) => c !== undefined && c >= '0' && c <= '9';
+  const isIdStart = (c: string) => /[A-Za-z_\u4e00-\u9fa5]/.test(c);
+  const isId = (c: string) => /[A-Za-z0-9_\u4e00-\u9fa5]/.test(c);
   while(i < src.length){
-    const c = src[i];
+    const c = src[i]!;
     if(/\s/.test(c)){ i++; continue; }
     if(isDigit(c) || (c === '.' && isDigit(src[i+1]))){
-      let j = i; while(j < src.length && (isDigit(src[j]) || src[j]==='.')) j++;
-      toks.push({t:'num', v:Number(src.slice(i,j)), pos:i}); i = j; continue;
+      let j = i; while(j < src.length && (isDigit(src[j]) || src[j] === '.')) j++;
+      toks.push({ t:'num', v:Number(src.slice(i,j)), pos:i }); i = j; continue;
     }
     if(c === '"' || c === "'"){
       let j = i+1, out = '';
       while(j < src.length && src[j] !== c){
         if(src[j] === '\\' && j+1 < src.length){ out += src[j+1]; j += 2; }
-        else { out += src[j]; j++; }
+        else { out += src[j]!; j++; }
       }
       if(j >= src.length) throw new SyntaxError('字符串缺少结束引号');
-      toks.push({t:'str', v:out, pos:i}); i = j+1; continue;
+      toks.push({ t:'str', v:out, pos:i }); i = j+1; continue;
     }
     if(isIdStart(c)){
-      let j = i; while(j < src.length && isId(src[j])) j++;
-      toks.push({t:'id', v:src.slice(i,j), pos:i}); i = j; continue;
+      let j = i; while(j < src.length && isId(src[j]!)) j++;
+      toks.push({ t:'id', v:src.slice(i,j), pos:i }); i = j; continue;
     }
     const two = src.slice(i, i+2);
     if(['>=','<=','==','!=','&&','||'].includes(two)){
-      toks.push({t:'op', v:two, pos:i}); i += 2; continue;
+      toks.push({ t:'op', v:two, pos:i }); i += 2; continue;
     }
-    if('><!+-*/%(),.'.includes(c)){ toks.push({t:'op', v:c, pos:i}); i++; continue; }
+    if('><!+-*/%(),.'.includes(c)){ toks.push({ t:'op', v:c, pos:i }); i++; continue; }
     throw new SyntaxError(`无法识别的字符 "${c}"（位置 ${i}）`);
   }
   return toks;
 }
 
 /* ---------- 语法（Pratt 优先级爬升） ---------- */
-const BIN = {
+const BIN: Record<string, number> = {
   '||':1, '&&':2,
   '==':3, '!=':3, '>':4, '>=':4, '<':4, '<=':4,
   '+':5, '-':5, '*':6, '/':6, '%':6,
 };
 
+type Node =
+  | { k:'lit'; v: unknown }
+  | { k:'var'; name: string }
+  | { k:'member'; obj: Node; name: string }
+  | { k:'un'; op: string; x: Node }
+  | { k:'call'; fn: string; args: Node[] }
+  | { k:'bin'; op: string; l: Node; r: Node };
+
 class Parser{
-  constructor(toks){ this.toks = toks; this.i = 0; }
-  peek(){ return this.toks[this.i] ?? null; }
-  next(){ return this.toks[this.i++]; }
-  expectOp(v){
+  private toks: Tok[]; private i = 0;
+  constructor(toks: Tok[]){ this.toks = toks; }
+  peek(): Tok | null { return this.toks[this.i] ?? null; }
+  private next(): Tok | undefined { return this.toks[this.i++]; }
+  private expectOp(v: string){
     const t = this.next();
     if(!t || t.t !== 'op' || t.v !== v) throw new SyntaxError(`期望 "${v}"`);
   }
-  parseExpr(minPrec){
+  parseExpr(minPrec: number): Node {
     let left = this.parseUnary();
     for(;;){
       const t = this.peek();
-      if(!t || t.t !== 'op' || !(t.v in BIN) || BIN[t.v] < minPrec) return left;
+      if(!t || t.t !== 'op' || !(t.v in BIN) || BIN[t.v]! < minPrec) return left;
       this.next();
-      const right = this.parseExpr(BIN[t.v] + 1);
+      const right = this.parseExpr(BIN[t.v]! + 1);
       left = { k:'bin', op:t.v, l:left, r:right };
     }
   }
-  parseUnary(){
+  private parseUnary(): Node {
     const t = this.peek();
     if(t && t.t === 'op' && (t.v === '!' || t.v === '-')){
       this.next();
@@ -85,7 +96,7 @@ class Parser{
     }
     return this.parsePrimary();
   }
-  parsePrimary(){
+  private parsePrimary(): Node {
     const t = this.next();
     if(!t) throw new SyntaxError('表达式意外结束');
     if(t.t === 'num') return { k:'lit', v:t.v };
@@ -98,12 +109,13 @@ class Parser{
       const nx = this.peek();
       if(nx && nx.t === 'op' && nx.v === '('){
         this.next();
-        const args = [];
-        if(!(this.peek() && this.peek().t==='op' && this.peek().v===')')){
+        const args: Node[] = [];
+        const isClose = () => { const p = this.peek(); return !!p && p.t === 'op' && p.v === ')'; };
+        if(!isClose()){
           for(;;){
             args.push(this.parseExpr(0));
             const a = this.next();
-            if(!a || a.t!=='op') throw new SyntaxError('函数参数格式错误');
+            if(!a || a.t !== 'op') throw new SyntaxError('函数参数格式错误');
             if(a.v === ')') break;
             if(a.v !== ',') throw new SyntaxError('期望 "," 或 ")"');
           }
@@ -111,8 +123,8 @@ class Parser{
         return { k:'call', fn:t.v, args };
       }
       /* 成员访问链 a.b.c */
-      let node = { k:'var', name:t.v };
-      while(this.peek() && this.peek().t==='op' && this.peek().v==='.'){
+      let node: Node = { k:'var', name:t.v };
+      while(this.peek() && this.peek()!.t === 'op' && this.peek()!.v === '.'){
         this.next();
         const m = this.next();
         if(!m || m.t !== 'id') throw new SyntaxError('成员访问格式错误');
@@ -130,31 +142,32 @@ class Parser{
 }
 
 /* ---------- 求值 ---------- */
-const FUNCS = {
-  len:    x => x == null ? 0 : (Array.isArray(x)||typeof x==='string' ? x.length : Object.keys(x).length),
-  str:    x => stringify(x),
-  num:    x => { const n = Number(x); if(Number.isNaN(n)) throw new Error(`无法将 ${stringify(x)} 转为数字`); return n; },
-  lower:  x => String(x).toLowerCase(),
-  upper:  x => String(x).toUpperCase(),
-  trim:   x => String(x).trim(),
-  contains:(a,b) => stringify(a).includes(stringify(b)),
+/* 求值结果为动态值（数字/字符串/布尔/null/数组/对象），宽松 any 收口 */
+const FUNCS: Record<string, (...a: any[]) => any> = {
+  len:    (x: any) => x == null ? 0 : (Array.isArray(x) || typeof x === 'string' ? x.length : Object.keys(x).length),
+  str:    (x: any) => stringify(x),
+  num:    (x: any) => { const n = Number(x); if(Number.isNaN(n)) throw new Error(`无法将 ${stringify(x)} 转为数字`); return n; },
+  lower:  (x: any) => String(x).toLowerCase(),
+  upper:  (x: any) => String(x).toUpperCase(),
+  trim:   (x: any) => String(x).trim(),
+  contains: (a: any, b: any) => stringify(a).includes(stringify(b)),
 };
 
-function stringify(v){
+function stringify(v: any): string {
   if(v == null) return '';
   if(typeof v === 'string') return v;
   if(typeof v === 'number' || typeof v === 'boolean') return String(v);
-  try{ return JSON.stringify(v); }catch{ return String(v); }
+  try{ return JSON.stringify(v) ?? String(v); }catch{ return String(v); }
 }
 
-function evalNode(n, scope){
+function evalNode(n: Node, scope: Record<string, any>): any {
   switch(n.k){
     case 'lit': return n.v;
     case 'var': return scope[n.name];
     case 'member': {
       const o = evalNode(n.obj, scope);
       if(o == null) return undefined;
-      if(typeof o === 'object') return o[n.name];
+      if(typeof o === 'object') return (o as Record<string, any>)[n.name];
       return undefined;
     }
     case 'un': {
@@ -188,13 +201,13 @@ function evalNode(n, scope){
     }
   }
 }
-function truthy(v){ return !(v == null || v === false || v === 0 || v === '' || (Array.isArray(v)&&!v.length)); }
-function looseEq(a,b){
+function truthy(v: any): boolean { return !(v == null || v === false || v === 0 || v === '' || (Array.isArray(v) && !v.length)); }
+function looseEq(a: any, b: any): boolean {
   if(a == null && b == null) return true;
   if(typeof a === 'string' || typeof b === 'string') return stringify(a) === stringify(b);
   return a === b;
 }
-function compare(a,b){
+function compare(a: any, b: any): number {
   if(typeof a === 'string' && typeof b === 'string') return a < b ? -1 : a > b ? 1 : 0;
   const x = Number(a), y = Number(b);
   if(Number.isNaN(x) || Number.isNaN(y)) return stringify(a) < stringify(b) ? -1 : 1;

@@ -12,11 +12,12 @@
     "gate:update": "node tools/pixel-gate/gate.mjs --update",
     "build:shared": "npm run build -w @agentflow/shared",
     "build:web": "npm run build -w @agentflow/web",
+    "build:server": "npm run build -w @agentflow/server",
     "build": "npm run build:shared && npm run build:web",
-    "start": "npm run build && npm start -w @agentflow/server",
+    "start": "npm run build && npm run build:server && npm start -w @agentflow/server",
     "test": "npm run build:shared && npm test -w @agentflow/shared",
     "dev:web": "npm start -w @agentflow/web",
-    "dev:server": "npm run build:shared && npm start -w @agentflow/server"
+    "dev:server": "npm run build:shared && npm run build:server && npm start -w @agentflow/server"
   },
   "devDependencies": {
     "pixelmatch": "^6.0.0",
