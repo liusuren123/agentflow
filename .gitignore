@@ -14,3 +14,7 @@ Desktop.ini
 server/node_modules/
 server/.env
 server/sandbox/
+
+# 本地工具产物
+tests/golden/diff/
+.zcode/
