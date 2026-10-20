@@ -14,6 +14,7 @@ Desktop.ini
 apps/server/node_modules/
 apps/server/.env
 apps/server/sandbox/
+data/
 
 # 本地工具产物
 tests/golden/diff/

@@ -1,6 +1,6 @@
 # ADR-0005 · SQLite 持久化与 API v1
 
-- 状态：已接受（2026-10-20）· **实施待办**（落地后在此追加实施记录）
+- 状态：已接受（2026-10-20）· **已实施**（2026-10-20，见文末实施记录）
 - 背景：
   - 工作流与运行历史目前只存前端 localStorage（`apps/web/src/legacy/app.js` L1142/L1148，
     LS_KEY 单键整存）；后端 run 状态是内存注册表（`server.js` `runsById`），进程重启即失；
@@ -70,5 +70,34 @@
   - 引入原生依赖 better-sqlite3：Node 大版本升级需重装编译；Docker/CI 统一 node:22 缓解。
   - 服务端成为「可选事实源」：前端何时切换、如何切换，留待后续合宪流程，本 ADR 显式
     不授权任何 UI 改动。
-  - 配套文档：README 增补「持久化与部署」小节、AGENTS.md 常用命令表补 `build:server`
-    （均标注规划状态，落地后去除标注）。
+- 配套文档：README 增补「持久化与部署」小节、AGENTS.md 常用命令表补 `build:server`
+  （均标注规划状态，落地后去除标注）。
+
+## 实施记录（2026-10-20 · Stage 3b，提交见 git log）
+
+- **仓储模块** `apps/server/src/store.ts`：全部 SQL 收敛于此（DDL 幂等迁移、WAL、
+  两个事务封装），路由与引擎零裸 SQL；`data/agentflow.db`，`data/` 已入 `.gitignore`。
+- **落库钩子**：`apps/server/src/server.ts` 的 `send()` 为事件序列化单一出口——
+  `run:accepted` 直写与 `ctx.emit` 同径，先落库后写网；seq 自 0 递增；
+  `: ping` 保活注释不经 `send()`，天然不落库。事务①（runs 行插入 + 首事件）、
+  事务②（事件行 + runs 状态更新：`run:start`→total；`run:done`→status/done/total/
+  ended_ms，stopped 映射 `stopped`、ok=false 映射 `error`；`run:error`→status）。
+  持久化异常不阻断 SSE（降级 + error 日志如实记录）。优雅停机时 `closeStore()`
+  关库（WAL checkpoint）。
+- **端点**：`GET/PUT /api/v1/workflows`（另注册 `PUT /api/v1/workflows/:id` 路径式
+  upsert，路径 id 优先于 body.id）、`GET /api/v1/runs?limit=`（1–100，默认 20，
+  非法值 400）、`GET /api/v1/runs/:id`（未知 id 404）。均为新端点，仅 v1 命名空间
+  （无旧别名；既有 5 端点 `/api/*` 别名不变）。
+- **Docker**：`Dockerfile` multi-stage（build：`node:22-bookworm-slim` + python3/
+  make/g++ + `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`；runtime：同底镜像、非 root
+  `USER node`、`VOLUME /app/data`、目录布局与仓库一致使 dist 的仓库根解析为 `/app`）；
+  `.dockerignore`（含 `**/.env`）；`docker-compose.yml` 透传 ADR-0004 全部 12 个
+  环境变量 + `agentflow-data` 卷。
+- **验证**（2026-10-20 实测）：删除旧库全新启动建表无错；kefu 真实 E2E（DeepSeek，
+  tokens=540）默认问题→假分支→`approval:required`→approve→`run:done`（done/total=7/8）；
+  回放 30 事件与实时 SSE 逐条 deepEqual（含 `run:accepted` 首事件）；运行中 stop →
+  `runs.status=stopped`；workflows PUT/GET 往返一致（body.id 与 `:id` 两形态）；
+  **硬杀进程重启后 runs/workflows/事件全量存活**（WAL 崩溃一致性实测）；
+  `npm run gate` 4 场景 diffPx=0、`npm test` 5 契约全过。本机无 Docker
+  （`docker: command not found`），镜像构建为静态校验（结构断言 + compose YAML 解析 +
+  env 清单比对），未实际 build。

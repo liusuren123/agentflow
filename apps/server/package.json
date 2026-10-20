@@ -10,13 +10,15 @@
   },
   "dependencies": {
     "@agentflow/shared": "*",
-    "ai": "^7.0.0",
     "@ai-sdk/openai-compatible": "^3.0.71",
+    "ai": "^7.0.0",
+    "better-sqlite3": "^12.11.1",
     "express": "^5.0.0",
     "pino": "^9.14.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.5",
     "typescript": "^5.9.3"

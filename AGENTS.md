@@ -14,7 +14,8 @@ apps/server/        执行后端（TypeScript · Express · Vercel AI SDK 7，AD
 apps/server/src/    TS 模块群：server（HTTP/SSE/优雅停机）· engine（拓扑执行）
                      handlers/llm/code（16 种节点 handler）· providers/config（模型接入+zod 校验）
                      logger（pino）· guard（SSRF）· tools（MCP 沙箱工具）· kb/expr/search
-                     （SQLite 持久化已决策待落地，见 ADR-0005；`/api/v1/*` 已与 `/api/*` 并存）
+                     · store（SQLite 持久化，ADR-0005 已落地；`/api/v1/*` 正式命名空间
+                     与 `/api/*` 别名并存；workflows/runs 新端点仅 v1）
 packages/shared/    单一事实源（TS）：节点注册表 + SSE 事件契约（前后端共享）
 tools/pixel-gate/   宪法门禁执行器（Playwright 像素 diff + DOM 不变量）
 tests/golden/ui/    golden 基线（2026-10 定稿，永不重录）
@@ -66,5 +67,6 @@ docs/ai-sdk-7-功能汇总.md  AI SDK 7 API 清单（本仓实装版本逐项提
 - `server/.env` 不入库（`.env.example` 是模板）；DeepSeek/GLM 密钥只进环境变量。
 - Playwright 浏览器下载被墙时：`PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright`。
 - golden 基线以 CI（windows-latest）为权威；本机 Windows 差异仅参考。
-- `data/`（SQLite `agentflow.db`，ADR-0005）不入库；better-sqlite3 为原生模块，
-  Node 大版本升级后需重装编译（规划落地后生效）。
+- `data/`（SQLite `agentflow.db`，ADR-0005 已落地）不入库；better-sqlite3 为原生模块，
+  Node 大版本升级后需重装编译（本仓 allowScripts 需先 `npm install-scripts approve
+  better-sqlite3` 再 `npm rebuild better-sqlite3`）。

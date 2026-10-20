@@ -1,0 +1,11 @@
+# ---- 构建上下文裁剪（ADR-0005：密钥绝不进入镜像层） ----
+node_modules
+**/node_modules
+**/dist
+data/
+tests/
+.git/
+.mimosa/
+tools/pixel-gate/
+**/.env
+.env

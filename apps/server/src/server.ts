@@ -6,12 +6,16 @@
  *  · POST /api[/v1]/run      → 提交工作流，SSE 流式返回执行事件
  *  · POST /api[/v1]/run/:id/stop    → 中止运行（AbortController）
  *  · POST /api[/v1]/run/:id/approve → 人工审批 通过/拒绝
- *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名；
- *  前端本阶段仍用旧路径，行为零改动。
+ *  · GET/PUT /api/v1/workflows[/:id] → 工作流存取/upsert（ADR-0005）
+ *  · GET  /api/v1/runs?limit=  · GET /api/v1/runs/:id → 运行历史 + 事件回放
+ *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
+ *  （workflows/runs 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
+ *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
+ *  （run:accepted 直写与 ctx.emit 同径；`: ping` 保活注释不落库）。
  *  出站安全：工作流中用户配置的 URL 一律经 guard.ts 守卫
  *  （私网/回环默认拦截，ALLOW_PRIVATE_NET=1 显式放行）。
  *  优雅停机：SIGINT/SIGTERM → server.close + 中止全部活动 run
- *  （SSE 发 run:done(stopped) 后收尾）+ 退出码 0（ADR-0004）。
+ *  （SSE 发 run:done(stopped) 后收尾）+ 关闭 SQLite + 退出码 0（ADR-0004/0005）。
  * ================================================================ */
 import express from 'express';
 import type { RequestHandler } from 'express';
@@ -23,6 +27,9 @@ import { executeWorkflow } from './engine.js';
 import { providerInfo } from './providers.js';
 import { config } from './config.js';
 import { logger } from './logger.js';
+import {
+  initStore, closeStore, openRunRecorder, listWorkflows, saveWorkflow, listRuns, getRunDetail,
+} from './store.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,6 +53,9 @@ if (!existsSync(WEB_INDEX)) {
 app.get('/', (_q, res)=>res.sendFile(WEB_INDEX));
 app.get('/index.html', (_q, res)=>res.sendFile(WEB_INDEX));
 
+/* ---------- SQLite 持久化（ADR-0005：data/agentflow.db，WAL） ---------- */
+initStore();
+
 /* ---------- 状态 ---------- */
 const healthHandler: RequestHandler = (_q, res)=>{
   res.json({ ok:true, engine:'agentflow-server', node:process.version, provider: providerInfo() });
@@ -65,15 +75,25 @@ const runHandler: RequestHandler = (req, res)=>{
     'Connection':'keep-alive',
     'X-Accel-Buffering':'no',
   });
-  res.write(`data: ${JSON.stringify({ type:'run:accepted', runId })}\n\n`);
+  /* 事件序列化单一出口（ADR-0005 落库钩子）：run:accepted 直写与 ctx.emit
+   * 全部经 send()——先落库后写网（SSE 断线不丢历史）；seq 自 run:accepted=0 递增；
+   * `: ping` 保活注释不经过此处，天然不落库。 */
+  const wf = { name: name || '未命名工作流', nodes, edges: Array.isArray(edges)?edges:[] };
+  const recorder = openRunRecorder(runId, wf, inputs || {});
+  let seq = 0;
+  const send = (ev: Record<string, unknown>)=>{
+    recorder.record(seq++, ev);
+    try{ res.write(`data: ${JSON.stringify(ev)}\n\n`); }catch{ /* 连接已断 */ }
+  };
+  send({ type:'run:accepted', runId });
   const ping = setInterval(()=>{ try{ res.write(': ping\n\n'); }catch{ } }, 15000);
 
   const ctx: RunCtx = {
     runId,
-    wf: { name: name || '未命名工作流', nodes, edges: Array.isArray(edges)?edges:[] },
+    wf,
     inputs: inputs || {},
     ac: new AbortController(),
-    emit(type, payload){ try{ res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`); }catch{ /* 连接已断 */ } },
+    emit(type, payload){ send({ type, ...payload }); },
     log: logger.child({ runId }),
   };
   runsById[runId] = ctx;
@@ -115,6 +135,29 @@ const approveHandler: RequestHandler = (req, res)=>{
   res.json({ ok: !!ok });
 };
 
+/* ---------- 工作流存取（ADR-0005，仅 v1 命名空间） ---------- */
+const workflowsGetHandler: RequestHandler = (_q, res)=>{
+  res.json({ workflows: listWorkflows() });   // updated_at 倒序
+};
+const workflowsPutHandler: RequestHandler = (req, res)=>{
+  const { name, nodes, edges, inputs } = req.body || {};
+  if(!Array.isArray(nodes)){ res.status(400).json({ error:'body.nodes 必须是数组' }); return; }
+  /* upsert：路径 :id 优先，其次 body.id，均缺省则生成新 id */
+  res.json(saveWorkflow(req.params.id || (req.body && req.body.id) || undefined, { name, nodes, edges, inputs }));
+};
+
+/* ---------- 运行历史（ADR-0005，仅 v1 命名空间） ---------- */
+const runsListHandler: RequestHandler = (req, res)=>{
+  const n = Number(req.query.limit ?? 20);
+  if(!Number.isInteger(n) || n < 1 || n > 100){ res.status(400).json({ error:'limit 必须是 1-100 的整数' }); return; }
+  res.json({ runs: listRuns(n) });             // started_at 倒序
+};
+const runDetailHandler: RequestHandler = (req, res)=>{
+  const d = getRunDetail(String(req.params.id));
+  if(!d){ res.status(404).json({ error:'run not found' }); return; }
+  res.json(d);                                 // { run, events } —— 完整事件回放
+};
+
 /* ---------- 路由注册：/api/v1/*（正式）+ /api/*（旧别名，前端零改动） ---------- */
 for(const base of ['/api', '/api/v1']){
   app.get(`${base}/health`, healthHandler);
@@ -123,6 +166,12 @@ for(const base of ['/api', '/api/v1']){
   app.post(`${base}/run/:id/stop`, stopHandler);
   app.post(`${base}/run/:id/approve`, approveHandler);
 }
+/* ADR-0005 新端点：仅注册 v1（无旧别名，前端本阶段不消费） */
+app.get('/api/v1/workflows', workflowsGetHandler);
+app.put('/api/v1/workflows', workflowsPutHandler);
+app.put('/api/v1/workflows/:id', workflowsPutHandler);
+app.get('/api/v1/runs', runsListHandler);
+app.get('/api/v1/runs/:id', runDetailHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{
@@ -149,6 +198,7 @@ async function shutdown(signal: string): Promise<void> {
     logger.warn({ remaining: Object.keys(runsById).length }, '停机宽限期内 run 未收尾，强制退出');
   }
   logger.info('优雅停机完成');
+  closeStore();                                     /* SQLite 关闭（WAL checkpoint 落盘，ADR-0005） */
   process.exit(0);                                   /* ③ 退出码 0 */
 }
 process.on('SIGINT', ()=>{ void shutdown('SIGINT'); });

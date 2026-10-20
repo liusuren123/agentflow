@@ -64,22 +64,24 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 · `GET /api/health`（含模型列表，前端据此刷新下拉）。
 全部端点在 `/api/v1/*` 有等价命名空间（ADR-0004，旧 `/api/*` 保留为别名）。
 
-## 持久化与部署（ADR-0004 已落地 · ADR-0005 规划，落地后更新本节）
+## 持久化与部署（ADR-0004/0005 已落地 2026-10-20）
 
-- **SQLite 持久化**（规划 · better-sqlite3，本地文件 `data/agentflow.db`，目录不入库）：
-  `workflows` / `runs` / `run_events` 三表；引擎 emit 钩子与 SSE 同点落库，
-  支持运行历史回放。新增 v1 端点：
-  `GET|PUT /api/v1/workflows` · `GET /api/v1/runs?limit=` · `GET /api/v1/runs/:id`（含事件回放）。
+- **SQLite 持久化**（已落地 · better-sqlite3，本地文件 `data/agentflow.db`，目录不入库）：
+  `workflows` / `runs` / `run_events` 三表；SSE 事件在序列化单一出口「先落库后写网」
+  （含 `run:accepted` 首事件；`ping` 保活不落库），支持运行历史回放与崩溃一致。
+  v1 端点：`GET|PUT /api/v1/workflows[/:id]` · `GET /api/v1/runs?limit=`（1–100，默认 20）
+  · `GET /api/v1/runs/:id`（含完整事件回放）。
   **localStorage 仍是前端当前事实源**；前端接入服务端属 UI 变更，需宪法第 3 条流程。
 - **后端 TS 化与运行时强化**（已落地 2026-10-20）：tsc 构建 → `node dist/server.js`
   （`npm run build:server`）；zod 启动期环境校验（非法值 fail-fast）、
-  pino 结构化日志（runId 贯穿、密钥脱敏）、SIGINT/SIGTERM 优雅停机（5s 宽限）。
-- **Docker**（multi-stage，runtime `node:22-bookworm-slim` + data 卷）：
+  pino 结构化日志（runId 贯穿、密钥脱敏）、SIGINT/SIGTERM 优雅停机（5s 宽限 + 关库）。
+- **Docker**（已落地 · multi-stage，runtime `node:22-bookworm-slim` 非 root + `/app/data` 卷）：
 
   ```bash
   docker build -t agentflow .
   docker run -p 3000:3000 -v agentflow-data:/app/data \
     -e AI_BASE_URL=... -e AI_API_KEY=... agentflow
+  # 或 docker compose up -d（env 从宿主环境/同目录 .env 透传，见 docker-compose.yml）
   ```
 
   密钥只经环境变量传入（`**/.env` 已进 `.dockerignore`，绝不入镜像层）。
