@@ -18,4 +18,4 @@ apps/server/sandbox/
 # 本地工具产物
 tests/golden/diff/
 .zcode/
-packages/*/dist/
+**/dist/
