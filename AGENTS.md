@@ -9,6 +9,8 @@
 apps/web/           前端（React 18 + Vite + TS，宪法保护渲染结果 1:1）
   src/skeleton.html  静态骨架原文（经 dangerouslySetInnerHTML 注入；JSX 化为待办 CP-C）
   src/legacy/app.js  画布/交互命令式模块（自原单文件逐字提取 + bootLegacyApp 包装）
+  src/server-sync.js /api/v1 数据接入层：fetch 封装 + 服务端列表缓存 + 事件回放
+                     映射（ADR-0006；被 legacy 消费，不操作面板 DOM）
   src/app.css        CSS 原文（逐字，勿改）
 apps/server/        执行后端（TypeScript · Express · Vercel AI SDK 7，ADR-0004 已落地）
 apps/server/src/    TS 模块群：server（HTTP/SSE/优雅停机）· engine（拓扑执行）

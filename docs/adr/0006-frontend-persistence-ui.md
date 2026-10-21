@@ -1,6 +1,6 @@
 # ADR-0006 · 前端接入服务端持久化（UI 变更提案）
 
-- 状态：**提案（待用户本人批准）** · 未实施（2026-10-20）
+- 状态：**已批准（2026-10-21 用户批准方案 A）· 已实施**（实施记录见第 11 节）
 - 关联：CONSTITUTION.md 第 1 条（UI 不变式）、第 3 条（变更流程）；ADR-0005（后端持久化契约与实施记录）
 - 义务声明：本文是宪法第 3 条第 1 步（ADR：动机 / 影响面 / 像素对比证据）的载体。
   ADR-0005 决策第 5 点已明文「本 ADR 不构成许可」——同理，**本文仅为规格提案，
@@ -307,3 +307,35 @@ counts{nodes,edges,widgets,ports,tabs} / bottomClosed）：方案 A 不新增 CS
 - 仅批准方案 B 时同理，实施须含 golden 重录。
 - 未批准 / 部分批准（如「先做历史面板、不做工作流面板」）请在本文件批注范围，
   实施与验收按批注裁剪。
+
+---
+
+## 11. 实施记录（2026-10-21 · 方案 A）
+
+### 11.1 落点文件（与第 7.1 节变更面一致；app.css / skeleton.html / golden / 后端 / shared 零改动）
+
+| 文件 | 变更 |
+| --- | --- |
+| `apps/web/src/server-sync.js` | **新增**（数据与状态层，ADR 4.4）：`/api/v1` fetch 封装（8s 超时，非 2xx/网络错误统一抛出）、内存缓存 `SVR`（工作流摘要列表 / runs 列表 / runId→events 回放缓存 / openRunId）、按需刷新回调（`onWorkflowsArrive` / `onRunsArrive`）、`fmtTs`（Unix 毫秒→本地时间串）、`replayLines`（第 4.3 节事件→logline 映射，`run:progress`/`node:delta` 跳过，`.t` 列=事件序号 `#00` 起）、`runCardMeta`（status→卡片双态色映射） |
+| `apps/web/src/legacy/app.js` | ① 模块顶部导入 server-sync；② `snapshotTab` 透传可选 `wfId`/`wfInputs`（旧 localStorage 数据无此字段=纯本地，向后兼容）；③ `renderSideWorkflows` 追加「服务端」分组（在线：保存按钮 + `#wf-cloud-list` 容器「加载中…」占位 + `refreshWorkflows()`；离线：仅 `.side-empty`「后端未连接」）；④ `renderSideHistory` 数据源切换（在线服务端 / 离线及拉取失败回退本地 `localRunsHtml`，本地写入路径零改动）；⑤ `#side-body` click 委托新增 4 分支（`[data-wf-overwrite]` 先于 `.wf-item[data-wf-id]` 判断、`#wf-cloud-save`、`.run-item[data-run-id]`）；⑥ 新增 `paintServerWfGroup` / `paintServerRuns` / `replayHtml` / `toggleRunReplay` / `cloudSaveCurrent` / `openServerWorkflow` / `cloudOverwrite`；⑦ `ENGINE.probe` 尾部重渲染条件扩展至 `workflows`/`history` 面板（启动早期打开的面板从离线态刷新） |
+| `docs/adr/0006-…md` / `AGENTS.md` | 本记录 + 仓库地图补 server-sync.js 一行 |
+
+卡片操作语义（第 4.1 节逐条）：「保存当前工作流到服务端」body 带 `tab.wfId`（有则同 id upsert，无则服务端生成），成功写回 `tabs[activeTab].wfId` + `saveLocal()` + 刷新列表 + toast；「打开」仿 `addTabFromSample` 装载路径（params 深拷贝、`nextId=max(id)+1`、`fitView()`），`running` 拦截；「覆盖保存」目标 id=所点条目、内容=当前激活标签页，不重绑当前 tab 的 `wfId`，按钮 `title` 与 toast 文案显式表达语义，不引入确认弹窗；删除本阶段不做（第 3 节能力缺口）。回放展开：同面板同时只展开一个、再点收起、404 时面板内单行提示不弹窗。
+
+### 11.2 实现细节说明（不偏离规格的落地选择）
+
+- 服务端列表异步填充以无类名容器 `#wf-cloud-list` / `#sv-runs-list` 为重绘落点（第 4.6 节「仅更新该分组容器」的实现载体）；回调内部容器缺失时 no-op。
+- 卡内「覆盖保存」按钮复用 `.ibtn` 全部既有样式，仅内联 `height:24px` 适配卡内紧凑布局（沿代码库大量内联 style 惯例，无 CSS 新增）。
+- 回放行数断言语义：`.logline` 行数 = events 总数 − `run:progress`/`node:delta` 条数（第 4.3 节明文跳过；序号 `.t` 仍按原始 seq 显示，跳过处序号留空档——序号是诚实顺序标记）。
+
+### 11.3 验证结果（2026-10-21，Windows 本机）
+
+| 项 | 命令 | 结果 |
+| --- | --- | --- |
+| 构建 | `npm run build`（shared+web） | ✓ 48 modules transformed，零错误 |
+| **宪法门禁** | `npm run gate` | **4 场景全部 `pass · diffPx=0`，无 DOM 不变量变化，无 golden-created/updated** |
+| 契约测试 | `npm test` | ✓ 5/5（含 legacy 从 shared 导入 DEFS 断言） |
+| 后端冒烟 | `node apps/server/dist/server.js` + `curl /api/health` + `POST /api/run` | ✓ online（DeepSeek 已配置）、SSE 正常 |
+| E2E（Playwright headless chromium 对 :3000） | a–e 共 19 断言 | **19/19 ✓**：a 服务端分组+云保存+API 交叉验证+F5 持久；b 打开后 DOM `.node`=8=服务端 nodes、连线 7=7；c 加节点覆盖保存后 GET :id 节点数 8→9、updated_at 刷新；d trigger+reply 真实 run（status=done）→ 服务端卡片 → 回放 8 行=可渲染事件 8/10（跳过 progress×2）、首行 `#00`、末行 `run:done`、再点收起；e `file://` 双面板回退「后端未连接」/本地空态、零 `/api/v1` 请求、控制台零报错 |
+
+反例 a（`running` 拦截）为代码路径审查确认（三入口均前置 `if(running){toast(...);return;}`，与 `switchTab` L211 同型），未纳入自动化。回滚：单提交收敛，`git revert` 即完全恢复（第 8 节）。

@@ -1,6 +1,8 @@
 /* 本文件由 tools/extract-web.mjs 从 index.html 逐字提取（宪法：机械移植）。
  * 原脚本为顶层副作用式；此处包装为 bootLegacyApp() 供 React 在骨架渲染后调用。 */
 import { NODES } from '@agentflow/shared';
+import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveWorkflowToServer,
+         onWorkflowsArrive, onRunsArrive, fmtTs, replayLines, runCardMeta } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -196,7 +198,8 @@ const paramsOf = n => {
 /* ================================================================
  *  标签页（WorkflowTabs）
  * ================================================================ */
-function snapshotTab(){ return {name:state.name, nodes:state.nodes, edges:state.edges, nextId:state.nextId, view}; }
+/* wfId/wfInputs：服务端关联字段（ADR-0006 4.4）——可选，旧 localStorage 数据无此字段即纯本地工作流 */
+function snapshotTab(){ const t = tabs[activeTab]||{}; return {name:state.name, nodes:state.nodes, edges:state.edges, nextId:state.nextId, view, wfId:t.wfId, wfInputs:t.wfInputs}; }
 function syncToTabs(){ if(tabs[activeTab]) tabs[activeTab] = snapshotTab(); }
 function renderTabsBar(){
   const list = $('#tabs-list');
@@ -367,7 +370,88 @@ function renderSideWorkflows(body){
      <div style="padding:2px 12px 16px;display:flex;gap:8px">
        <button class="ibtn" id="wf-new" style="flex:1;justify-content:center">${I('plus')} 新建空白</button>
        <button class="ibtn" id="wf-templates" style="flex:1;justify-content:center">${I('sparkles')} 浏览模板</button>
-     </div>`;
+     </div>` +
+    /* 服务端分组（ADR-0006 方案 A）：离线仅提示（4.5），在线同步占位 + 异步填充（4.6） */
+    (ENGINE.online
+      ? `<div class="side-section-title">服务端</div>
+         <div style="padding:2px 12px 16px;display:flex;gap:8px">
+           <button class="ibtn" id="wf-cloud-save" style="flex:1;justify-content:center">${I('upload')} 保存当前工作流到服务端</button>
+         </div>
+         <div id="wf-cloud-list"><div class="side-empty">加载中…</div></div>`
+      : `<div class="side-section-title">服务端</div>
+         <div class="side-empty">后端未连接 · 启动 server 后可保存 / 加载工作流</div>`);
+  if(ENGINE.online) refreshWorkflows();
+}
+
+/* ----- 服务端持久化（ADR-0006 方案 A）：分组渲染与交互 ----- */
+/* fetch 回来后仅重绘「服务端」分组容器（4.6 时序规约；容器不在 DOM 时 no-op） */
+function paintServerWfGroup(){
+  const box = $('#wf-cloud-list'); if(!box) return;
+  if(SVR.wfErr){
+    box.innerHTML = `<div class="side-empty">服务端列表获取失败<br>请确认后端已启动后重开本面板</div>`;
+    return;
+  }
+  const list = SVR.wf||[];
+  box.innerHTML = list.length ? list.map(w=>`
+    <div class="wf-item" data-wf-id="${esc(w.id)}">
+      <div class="wt">${I('workflow')} ${esc(w.name)}</div>
+      <div class="wm">更新于 ${fmtTs(w.updated_at)} · 点击打开</div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="ibtn" data-wf-overwrite="${esc(w.id)}" style="flex:1;justify-content:center;height:24px"
+          title="用当前标签页「${esc(state.name)}」的内容覆盖保存此服务端工作流「${esc(w.name)}」（不引入确认弹窗）">${I('save')} 覆盖保存</button>
+      </div>
+    </div>`).join('')
+    : `<div class="side-empty">服务端暂无保存的工作流<br>点击上方按钮保存当前工作流</div>`;
+}
+/* 保存当前工作流到服务端：body 带 tab.wfId（若有）→ 同 id upsert；成功后写回 wfId */
+async function cloudSaveCurrent(){
+  if(running){ toast('运行中无法保存','warn'); return; }
+  syncToTabs();
+  const tab = tabs[activeTab]||{};
+  try{
+    const r = await saveWorkflowToServer(tab.wfId||null,
+      {name:state.name, nodes:state.nodes, edges:state.edges, inputs:tab.wfInputs||{}});
+    if(tabs[activeTab]) tabs[activeTab].wfId = r.id;
+    saveLocal();
+    toast('已保存到服务端','ok');
+    refreshWorkflows();
+  }catch(_){ toast('保存到服务端失败（后端未连接？）','warn'); }
+}
+/* 打开服务端工作流：仿 addTabFromSample 装载路径，新标签页 + fitView（ADR 4.1） */
+async function openServerWorkflow(id){
+  if(running){ toast('运行中无法切换工作流','warn'); return; }
+  let wf;
+  try{ wf = await fetchWorkflow(id); }
+  catch(_){ toast('打开失败：工作流不存在或后端未连接','warn'); return; }
+  if(!Array.isArray(wf.nodes)){ toast('服务端数据无效（nodes 非数组）','warn'); return; }
+  syncToTabs();
+  tabs.push({ name:wf.name||'未命名工作流',
+    nodes: wf.nodes.map(n=>({...n, params:{...(n.params||{})}})),
+    edges: (Array.isArray(wf.edges)?wf.edges:[]).map(e=>({...e})),
+    nextId: Math.max(0,...wf.nodes.map(n=>n.id||0))+1, view:null,
+    wfId: wf.id, wfInputs: wf.inputs||undefined });
+  activeTab = tabs.length-1;
+  const t = tabs[activeTab];
+  state = {name:t.name, nodes:t.nodes, edges:t.edges, nextId:t.nextId};
+  view = {x:60,y:40,scale:1};
+  clearSel(); undoStack=[]; redoStack=[];
+  applyView(); renderAll(); fitView(); renderAll();
+  renderTabsBar(); saveLocal();
+  addLog(`已从服务端打开「${esc(wf.name||'未命名工作流')}」`,'sys');
+  if(railTab==='workflows') renderSidebar();
+}
+/* 覆盖保存：目标 id = 所点服务端条目，内容 = 当前激活标签页（ADR 4.1 已知语义边界，
+ * title 与 toast 文案显式表达；不重绑 tabs[activeTab].wfId） */
+async function cloudOverwrite(id){
+  if(running){ toast('运行中无法保存','warn'); return; }
+  syncToTabs();
+  const tab = tabs[activeTab]||{};
+  const target = (SVR.wf||[]).find(w=>w.id===id);
+  try{
+    await saveWorkflowToServer(id, {name:state.name, nodes:state.nodes, edges:state.edges, inputs:tab.wfInputs||{}});
+    toast(`已用当前标签页「${state.name}」覆盖保存到「${target?target.name:id}」`,'ok');
+    refreshWorkflows();
+  }catch(_){ toast('覆盖保存失败（后端未连接？）','warn'); }
 }
 
 /* ----- 模板侧栏 ----- */
@@ -383,8 +467,9 @@ function renderSideTemplates(body){
 }
 
 /* ----- 任务历史侧栏 ----- */
-function renderSideHistory(body){
-  body.innerHTML = (runs.length ? runs.map(r=>`
+/* 本地数据源渲染（现状分支不动；服务端模式下拉取失败时也回退到此 —— ADR 4.2） */
+function localRunsHtml(){
+  return (runs.length ? runs.map(r=>`
     <div class="run-item ${r.ok?'ok':'stop'}">
       <span class="ri">${I(r.ok?'check':'square')}</span>
       <div style="min-width:0;flex:1"><div class="rn">${esc(r.name)}</div><div class="rt">${esc(r.time)}</div></div>
@@ -393,6 +478,54 @@ function renderSideHistory(body){
     : `<div class="side-empty">暂无运行记录<br>点击画布顶部的「▶ 运行」开始</div>`) +
     (runs.length?`<div style="padding:10px 12px"><button class="ibtn" id="runs-clear" style="width:100%;justify-content:center">清空历史</button></div>`:'');
 }
+function renderSideHistory(body){
+  if(ENGINE.online){
+    /* 服务端数据源：同步画缓存/占位 → 异步重拉（ADR 4.6；无「清空历史」——服务端无清空端点） */
+    body.innerHTML = `<div id="sv-runs-list"></div>`;
+    paintServerRuns();
+    refreshRuns();
+    return;
+  }
+  body.innerHTML = localRunsHtml();
+}
+/* 服务端 runs 分组重绘（fetch 回调 / 展开 toggling 共用；容器不在 DOM 时 no-op） */
+function paintServerRuns(){
+  const box = $('#sv-runs-list'); if(!box) return;
+  if(SVR.runsErr){ box.innerHTML = localRunsHtml(); return; }   /* 拉取失败 → 回退本地 */
+  const list = SVR.runs;
+  if(!list){ box.innerHTML = `<div class="side-empty">加载中…</div>`; return; }
+  box.innerHTML = list.length ? list.map(r=>{
+    const meta = runCardMeta(r.status);
+    const dur = r.ended_ms!=null ? (r.ended_ms/1000).toFixed(1)+'s' : '…';
+    return `<div class="run-item ${meta.cls}" data-run-id="${esc(r.id)}">
+        <span class="ri">${I(meta.icon)}</span>
+        <div style="min-width:0;flex:1"><div class="rn">${esc(r.workflow_name)}</div><div class="rt">${fmtTs(r.started_at)}${meta.suffix}</div></div>
+        <span class="rd">${r.done??0}/${r.total??0} 节点<br>${dur}</span>
+      </div>` + (SVR.openRunId===r.id ? replayHtml(r.id) : '');
+  }).join('') : `<div class="side-empty">服务端暂无运行记录<br>点击画布顶部的「▶ 运行」开始</div>`;
+}
+/* 就地展开的事件回放（ADR 4.2/4.3）：无类名容器 + 内联 var(--border) 分隔线 + .logline 行 */
+function replayHtml(id){
+  const wrap = inner => `<div style="padding:6px 14px 10px;border-bottom:1px solid var(--border)">${inner}</div>`;
+  const evs = SVR.runEvents.get(id);
+  if(evs === undefined) return wrap(`<div class="side-empty" style="padding:10px">事件回放加载中…</div>`);
+  if(evs === null)      return wrap(`<div class="side-empty" style="padding:10px">回放获取失败（该 run 可能已被清理）</div>`);
+  const lines = replayLines(evs);
+  return wrap(lines.map(l=>`<div class="logline ${l.lvl}"><span class="t">${l.t}</span><span class="m">${l.m}</span></div>`).join('')
+    || `<div class="side-empty" style="padding:10px">无事件</div>`);
+}
+/* 卡片点击：就地展开/收起回放；同面板同时只展开一个（ADR 4.2） */
+async function toggleRunReplay(id){
+  if(SVR.openRunId === id){ SVR.openRunId = null; }
+  else{
+    SVR.openRunId = id;
+    if(!SVR.runEvents.has(id)){
+      paintServerRuns();          /* 先画「回放加载中」占位 */
+      await loadRunDetail(id);    /* 成功/失败均写缓存后重绘 */
+    }
+  }
+  paintServerRuns();
+}
 $('#side-body').addEventListener('click', e=>{
   const fav = e.target.closest('.fav');
   if(fav){ const k = fav.dataset.fav;
@@ -400,12 +533,20 @@ $('#side-body').addEventListener('click', e=>{
     const i = settings.favs.indexOf(k);
     i>=0?settings.favs.splice(i,1):settings.favs.push(k);
     saveLocal(); renderSidebar(); return; }
+  /* 服务端分支（ADR-0006）：覆盖按钮在 data-wf-id 卡片内部，须先于整卡「打开」判断 */
+  const ovw = e.target.closest('[data-wf-overwrite]'); if(ovw){ cloudOverwrite(ovw.dataset.wfOverwrite); return; }
+  const cwf = e.target.closest('.wf-item[data-wf-id]'); if(cwf){ openServerWorkflow(cwf.dataset.wfId); return; }
+  if(e.target.closest('#wf-cloud-save')){ cloudSaveCurrent(); return; }
+  const srv = e.target.closest('.run-item[data-run-id]'); if(srv){ toggleRunReplay(srv.dataset.runId); return; }
   const wf = e.target.closest('.wf-item[data-i]'); if(wf){ switchTab(+wf.dataset.i); return; }
   const sm = e.target.closest('.wf-item[data-sample]'); if(sm){ addTabFromSample(sm.dataset.sample); return; }
   if(e.target.closest('#wf-new')){ newTab(); return; }
   if(e.target.closest('#wf-templates')){ setRailTab('templates'); return; }
   if(e.target.closest('#runs-clear')){ runs=[]; saveLocal(); renderSidebar(); return; }
 });
+/* 服务端列表 fetch 完成后的分组重绘回调注册（ADR 4.6；回调内部容器缺失时 no-op） */
+onWorkflowsArrive(paintServerWfGroup);
+onRunsArrive(paintServerRuns);
 
 /* ----- 设置侧栏 ----- */
 function renderSideSettings(body){
@@ -1823,7 +1964,9 @@ ENGINE.probe = async ()=>{
       if(selNode && selNode.type==='llm' && !prov.models.some(m=>m.name===paramsOf(selNode).model)) renderProps();
     }
   }catch(_){ ENGINE.online = false; }
-  if(railTab==='settings') renderSidebar();
+  /* probe 结果落定后刷新已打开的面板：settings（现状）+ workflows/history（ADR-0006：
+     面板内容依赖 ENGINE.online，启动早期打开的面板需从离线态刷新） */
+  if(railTab==='settings'||railTab==='workflows'||railTab==='history') renderSidebar();
 };
 
 ENGINE.cancelRun = ()=>{
