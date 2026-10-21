@@ -1,6 +1,6 @@
 # ADR-0007 · 工作流删除能力（DELETE 端点 + 前端删除入口）
 
-- 状态：**提案（待用户批准）· 未实施**
+- 状态：**已批准（2026-10-21 用户批准：完整 / C1 / 两按钮确认①）· 已实施**
 - 日期：2026-10-20
 - 关联：CONSTITUTION.md 第 1 条（UI 不变式）、第 3 条（变更流程）、第 4 条（适用范围）；
   ADR-0005（SQLite 持久化 / API v1，实施记录明文「无 DELETE 端点故本阶段不做删除」）；
@@ -333,3 +333,32 @@ false；4 场景均不点击 `workflows` / `history` rail 按钮；每场景 `lo
 - 可拆分批准：仅后端端点（无 UI 入口，纯能力预埋）/ 仅工作流删除（不做 runs）。
 - 未批准 / 部分批准请在本文批注范围，实施与验收按批注裁剪。
 - **本文状态行为「提案」期间，任何提交不得包含第 6 节所列变更。**
+
+---
+
+## 11. 实施记录（2026-10-21）
+
+**批复形态**：用户批准「完整 / C1 / 确认①」——workflows + runs 单卡删除均实施；
+「清空历史」按钮按 C1 不上线（服务端模式下仍不渲染）；确认强度取两按钮弹窗。
+
+按第 6 节变更面实施（全部落点与预案一致）：
+
+| 文件 | 实际变更 |
+| --- | --- |
+| `apps/server/src/store.ts` | 语句表 +`deleteWorkflow`/`deleteRun`/`deleteEvents` 三条 prepare；+`txDeleteRun` 事务（先删 run_events 再删 runs 行，返回 changes>0 判存在）；导出 `deleteWorkflow(id): boolean` 与 `deleteRun(id): boolean` |
+| `apps/server/src/server.ts` | +`workflowDeleteHandler`（404 同 `workflowGetHandler` 型）、+`runDeleteHandler`（`runsById` 活动 409 守卫在前、删除在后）；注册 `DELETE /api/v1/workflows/:id` 与 `DELETE /api/v1/runs/:id`（仅 v1） |
+| `apps/web/src/server-sync.js` | +`deleteWorkflowFromServer(id)` / `deleteRunFromServer(id)`（`apiJson` DELETE 封装） |
+| `apps/web/src/legacy/app.js` | `paintServerWfGroup` 按钮行 +`data-wf-del` 删除按钮；`paintServerRuns` 行尾 +`data-run-del` 图标按钮（`flex:none`）；click 委托 `[data-wf-del]` 先于 `[data-wf-overwrite]`、`[data-run-del]` 先于整卡回放；+`confirmDialog` 动态单例确认弹窗（盒体内联值取自 #help-modal .box/h2/.close-row 与 #approve-reject，零新增 CSS）；+`cloudDeleteWorkflow`（含防复活清理 + `saveLocal()`）与 `deleteRunCard`（回放缓存清理 + 展开态收起 + 409 文案转译）；keydown ESC 分支 +`#confirm-modal` 关闭 |
+| `apps/web/src/app.css` | 本 ADR 范围内零改动（第 2 节末发现的 `#approve-modal .box` 缺失另行以 **ADR-0008** 修复） |
+| `apps/web/src/skeleton.html`（现为 Skeleton.tsx） | 零改动 |
+| `tests/golden/ui/*` | 零改动（不重录） |
+
+**验收结论**（详见实施 PR 汇报）：`npm run gate` 4 场景 diffPx=0（两次复跑）、
+`npm test` 5/5、curl 正反例（200/404/409/级联删 events）与 Playwright E2E
+（取消路径零 DELETE、删除路径 200 + F5 不复活 + 列表总数 -1、活动 run 409、
+离线 file: 无入口零报错）全部通过。
+
+**与批准规格的唯一偏差说明**：工作流删除**不设 running 拦截**（按第 4.1 节原文
+「不设 running 拦截……如实区分」实施——保存类操作运行中禁写，删除不触碰画布与
+执行状态，语义本就不同；实施时收到的任务简报中有「running 拦截与其它云端操作
+一致」一句，与本文 4.1 节冲突，按本文（用户批准的规格权威）执行）。

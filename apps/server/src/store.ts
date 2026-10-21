@@ -70,17 +70,22 @@ let S: {
   upsertWorkflow: Database.Statement;
   listWorkflows: Database.Statement;
   getWorkflow: Database.Statement;
+  deleteWorkflow: Database.Statement;
   insertRun: Database.Statement;
   insertEvent: Database.Statement;
   patchRun: Database.Statement;
   listRuns: Database.Statement;
   getRun: Database.Statement;
   listEvents: Database.Statement;
+  deleteRun: Database.Statement;
+  deleteEvents: Database.Statement;
 };
 /* 两个事务（openRunRecorder 复用；runId 等经闭包外的参数传入） */
 let txFirst: (runId: string, wfText: string, wfName: string, startedAt: number, seq: number, json: string) => void;
 let txEvent: (runId: string, seq: number, json: string,
   status: string | null, done: number | null, total: number | null, endedMs: number | null) => void;
+/* run 级联删除事务（ADR-0007：run_events 无外键，须手工先删事件行再删 runs 行） */
+let txDeleteRun: (runId: string) => boolean;
 
 /* ---------- 初始化（server.ts 启动期调用一次） ---------- */
 export function initStore(): void {
@@ -95,6 +100,7 @@ export function initStore(): void {
        ON CONFLICT(id) DO UPDATE SET text = excluded.text, updated_at = excluded.updated_at`),
     listWorkflows: db.prepare(`SELECT id, text, updated_at FROM workflows ORDER BY updated_at DESC`),
     getWorkflow: db.prepare(`SELECT id, text, updated_at FROM workflows WHERE id = ?`),
+    deleteWorkflow: db.prepare(`DELETE FROM workflows WHERE id = ?`),
 
     insertRun: db.prepare(
       `INSERT INTO runs(id, text, workflow_name, status, started_at) VALUES(?, ?, ?, 'running', ?)`),
@@ -113,6 +119,8 @@ export function initStore(): void {
     getRun: db.prepare(
       `SELECT id, workflow_name, status, started_at, ended_ms, done, total FROM runs WHERE id = ?`),
     listEvents: db.prepare(`SELECT json FROM run_events WHERE run_id = ? ORDER BY seq ASC`),
+    deleteRun: db.prepare(`DELETE FROM runs WHERE id = ?`),
+    deleteEvents: db.prepare(`DELETE FROM run_events WHERE run_id = ?`),
   };
 
   /* 事务①：runs 行插入 + 首事件（run:accepted）——run 的存在性与首事件原子成立 */
@@ -126,6 +134,12 @@ export function initStore(): void {
     status: string | null, done: number | null, total: number | null, endedMs: number | null) => {
     S.insertEvent.run(runId, seq, json);
     S.patchRun.run(status, done, total, endedMs, runId);
+  });
+  /* 事务③：run 级联删除（ADR-0007）——run_events 无外键，须手工先删事件行再删
+     runs 行；返回 runs 行是否真删（changes>0 即 run 存在，404 判据来自此处） */
+  txDeleteRun = db.transaction((runId: string) => {
+    S.deleteEvents.run(runId);
+    return S.deleteRun.run(runId).changes > 0;
   });
   logger.info({ dbFile: DB_FILE }, 'SQLite 存储就绪（WAL，表迁移完成）');
 }
@@ -170,6 +184,11 @@ export function getWorkflow(id: string): { id: string; name: string; nodes: unkn
     ...(doc.inputs ? { inputs: doc.inputs } : {}),
     updated_at: row.updated_at,
   };
+}
+
+/* 删除工作流（ADR-0007）：无子表，单语句；changes=0 即行不存在（404 判据，不额外 SELECT） */
+export function deleteWorkflow(id: string): boolean {
+  return S.deleteWorkflow.run(id).changes > 0;
 }
 
 /* ---------- 运行落库钩子（server.ts 事件序列化单一出口处创建） ---------- */
@@ -221,6 +240,11 @@ export function getRunDetail(id: string): { run: RunRow; events: unknown[] } | n
   if(!run) return null;
   const events = (S.listEvents.all(id) as { json: string }[]).map(r => JSON.parse(r.json));
   return { run, events };
+}
+
+/* 删除运行记录（ADR-0007）：事务级联清理 run_events（先删事件行再删 runs 行，原子） */
+export function deleteRun(id: string): boolean {
+  return txDeleteRun(id);
 }
 
 /* ---------- 关闭（优雅停机时 WAL checkpoint 落盘） ---------- */

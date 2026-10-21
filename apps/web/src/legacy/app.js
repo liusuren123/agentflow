@@ -2,6 +2,7 @@
  * 原脚本为顶层副作用式；此处包装为 bootLegacyApp() 供 React 在骨架渲染后调用。 */
 import { NODES } from '@agentflow/shared';
 import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveWorkflowToServer,
+         deleteWorkflowFromServer, deleteRunFromServer,
          onWorkflowsArrive, onRunsArrive, fmtTs, replayLines, runCardMeta } from '../server-sync.js';
 
 'use strict';
@@ -399,6 +400,8 @@ function paintServerWfGroup(){
       <div style="display:flex;gap:6px;margin-top:8px">
         <button class="ibtn" data-wf-overwrite="${esc(w.id)}" style="flex:1;justify-content:center;height:24px"
           title="用当前标签页「${esc(state.name)}」的内容覆盖保存此服务端工作流「${esc(w.name)}」（不引入确认弹窗）">${I('save')} 覆盖保存</button>
+        <button class="ibtn" data-wf-del="${esc(w.id)}" style="justify-content:center;height:24px;padding:0 9px;border-color:#7a3d3d;color:#c66"
+          title="从服务端删除此工作流（不可恢复，需确认）">${I('trash')} 删除</button>
       </div>
     </div>`).join('')
     : `<div class="side-empty">服务端暂无保存的工作流<br>点击上方按钮保存当前工作流</div>`;
@@ -454,6 +457,86 @@ async function cloudOverwrite(id){
   }catch(_){ toast('覆盖保存失败（后端未连接？）','warn'); }
 }
 
+/* ----- 删除确认弹窗（ADR-0007 4.3）：动态单例，复用 .modal-mask/.show 开关语义 -----
+ * 零新增 CSS：盒体内联样式的每个值取自 #help-modal .box / h2 / .close-row 与
+ * #approve-reject 的既有声明值（危险色 #7a3d3d/#c66 同款）；首次使用时挂到 body。 */
+let confirmResolve = null;
+function ensureConfirmModal(){
+  if($('#confirm-modal')) return;
+  const mask = document.createElement('div');
+  mask.className = 'modal-mask'; mask.id = 'confirm-modal';
+  mask.innerHTML = `
+    <div class="box" style="margin-top:10vh;width:380px;background:var(--panel2);
+         border:1px solid var(--border2);border-radius:14px;
+         box-shadow:0 24px 80px rgba(0,0,0,.6);padding:22px 26px">
+      <h2 style="font-size:15px;margin-bottom:12px"></h2>
+      <div id="confirm-text" style="font-size:12px;color:var(--text2);line-height:1.7"></div>
+      <div class="close-row" style="text-align:right;margin-top:16px">
+        <button class="ibtn" id="confirm-cancel">取消</button>
+        <button class="ibtn" id="confirm-ok" style="border-color:#7a3d3d;color:#c66">删除</button>
+      </div>
+    </div>`;
+  document.body.appendChild(mask);
+  $('#confirm-cancel').addEventListener('click', ()=>closeConfirm(false));
+  $('#confirm-ok').addEventListener('click', ()=>closeConfirm(true));
+  mask.addEventListener('mousedown', e=>{ if(e.target===e.currentTarget) closeConfirm(false); });
+}
+/* 关闭即决议（取消/遮罩/ESC → false，删除 → true）；三径关闭均不发请求，DELETE 由调用方在 true 后发出 */
+function closeConfirm(v){
+  const m = $('#confirm-modal');
+  if(!m || !m.classList.contains('show')) return;
+  m.classList.remove('show');
+  const r = confirmResolve; confirmResolve = null;
+  r && r(v);
+}
+function confirmDialog({title='删除确认', html='', okText='删除'} = {}){
+  ensureConfirmModal();
+  if(confirmResolve) confirmResolve(false);      /* 单例防重开：已在开时先按取消收掉前一个 */
+  const m = $('#confirm-modal');
+  m.querySelector('h2').textContent = title;
+  $('#confirm-text').innerHTML = html;
+  $('#confirm-ok').textContent = okText;
+  m.classList.add('show');
+  return new Promise(r=>{ confirmResolve = r; });
+}
+/* 删除服务端工作流（ADR-0007 4.1/4.4）：确认 → DELETE → 刷新 + 防复活清理。
+ * 不设 running 拦截（ADR 4.1 如实区分：删除不触碰画布与执行状态，引擎用提交时内存快照） */
+async function cloudDeleteWorkflow(id){
+  const target = (SVR.wf||[]).find(w=>w.id===id);
+  const name = target ? target.name : id;
+  const ok = await confirmDialog({
+    html: `将从服务端删除工作流 <b style="color:var(--text)">「${esc(name)}」</b>。<br>此操作不可恢复；对应标签页的本地内容不受影响。`,
+  });
+  if(!ok) return;
+  try{ await deleteWorkflowFromServer(id); }
+  catch(_){ toast('删除失败（后端未连接？）','warn'); return; }
+  /* 防复活清理：清掉 tabs 中指向该 id 的关联，否则该 tab 下次「保存到服务端」
+     会带旧 wfId upsert、以同一 id 复活刚删的工作流；清理后保存 = 生成新 id 新条目 */
+  let touched = false;
+  tabs.forEach(t=>{ if(t.wfId===id){ t.wfId = undefined; touched = true; } });
+  if(touched) saveLocal();
+  toast(`已删除『${name}』`,'ok');
+  refreshWorkflows();
+}
+/* 删除服务端运行记录（ADR-0007 4.2/4.4）：确认 → DELETE → 回放缓存/展开态清理 + 刷新 */
+async function deleteRunCard(id){
+  const r = (SVR.runs||[]).find(x=>x.id===id);
+  const name = r ? r.workflow_name : id;
+  const ok = await confirmDialog({
+    html: `将删除运行记录 <b style="color:var(--text)">「${esc(name)}」</b> 及其全部事件回放。<br>此操作不可恢复。`,
+  });
+  if(!ok) return;
+  try{ await deleteRunFromServer(id); }
+  catch(err){ /* 409 = 活动 run（守卫在服务端内存注册表）；文案转译为人话 */
+    toast(/409/.test(String(err.message)) ? '运行中的记录不可删除，等运行结束后再试' : '删除失败（后端未连接？）','warn');
+    return;
+  }
+  SVR.runEvents.delete(id);                        /* 回放缓存 */
+  if(SVR.openRunId===id) SVR.openRunId = null;     /* 收起展开回放态 */
+  toast(`已删除运行记录『${name}』`,'ok');
+  refreshRuns();
+}
+
 /* ----- 模板侧栏 ----- */
 function renderSideTemplates(body){
   body.innerHTML = `<div class="side-section-title">官方模板</div>` +
@@ -501,6 +584,8 @@ function paintServerRuns(){
         <span class="ri">${I(meta.icon)}</span>
         <div style="min-width:0;flex:1"><div class="rn">${esc(r.workflow_name)}</div><div class="rt">${fmtTs(r.started_at)}${meta.suffix}</div></div>
         <span class="rd">${r.done??0}/${r.total??0} 节点<br>${dur}</span>
+        <button class="ibtn" data-run-del="${esc(r.id)}" style="flex:none;height:24px;padding:0 7px"
+          title="删除此运行记录（不可恢复，需确认）">${I('trash')}</button>
       </div>` + (SVR.openRunId===r.id ? replayHtml(r.id) : '');
   }).join('') : `<div class="side-empty">服务端暂无运行记录<br>点击画布顶部的「▶ 运行」开始</div>`;
 }
@@ -533,10 +618,12 @@ $('#side-body').addEventListener('click', e=>{
     const i = settings.favs.indexOf(k);
     i>=0?settings.favs.splice(i,1):settings.favs.push(k);
     saveLocal(); renderSidebar(); return; }
-  /* 服务端分支（ADR-0006）：覆盖按钮在 data-wf-id 卡片内部，须先于整卡「打开」判断 */
+  /* 服务端分支（ADR-0006/0007）：卡内按钮须先于整卡判断（删除/覆盖先于「打开」，删除先于「展开回放」） */
+  const wdel = e.target.closest('[data-wf-del]'); if(wdel){ cloudDeleteWorkflow(wdel.dataset.wfDel); return; }
   const ovw = e.target.closest('[data-wf-overwrite]'); if(ovw){ cloudOverwrite(ovw.dataset.wfOverwrite); return; }
   const cwf = e.target.closest('.wf-item[data-wf-id]'); if(cwf){ openServerWorkflow(cwf.dataset.wfId); return; }
   if(e.target.closest('#wf-cloud-save')){ cloudSaveCurrent(); return; }
+  const rdel = e.target.closest('[data-run-del]'); if(rdel){ deleteRunCard(rdel.dataset.runDel); return; }
   const srv = e.target.closest('.run-item[data-run-id]'); if(srv){ toggleRunReplay(srv.dataset.runId); return; }
   const wf = e.target.closest('.wf-item[data-i]'); if(wf){ switchTab(+wf.dataset.i); return; }
   const sm = e.target.closest('.wf-item[data-sample]'); if(sm){ addTabFromSample(sm.dataset.sample); return; }
@@ -2178,6 +2265,7 @@ window.addEventListener('keydown', e=>{
   if(e.key==='Escape'){
     if($('#search-modal').classList.contains('show')) return closeSearch();
     if($('#help-modal').classList.contains('show')) return $('#help-modal').classList.remove('show');
+    if($('#confirm-modal') && $('#confirm-modal').classList.contains('show')) return closeConfirm(false);
     if($('#ctxmenu').classList.contains('show')) return $('#ctxmenu').classList.remove('show');
     if(dragCtx&&dragCtx.mode==='link'){ ghost.style.display='none'; dragCtx=null; document.body.classList.remove('linking'); nodesLayer.querySelectorAll('.port').forEach(p=>p.classList.remove('compat')); }
     clearSel(); return;

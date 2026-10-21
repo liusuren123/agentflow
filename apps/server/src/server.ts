@@ -8,6 +8,8 @@
  *  · POST /api[/v1]/run/:id/approve → 人工审批 通过/拒绝
  *  · GET/PUT /api/v1/workflows[/:id] → 工作流存取/upsert（ADR-0005）
  *  · GET  /api/v1/runs?limit=  · GET /api/v1/runs/:id → 运行历史 + 事件回放
+ *  · DELETE /api/v1/workflows/:id · DELETE /api/v1/runs/:id → 删除（ADR-0007，
+ *    run 级联清 run_events；活动 run 以内存注册表判 409）
  *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
  *  （workflows/runs 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
  *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
@@ -30,6 +32,7 @@ import { logger } from './logger.js';
 import { sseWriteEvent, sseWriteComment } from './util.js';
 import {
   initStore, closeStore, openRunRecorder, listWorkflows, getWorkflow, saveWorkflow, listRuns, getRunDetail,
+  deleteWorkflow, deleteRun,
 } from './store.js';
 import type { RunCtx } from './types.js';
 
@@ -165,6 +168,20 @@ const runDetailHandler: RequestHandler = (req, res)=>{
   res.json(d);                                 // { run, events } —— 完整事件回放
 };
 
+/* ---------- 删除（ADR-0007，仅 v1 命名空间） ---------- */
+const workflowDeleteHandler: RequestHandler = (req, res)=>{
+  if(!deleteWorkflow(String(req.params.id))){ res.status(404).json({ error:'workflow not found' }); return; }
+  res.json({ ok:true });                       // 与 stop/approve 应答同型
+};
+const runDeleteHandler: RequestHandler = (req, res)=>{
+  const id = String(req.params.id);
+  /* 活动 run 守卫用内存注册表（runsById）而非 DB status：进程崩溃重启后残留的
+     僵尸 running 行恰需可删；真正活动的 run 删行会让 recorder 持续写孤儿事件行 */
+  if(runsById[id]){ res.status(409).json({ error:'run is active' }); return; }
+  if(!deleteRun(id)){ res.status(404).json({ error:'run not found' }); return; }
+  res.json({ ok:true });                       // runs 行 + 全部 run_events 行同一事务删除
+};
+
 /* ---------- 路由注册：/api/v1/*（正式）+ /api/*（旧别名，前端零改动） ---------- */
 for(const base of ['/api', '/api/v1']){
   app.get(`${base}/health`, healthHandler);
@@ -180,6 +197,9 @@ app.put('/api/v1/workflows', workflowsPutHandler);
 app.put('/api/v1/workflows/:id', workflowsPutHandler);
 app.get('/api/v1/runs', runsListHandler);
 app.get('/api/v1/runs/:id', runDetailHandler);
+/* ADR-0007 删除端点：仅注册 v1（沿 ADR-0005：持久化端点无旧别名） */
+app.delete('/api/v1/workflows/:id', workflowDeleteHandler);
+app.delete('/api/v1/runs/:id', runDeleteHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{

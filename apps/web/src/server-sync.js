@@ -24,6 +24,9 @@ export const fetchWorkflowList = () => apiJson('/workflows').then(j => Array.isA
 export const fetchWorkflow = id => apiJson('/workflows/' + encodeURIComponent(id));
 export const saveWorkflowToServer = (id, body) => apiJson('/workflows' + (id ? '/' + encodeURIComponent(id) : ''),
   { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+/* 删除（ADR-0007）：单卡删除；成功 {ok:true}，404/409 走非 2xx 抛错（HTTP 状态进 message） */
+export const deleteWorkflowFromServer = id => apiJson('/workflows/' + encodeURIComponent(id), { method: 'DELETE' });
+export const deleteRunFromServer = id => apiJson('/runs/' + encodeURIComponent(id), { method: 'DELETE' });
 
 /* 运行历史：列表（started_at 倒序）/ 单条完整事件回放 */
 export const fetchRunList = (limit = 50) => apiJson('/runs?limit=' + limit).then(j => Array.isArray(j.runs) ? j.runs : []);
