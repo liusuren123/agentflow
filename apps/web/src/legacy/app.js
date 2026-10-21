@@ -834,7 +834,7 @@ function edgeSvg(e){
   const tip = document.createElementNS('http://www.w3.org/2000/svg','title');
   const sn = nodeById(e.fn), tn = nodeById(e.tn);
   if(sn&&tn) tip.textContent =
-    `${sn.title||defOf(sn).name}.${defOf(sn).outputs[e.fp].n} → ${tn.title||defOf(tn).name}.${defOf(tn).inputs[e.tp].n}`;
+    `${sn.title||defOf(sn).name}.${defOf(sn).outputs[e.fp]?.n ?? ''} → ${tn.title||defOf(tn).name}.${defOf(tn).inputs[e.tp]?.n ?? ''}`;
   const d = edgeD(e);
   hit.setAttribute('d',d); vis.setAttribute('d',d);
   const mid = cubicMid(portCenter(e.fn,'out',e.fp), portCenter(e.tn,'in',e.tp));
