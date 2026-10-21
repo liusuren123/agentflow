@@ -97,7 +97,8 @@ idle → PLAN → SPEC → BUILD → VERIFY ─PASS→ CLOSE → idle
 权威版本，复制即用。推荐组合：定时·心跳（每天）+ 定时·治理（每周日）；闲时任务用于
 按需补跑，同一描述即可。
 
-### 5.1 定时 · 进化心跳（建议每天 09:00，cron `0 9 * * *`，标题「进化心跳（每天 09:00）」）
+### 5.1 定时 · 进化心跳（推荐每 2 小时，cron `0 */2 * * *`；夜间降本可用 `0 9-23/2 * * *`，
+标题「进化心跳（每 2 小时）」。慢节奏场景退回每天 09:00 亦可，同一描述通用）
 
 ```
 你是 AgentFlow 进化工作流的协调者。按顺序读取 CONSTITUTION.md、AGENTS.md、
@@ -106,12 +107,16 @@ docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后严格按 WORKFLOW.
    唯一例外是 phase != idle 且脏文件仅限当前迭代目录与 docs/evolution/ 状态文件
    （上次中途中断的产物），此时直接续跑。其余不满足则不做任何改动，将 phase 置 stuck
    并在 last_result 写明原因后结束。
-2) 若 phase != idle：按 STATE.phase 续跑当前阶段。
-3) 否则从 docs/evolution/BACKLOG.md 选取最高优先级 ready 项，开启 STATE.iteration 所指
-   迭代，依 PLAN→SPEC→BUILD→VERIFY→CLOSE 逐阶段派发 .zcode/agents/ 对应子智能体
+2) 防双跑：若 phase 处于迭代中且 STATE.updated 距今不足 30 分钟，视为上一运行可能仍在
+   进行，本次不做任何动作直接结束。
+3) 若 phase != idle：按 STATE.phase 续跑当前阶段。
+4) 否则从 docs/evolution/BACKLOG.md 选取最高优先级 ready 项（优先 S/M 大小；L 项先按
+   WORKFLOW.md §4 拆分后再选），开启 STATE.iteration 所指迭代，依
+   PLAN→SPEC→BUILD→VERIFY→CLOSE 逐阶段派发 .zcode/agents/ 对应子智能体
    （product-manager / spec-designer / code-developer / test-manager；派发指令中给出迭代
-   目录与相关文件路径，并提示其先读宪法与 AGENTS.md）。
-4) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
+   目录与相关文件路径，并提示其先读宪法与 AGENTS.md）；若 ready 队列枯竭，本迭代改为
+   「补题」（由 product-manager 从 ROADMAP 主题补充新项）。
+5) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
    绝不强制推送；一次迭代至多一个产品提交 + 一个归档提交。与 CONSTITUTION.md 冲突时以宪法为准。
 ```
 
