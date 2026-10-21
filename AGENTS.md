@@ -7,7 +7,8 @@
 
 ```
 apps/web/           前端（React 18 + Vite + TS，宪法保护渲染结果 1:1）
-  src/skeleton.html  静态骨架原文（经 dangerouslySetInnerHTML 注入；JSX 化为待办 CP-C）
+  src/Skeleton.tsx   静态骨架等价 JSX（ADR-0002 CP-C 已落地；skeleton.html 已退役，
+                     原文权威在 git 历史与 golden 基线）
   src/legacy/app.js  画布/交互命令式模块（自原单文件逐字提取 + bootLegacyApp 包装）
   src/server-sync.js /api/v1 数据接入层：fetch 封装 + 服务端列表缓存 + 事件回放
                      映射（ADR-0006；被 legacy 消费，不操作面板 DOM）

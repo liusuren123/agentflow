@@ -14,7 +14,7 @@
 
 # ADR-0002 · 前端演进策略：机械移植 + 命令式画布保留
 
-- 状态：已接受（2026-10-21，用户选定 React + 全仓 TS）；**CP-B/CP-D 已落地，CP-C 待办**
+- 状态：已接受（2026-10-21，用户选定 React + 全仓 TS）；**CP-B/CP-C/CP-D 全部落地**
 - 背景：单文件 2988 行不可长期维护，需框架化；但 ADR-0001 禁止渲染结果变化。
 - 决策：
   1. React 18 只承载**静态骨架**（顶栏/侧栏/属性面板/弹窗）的等价 JSX 化，
@@ -30,9 +30,18 @@
   - CP-D（2026-10-21 完成）：legacy 的 DEFS 字面量替换为 @agentflow/shared 导入；
     server 托管 apps/web/dist；原 index.html 与提取工具退役进 git 历史；
     门禁默认 target 切换为构建产物；离线双击与真实 E2E 复验通过。
-  - **CP-C（待办）**：skeleton.html → 等价 JSX（属性 camelCase/注释/style 对象），
-    分小步做，每步过门禁。当前 ?raw 注入已达像素 1:1，CP-C 不改变渲染，
-    属 React 声明式表达的渐进改善，无排期压力。
+  - **CP-C（2026-10-21 完成）**：skeleton.html → 等价 JSX（Skeleton.tsx，约 170 行）。
+    机械转换规则：id/class/层级/属性值逐字保留；class→className；
+    spellcheck→spellCheck={false}；5 处内联 style 串→对象（CSS 值逐字）；
+    非 void 标签显式闭合；HTML 注释→JSX 注释；`<table>` 内显式 `<tbody>`
+    （原 DOM 由解析器自动插入，显式化后运行时 DOM 形状一致）。App.tsx 移除
+    ?raw/dangerouslySetInnerHTML 与 #af-shell 适配层（#root 内联 height:100%
+    直接作 #app 父级，高度链不变）；skeleton.html 删除（原文权威在 git 历史
+    与 golden 基线）。分两步验证：第一步仅转 #viewport 外的全部结构
+    （viewport 子树仍原文注入），第二步全量 JSX——两步均 4 场景 diffPx=0
+    （全量步遭遇一次 s3-library 23px 偶发失败，定位为 rail 图标抗锯齿的
+    Chromium 栅格化抖动：同一 dist 产物复跑 3 次全绿，rail 代码两步间未变）；
+    npm test 5/5；离线 file:// 冒烟通过（8 节点/7 连线渲染、模拟运行可启动）。
 - 备选：全响应式化（拒绝：门禁风险与性能不可控）；继续单文件（拒绝：不可维护）。
 
 # ADR-0003 · 单一事实源 packages/shared
