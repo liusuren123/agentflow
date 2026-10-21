@@ -98,26 +98,27 @@ idle → PLAN → SPEC → BUILD → VERIFY ─PASS→ CLOSE → idle
 按需补跑，同一描述即可。
 
 ### 5.1 定时 · 进化心跳（推荐每 2 小时，cron `0 */2 * * *`；夜间降本可用 `0 9-23/2 * * *`，
-标题「进化心跳（每 2 小时）」。慢节奏场景退回每天 09:00 亦可，同一描述通用）
+标题「进化心跳（每 2 小时）」。慢节奏场景退回每天一次亦可，同一描述通用）
+
+执行引擎为混合架构：协调者优先调用**保存的项目工作流 `evolution-iteration`**
+（`.zcode/workflows/evolution-iteration.dwf.ts`，本机文件、不入库；CreateWorkflow 的
+saved 源、无参数）。工作流把 §4 状态机脚本化：基线预检（含跨项连败熔断）、四角色
+subagent（各自先读 `.zcode/agents/` 职责定义）、build/gate/test 门禁与全部 git 操作由
+脚本统一执行、修复循环 ≤2、失败清理回滚、空产品提交打回、归档提交。工作流不可用
+（未保存/平台需确认/报错）时回退为按 §4 手动协调。任务描述：
 
 ```
 你是 AgentFlow 进化工作流的协调者。按顺序读取 CONSTITUTION.md、AGENTS.md、
-docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后严格按 WORKFLOW.md 执行一次「进化心跳」：
-1) 安全预检：STATE.md 可解析、npm run build + npm run gate 基线绿；git 工作区须干净——
-   唯一例外是 phase != idle 且脏文件仅限当前迭代目录与 docs/evolution/ 状态文件
-   （上次中途中断的产物），此时直接续跑。其余不满足则不做任何改动，将 phase 置 stuck
-   并在 last_result 写明原因后结束。
-2) 防双跑：若 phase 处于迭代中且 STATE.updated 距今不足 30 分钟，视为上一运行可能仍在
-   进行，本次不做任何动作直接结束。
-3) 若 phase != idle：按 STATE.phase 续跑当前阶段。
-4) 否则从 docs/evolution/BACKLOG.md 选取最高优先级 ready 项（优先 S/M 大小；L 项先按
-   WORKFLOW.md §4 拆分后再选），开启 STATE.iteration 所指迭代，依
-   PLAN→SPEC→BUILD→VERIFY→CLOSE 逐阶段派发 .zcode/agents/ 对应子智能体
-   （product-manager / spec-designer / code-developer / test-manager；派发指令中给出迭代
-   目录与相关文件路径，并提示其先读宪法与 AGENTS.md）；若 ready 队列枯竭，本迭代改为
-   「补题」（由 product-manager 从 ROADMAP 主题补充新项）。
-5) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
-   绝不强制推送；一次迭代至多一个产品提交 + 一个归档提交。与 CONSTITUTION.md 冲突时以宪法为准。
+docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后执行一次「进化心跳」：
+1) 预检：STATE.md 可解析；若 phase 处于迭代中且 updated 距今不足 30 分钟，视为上一运行
+   仍在进行，本次直接结束不做任何动作。
+2) 首选路径：用 CreateWorkflow 的 saved 源调用项目工作流 evolution-iteration（无参数），
+   一次调用完成整个迭代（内含基线预检 / PLAN / SPEC / BUILD+门禁 / VERIFY / 修复循环≤2 /
+   回滚清理 / 归档提交）。运行结束后向用户转述其结论即可，不要重复执行其中的阶段。
+3) 回退路径：工作流未保存、调用被拒或报错时，按 WORKFLOW.md §4 手动协调执行一次迭代
+   （逐阶段派发 .zcode/agents/ 子智能体）。
+4) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
+   绝不强制推送。与 CONSTITUTION.md 冲突时以宪法为准。
 ```
 
 ### 5.2 定时 · 周度治理（建议每周日 10:00，cron `0 10 * * 0`，标题「周度治理（每周日 10:00）」）
