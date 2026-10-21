@@ -13,16 +13,28 @@ React 机械移植（ADR-0002 系列）的收尾：等价 JSX 骨架覆盖度核
 全绿，不是「看起来一样」。**
 
 - 里程碑 M1 · 全部静态骨架等价 JSX 化
-  - 状态：**已落地，待 BK-0001 交叉核对手工关账**（证据：ADR-0002 实施记录 CP-B/CP-D/
-    CP-C 均于 2026-10-21 完成、每步 4 场景 diffPx=0；`apps/web/src/Skeleton.tsx` 为唯一
-    骨架源，skeleton.html 已退役）
-  - 关账验收：`npm run build && npm run gate` 4 场景 diffPx=0；`npm test` 5/5；
-    BK-0001 盘点确认 `apps/web/src` 无 `?raw` / `dangerouslySetInnerHTML` 残留注入路径
+  - 状态：**已完成（迭代 0001 盘点关账，BK-0001）**
+  - 关账证据（2026-10-22 BUILD 复核，详见 `docs/evolution/iterations/0001/JOURNAL.md`）：
+    - CP-B/C/D 落地核对 10/10 一致（B1–B4 / C1–C3 / D1–D3）：构建链在位
+      （`apps/web/package.json:14,21-23` + `apps/web/vite.config.ts:7`）；server 托管
+      dist（`apps/server/src/server.ts:52-56`）；门禁默认 target 为构建产物
+      （`tools/pixel-gate/gate.mjs:25-30`）；`Skeleton.tsx` 唯一骨架源、skeleton.html
+      退役（828ae57 同提交 −168/+182）；legacy 消费 `@agentflow/shared`
+      （`apps/web/src/legacy/app.js:3,133`）；原单文件与提取工具退役（git 索引与
+      工作区均无，apps/web/index.html 12 行系 Vite 合法入口）
+    - 残留注入路径 0 匹配：`grep -rn "dangerouslySetInnerHTML" apps/web/src` 与
+      `grep -rn "?raw" apps/web/src` 均 0 输出、exit=1（JOURNAL §2）
+    - gate/test 基线：2026-10-22 治理日全量回归绿（`weekly/43.md` §二）；迭代 0001
+      复跑由工作流门禁统一执行，结果以 `iterations/0001/REPORT.md` 为准
 - 里程碑 M2 · legacy 模块与 React 骨架职责边界文档化
-  - 状态：未开始（无边界文档产物）
-  - 验收：边界说明文档合入 `docs/`（明确三块——Skeleton.tsx 只承载静态骨架；
-    `src/legacy/app.js` 画布/交互命令式；`src/server-sync.js` 数据接入、不操作面板 DOM）；
-    合入后 `npm run gate` 仍 4 场景全绿（文档变更不得触碰渲染路径）
+  - 状态：未开始（迭代 0001 盘点确认：职责边界散落于各文件头注 + AGENTS.md 仓库地图
+    ——`Skeleton.tsx:1-7` / `legacy/app.js:1-2` / `server-sync.js:1-9`——无独立边界
+    文档合入 `docs/`，此即本里程碑全部余量，证据见 `iterations/0001/JOURNAL.md` §4）
+  - 验收（迭代 0001 细化）：① 边界说明文档合入 `docs/`，覆盖四模块——`Skeleton.tsx`
+    （182 行）只承载静态骨架等价 JSX；`src/legacy/app.js`（2419 行）画布/交互命令式
+    （逐字提取 + bootLegacyApp）；`src/server-sync.js`（131 行）/api/v1 数据接入、
+    不操作面板 DOM；`app.css`（532 行）逐字冻结；② 合入后 `npm run gate` 仍 4 场景
+    全绿（文档变更不得触碰渲染路径）
 
 ## T2 · 质量基建
 
@@ -91,7 +103,9 @@ README 与 `docs/ai-sdk-7-功能汇总.md` 随实现同步。
 
 ## 待办（治理周维护）
 
-- 迭代 0001 首跳取 BK-0001（P0/doc/S）；其关账结论回写本图完成度标注。
+- 迭代 0001（BK-0001）盘点完成：T1-M1 关账（CP-B/C/D 核对 10/10 一致、残留注入路径
+  grep ×2 均 0 匹配），证据 `iterations/0001/JOURNAL.md`（门禁复跑结果以 REPORT 为准）；
+  T1-M2 验收口径已细化，待后续选题。
 - ready 队列 2026-10-22 补至 6 项（BK-0001/0002/0003/0004/0006/0007），预计支撑至
   下个治理日；枯竭时心跳按 WORKFLOW §4 转「补题」。
 - 待批准区现 1 项（BK-9001 日志级别过滤），等待用户批复或驳回；不催办、不代批。

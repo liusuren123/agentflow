@@ -8,7 +8,7 @@
 
 | ID | 标题 | 类型 | 触UI | 优先 | 大小 | 状态 | 来源 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| BK-0001 | 现状盘点：核对 ADR-0002 各 CP 落地状态与移植余量，细化 ROADMAP 里程碑 | doc | 否 | P0 | S | ready | T1 | 产出写入 ROADMAP.md；不写代码；迭代 0001 首选 |
+| BK-0001 | 现状盘点：核对 ADR-0002 各 CP 落地状态与移植余量，细化 ROADMAP 里程碑 | doc | 否 | P0 | S | blocked | T1 | 迭代 0001 终态 blocked：防打转校验判定产品提交为空（docs/evolution 之外无任何改动）不予提交；盘点与 VERIFY 本身 PASS（iterations/0001/REPORT.md），ROADMAP 回写产出随归档提交入库，重立项口径待治理日裁定 |
 | BK-0002 | 后端 E2E 冒烟脚本：`/api/v1` workflows/runs CRUD + `/api/v1/run` SSE 全事件链 | test | 否 | P1 | M | ready | T2 | 一键可跑（建议 `npm run smoke:server`）；是 T3 各项 VERIFY 的公共基座，故列 P1 表首 |
 | BK-0003 | 契约测试补齐：16 种节点注册表与 SSE 事件契约的 DEFS 漂移防护覆盖核对 | test | 否 | P1 | M | ready | T2 | 已核对现状（2026-10-22）：默认值仅 6/33 抽样断言、HANDLERS 键集无防护、事件反例仅 2 条；补差点见 ROADMAP T2-M1 |
 | BK-0006 | README 能力同步：补记 ADR-0006/0007 已落地能力（DELETE 端点 + 服务端工作流/历史回放） | doc | 否 | P1 | S | ready | T4 | 2026-10-22 核实 README 止于 ADR-0005（无 DELETE/删除记述）；纯文档 |
