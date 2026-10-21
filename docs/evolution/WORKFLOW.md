@@ -93,35 +93,37 @@ idle → PLAN → SPEC → BUILD → VERIFY ─PASS→ CLOSE → idle
 
 ## 5. 定时执行机制
 
-两条自动化（由用户确认后以 CronCreate 启用；唤起词以本节为权威版本）：
+单条每日自动化（平台限制每个会话仅一条，故心跳与治理合一，周日自动切换模式；
+唤起词以本节为权威版本）：
 
-### 5.1 进化心跳 `evo-heartbeat`（周一至周六 09:00，cron `0 9 * * 1-6`）
+### 5.1 `evo-loop`（每天 09:00，cron `0 9 * * *`）
 
 ```
 你是 AgentFlow 进化工作流的协调者。按顺序读取 CONSTITUTION.md、AGENTS.md、
-docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后严格按 WORKFLOW.md 执行一次「进化心跳」：
-1) 安全预检：STATE.md 可解析、npm run gate 基线绿；git 工作区须干净——唯一例外是
-   phase != idle 且脏文件仅限当前迭代目录与 docs/evolution/ 状态文件（上次中途中断的
-   产物），此时直接续跑。其余不满足则不做任何改动，将 phase 置 stuck 并在 last_result
-   写明原因后结束。
+docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后判断今天星期几，执行对应模式：
+
+【周一至周六 · 进化心跳】严格按 WORKFLOW.md 执行一次完整迭代：
+1) 安全预检：STATE.md 可解析、npm run build + npm run gate 基线绿；git 工作区须干净——
+   唯一例外是 phase != idle 且脏文件仅限当前迭代目录与 docs/evolution/ 状态文件
+   （上次中途中断的产物），此时直接续跑。其余不满足则不做任何改动，将 phase 置 stuck
+   并在 last_result 写明原因后结束。
 2) 若 phase != idle：按 STATE.phase 续跑当前阶段。
-3) 否则从 docs/evolution/BACKLOG.md 选取最高优先级 ready 项，开启 STATE.iteration 所指迭代，
-   依 PLAN→SPEC→BUILD→VERIFY→CLOSE 逐阶段派发 .zcode/agents/ 对应子智能体
-   （派发指令中给出迭代目录与相关文件路径，并提示其先读宪法与 AGENTS.md）。
-4) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
-   绝不强制推送；一次迭代至多一个产品提交 + 一个归档提交。与 CONSTITUTION.md 冲突时以宪法为准。
-```
+3) 否则从 docs/evolution/BACKLOG.md 选取最高优先级 ready 项，开启 STATE.iteration 所指
+   迭代，依 PLAN→SPEC→BUILD→VERIFY→CLOSE 逐阶段派发 .zcode/agents/ 对应子智能体
+   （product-manager / spec-designer / code-developer / test-manager；派发指令中给出迭代
+   目录与相关文件路径，并提示其先读宪法与 AGENTS.md）。
 
-### 5.2 周度治理 `evo-governance`（周日 09:00，cron `0 9 * * 0`）
-
-```
-你是 AgentFlow 进化工作流的协调者，执行「周度治理」（治理日不写业务代码）。读取
-CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md、STATE.md、BACKLOG.md、ROADMAP.md、metrics.md：
+【周日 · 周度治理】治理日不写业务代码。另读 BACKLOG.md、ROADMAP.md、metrics.md：
 1) 派发 product-manager：结合 metrics 与近周迭代重排 BACKLOG、更新 ROADMAP 里程碑、
    补充枯竭的 ready 项（触 UI 项仍入待批准区）。
-2) 派发 test-manager：全量回归（npm run gate + npm test + 后端冒烟），产出体检结论。
+2) 派发 test-manager：全量回归（npm run build + npm run gate + npm test + 后端冒烟），
+   产出体检结论。
 3) 汇总周报 docs/evolution/weekly/<ISO周号>.md：本周迭代结果、指标趋势、待批准清单、
    风险与建议；STATE 为 stuck 或连续 failed 的项在周报显著标注，等待用户决策。
+
+【共同铁律】触 UI 的项只能转入待批准区，绝不自主实现 UI 变更；绝不运行
+npm run gate:update；绝不强制推送；一次迭代至多一个产品提交 + 一个归档提交。
+与 CONSTITUTION.md 冲突时以宪法为准。
 ```
 
 ### 5.3 续跑与熔断
