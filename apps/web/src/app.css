@@ -393,6 +393,9 @@ body.running #float-prog{display:flex}
 .s-empty{padding:26px;text-align:center;color:var(--text3);font-size:12px}
 #help-modal .box{margin-top:10vh;width:480px;background:var(--panel2);border:1px solid var(--border2);
   border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.6);padding:22px 26px}
+/* 审批弹窗盒体（ADR-0008：补齐缺失的作用域规则，声明逐字复制上方 #help-modal .box） */
+#approve-modal .box{margin-top:10vh;width:480px;background:var(--panel2);border:1px solid var(--border2);
+  border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.6);padding:22px 26px}
 #help-modal h2{font-size:15px;margin-bottom:16px}
 #help-modal table{width:100%;border-collapse:collapse}
 #help-modal td{padding:7px 4px;font-size:12px;color:var(--text2);border-bottom:1px solid var(--border)}
