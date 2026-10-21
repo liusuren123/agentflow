@@ -93,16 +93,15 @@ idle → PLAN → SPEC → BUILD → VERIFY ─PASS→ CLOSE → idle
 
 ## 5. 定时执行机制
 
-单条每日自动化（平台限制每个会话仅一条，故心跳与治理合一，周日自动切换模式；
-唤起词以本节为权威版本）：
+自动化由**用户在客户端手动创建并持有**（AI 协作者不代建、不代改）；唤起词以本节为
+权威版本，复制即用。推荐组合：定时·心跳（每天）+ 定时·治理（每周日）；闲时任务用于
+按需补跑，同一描述即可。
 
-### 5.1 `evo-loop`（每天 09:00，cron `0 9 * * *`）
+### 5.1 定时 · 进化心跳（建议每天 09:00，cron `0 9 * * *`，标题「进化心跳（每天 09:00）」）
 
 ```
 你是 AgentFlow 进化工作流的协调者。按顺序读取 CONSTITUTION.md、AGENTS.md、
-docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后判断今天星期几，执行对应模式：
-
-【周一至周六 · 进化心跳】严格按 WORKFLOW.md 执行一次完整迭代：
+docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后严格按 WORKFLOW.md 执行一次「进化心跳」：
 1) 安全预检：STATE.md 可解析、npm run build + npm run gate 基线绿；git 工作区须干净——
    唯一例外是 phase != idle 且脏文件仅限当前迭代目录与 docs/evolution/ 状态文件
    （上次中途中断的产物），此时直接续跑。其余不满足则不做任何改动，将 phase 置 stuck
@@ -112,21 +111,31 @@ docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后判断今天星期�
    迭代，依 PLAN→SPEC→BUILD→VERIFY→CLOSE 逐阶段派发 .zcode/agents/ 对应子智能体
    （product-manager / spec-designer / code-developer / test-manager；派发指令中给出迭代
    目录与相关文件路径，并提示其先读宪法与 AGENTS.md）。
+4) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
+   绝不强制推送；一次迭代至多一个产品提交 + 一个归档提交。与 CONSTITUTION.md 冲突时以宪法为准。
+```
 
-【周日 · 周度治理】治理日不写业务代码。另读 BACKLOG.md、ROADMAP.md、metrics.md：
+### 5.2 定时 · 周度治理（建议每周日 10:00，cron `0 10 * * 0`，标题「周度治理（每周日 10:00）」）
+
+```
+你是 AgentFlow 进化工作流的协调者，执行「周度治理」（治理日不写业务代码）。按顺序读取
+CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md、docs/evolution/STATE.md、
+docs/evolution/BACKLOG.md、docs/evolution/ROADMAP.md、docs/evolution/metrics.md 后：
 1) 派发 product-manager：结合 metrics 与近周迭代重排 BACKLOG、更新 ROADMAP 里程碑、
    补充枯竭的 ready 项（触 UI 项仍入待批准区）。
 2) 派发 test-manager：全量回归（npm run build + npm run gate + npm test + 后端冒烟），
    产出体检结论。
 3) 汇总周报 docs/evolution/weekly/<ISO周号>.md：本周迭代结果、指标趋势、待批准清单、
    风险与建议；STATE 为 stuck 或连续 failed 的项在周报显著标注，等待用户决策。
-
-【共同铁律】触 UI 的项只能转入待批准区，绝不自主实现 UI 变更；绝不运行
-npm run gate:update；绝不强制推送；一次迭代至多一个产品提交 + 一个归档提交。
-与 CONSTITUTION.md 冲突时以宪法为准。
+4) 铁律：不写业务代码、不做产品提交；与 CONSTITUTION.md 冲突时以宪法为准。
 ```
 
-### 5.3 续跑与熔断
+### 5.3 闲时 · 补跑心跳（按需一次性，无固定时间，标题「进化心跳·闲时补跑」）
+
+任务描述直接复制 §5.1 全文。闲时任务适合：心跳因 stuck/环境问题中断后的补跑、
+BACKLOG 积压时的加急消化；执行时按同一状态机续跑，不会与定时心跳冲突（预检兜底）。
+
+### 5.4 续跑与熔断
 
 - 每次唤起先读 STATE：`phase != idle` 即从该阶段续跑（阶段产物已落盘，续跑安全）。
 - 熔断条件（任一即本次不动代码，置 `stuck` 并写明原因）：工作区不干净；gate 基线红；
