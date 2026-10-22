@@ -35,6 +35,7 @@
 | BK-0018 | 跨 run 记忆工具组：memory.get/set/list 以内建工具实装 | capability | 否 | P2 | S | proposed | T5 | env 开关启用时 llm handler 额外注入（不进前端 MCP_SERVERS 勾选清单——app.js:103 硬编码，清单扩展触 UI 归 BK-9006）；存储用现有 SQLite；实现轮 env 语义 needs-approval |
 | BK-0019 | 知识库管理管道后端：上传 → 切分 → 嵌入 → 入库，retrieval 检索真实化 | capability | 否 | P2 | M | proposed | T5 | 消除写死的 demo kb（nodes.ts:41 三个固定名）；嵌入存储选型 SPEC 定（SQLite 向量扩展 vs 独立库），若新增依赖 → needs-approval；kb 参数选项动态化触 UI（combo 选项数组=DEFS 呈现字段）归 BK-9006，本项先以映射表承接三个固定名 |
 | BK-0020 | 引擎级错误处理策略：on-error（重试/跳过/中止）引擎实现 | capability | 否 | P2 | S | proposed | T5 | 现状任一节点失败整个 run 即挂（engine 无降级路径）；引擎级 env 承载 → env 语义 needs-approval；节点粒度参数化（新参数=DEFS）归 BK-9006 |
+| BK-0021 | 节点定义目录制迁移：16 节点按 NDP v0.1 拆分为 src/nodes/&lt;type&gt;/{node.json,README.md}，nodes.ts 降为聚合层 | refactor | 否 | P1 | L | proposed | T5 | 规范 docs/node-definition-protocol.md（草案 v0.1，2026-10-23 经用户会话批准输出）；内容零漂移验收 = 契约测试全绿（16 节点/33 参数零改动）+ paramDefaultsOf 快照逐字节等价 + gate 全绿；POLICY 需批准区「shared DEFS 变更」存疑从严 → 实现轮开 needs-approval 附等价证据；T5-M3 新节点（BK-9002~9006）的协议前置 |
 
 ## 待批准区（已迁移 GitHub Issues · v2）
 
