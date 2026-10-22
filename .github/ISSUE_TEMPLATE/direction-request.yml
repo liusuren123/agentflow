@@ -1,0 +1,26 @@
+name: 方向提案（用户需求）
+description: 想让软件往哪个方向走——新能力、体验、不满意的地方。手机上 30 秒可填，进化循环会择优排期。
+labels: []
+body:
+  - type: textarea
+    id: want
+    attributes:
+      label: 想要什么
+      description: 一句话说清期望的行为或能力
+      placeholder: 例：历史面板能按状态筛出失败的 run
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: 为什么 / 使用场景
+      description: 什么场景下需要它（可选）
+    validations:
+      required: false
+  - type: textarea
+    id: ac
+    attributes:
+      label: 怎么算做成了（可选）
+      description: 验收标准草案，一句话即可
+    validations:
+      required: false
