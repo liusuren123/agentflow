@@ -6,6 +6,10 @@
 > 2026-10-22 迭代 0007 补题轮（终态 replenished，CLOSE 于 18:24）：ready 归零后补 4 项
 > （新增 BK-0012，晋升 BK-0005/0010/0011），防重复对照与依据见 iterations/0007/PRD.md；
 > 本轮无实现、无产品提交；AC1-AC6 核对通过（AC5：改动全限 docs/evolution/）。
+> 2026-10-23 用户会话立项（头脑风暴经用户确认落盘）：草案主题 T5「智能体运行时与
+> 工作台」——主池新增 BK-0013~0020（触UI=否，均 proposed；其中六项实现轮涉 POLICY
+> 需批准区要点，已在备注标注），触 UI 项 BK-9002~9006 随 v2 机制开 needs-approval
+> issues #2~#6；T5 待治理日 PM 正式并图。
 
 ## 主池
 
@@ -23,9 +27,18 @@
 | BK-0010 | golden 场景扩充提案 ADR 草案：工作流/历史面板在线态（s4/s5）基线扩充 | doc | 否 | P2 | S | ready | T2 | 草案完成后入待批准区；实现触 golden 基线与 tools/pixel-gate/，须用户批准（宪法第 3 条）后另行立项；0007 补题轮晋升 ready——现状核实 gate 仅 s0-s3 四场景（gate.mjs:61-64，无 s4/s5），T2-M3 承载项至今无迭代承载；本项产出仅 ADR 草案与待批准区条目，零 golden/pixel-gate 改动 |
 | BK-0011 | 悬挂 run 启动终结标记：服务启动时将上次进程遗留的 running 状态 run 收尾 | capability | 否 | P2 | S | ready | T3 | 周报 W43 体检 O1（库里 1 条 running 悬挂记录）；状态值沿用现有枚举、不新增契约字段；若 SPEC 评审发现触 UI 则转待批准区；0007 补题轮晋升 ready——现状核实服务启动无悬挂 run 收尾逻辑（server.ts 全文 grep "running" 仅 :179 注释；store.ts 无启动扫尾），runs 插入即 'running'（store.ts:106）、进程崩溃即永久悬挂；与 BK-0002 冒烟 409 断言（内存注册表判活）正交 |
 | BK-0012 | legacy 模块与 React 骨架职责边界文档化：四模块边界说明合入 docs/（ROADMAP T1-M2） | doc | 否 | P1 | S | done | T1 | 迭代 0008 终态 done：docs/frontend-module-boundaries.md 纯新增 178 行（四模块各一节×四要素 + 总览表 + 组合时序四步 + /api 作用域精确化注记，全部断言挂事实指针），产品提交 1ff70fb（`git show --numstat` 实查 +178/−0）；VERIFY PASS 6/6 AC 零缺陷（行数 182/2419/131/532 零漂移 + 指针抽查 30+ 条全中 + test:canvas 15/0 + 改动面白名单达成），证据 iterations/0008/REPORT.md；ROADMAP T1-M2 关账（T1 四里程碑全部闭环） |
+| BK-0013 | 真 MCP client 基座：连接外部 MCP server（stdio / Streamable HTTP），工具清单发现与转发执行 | capability | 否 | P1 | L | proposed | T5 | 现状为内置伪 MCP（tools.ts IMPL 与前端 MCP_SERVERS 一一对应，连不了任意外部 server）；零 UI 边界：server 清单先由后端配置驱动、工具自动注入会话，前端勾选体验归 BK-9006；实现轮涉新增 npm 依赖 + 新增出站类别（POLICY 需批准区）→ SPEC 定稿后开 needs-approval |
+| BK-0014 | 智能体扩展发现器：扫描项目 .mcp.json / .agents/ 与 ~/.agents/ 下的 mcp/skill/rules 并注册进会话上下文 | capability | 否 | P2 | M | proposed | T5 | 依赖 BK-0013；~/.agents 为用户主权区，自动注入须白名单 + 首次确认 + 审计留痕；rules/AGENTS.md 类注入 system 上下文；实现轮涉新增出站类别（POLICY 需批准区） |
+| BK-0015 | LLM 节点自主 agent loop：停止条件、步数/token 预算、中断与恢复 | capability | 否 | P1 | M | proposed | T5 | llm.ts:67-70 现为定长 round 工具循环；升级 AI SDK 7 prepareStep/stopWhen（零新依赖）；预算承载若走新 env 即新增环境变量语义（POLICY 需批准区）→ 实现轮 needs-approval，SPEC 优先以 config 既有字段承载避让 |
+| BK-0016 | 持久会话与流式会话 API：sessions/messages 表、会话级 SSE 端点、停止信号、列出/恢复/续聊 | capability | 否 | P1 | M | proposed | T5 | BK-9002 goal 模式 UI 的后端地基；SQLite 基座已有（ADR-0005）；停止复用 ctx.ac.signal；新端点挂 /api/v1 命名空间；零新依赖/env，纯 POLICY 自主区 |
+| BK-0017 | 智能体互审协议（引擎侧）：approval 审批人支持节点引用（role 值 node:id 前缀），子任务派发 → 结构化裁决 → 回填续跑 + 审计日志 | capability | 否 | P1 | M | proposed | T5 | 零 DEFS 落点：role 本为自由 text（nodes.ts:105），引擎识别 node: 前缀走 agent 审查路径、人审路径不变；裁决用 zod（verdict: allow/deny + 理由）拒收自由文本；被审节点超时按既有「超时策略」参数降级（默认自动拒绝）；每次裁决落审计表；画布内 A2A 微协议；纯自主区 |
+| BK-0018 | 跨 run 记忆工具组：memory.get/set/list 以内建工具实装 | capability | 否 | P2 | S | proposed | T5 | env 开关启用时 llm handler 额外注入（不进前端 MCP_SERVERS 勾选清单——app.js:103 硬编码，清单扩展触 UI 归 BK-9006）；存储用现有 SQLite；实现轮 env 语义 needs-approval |
+| BK-0019 | 知识库管理管道后端：上传 → 切分 → 嵌入 → 入库，retrieval 检索真实化 | capability | 否 | P2 | M | proposed | T5 | 消除写死的 demo kb（nodes.ts:41 三个固定名）；嵌入存储选型 SPEC 定（SQLite 向量扩展 vs 独立库），若新增依赖 → needs-approval；kb 参数选项动态化触 UI（combo 选项数组=DEFS 呈现字段）归 BK-9006，本项先以映射表承接三个固定名 |
+| BK-0020 | 引擎级错误处理策略：on-error（重试/跳过/中止）引擎实现 | capability | 否 | P2 | S | proposed | T5 | 现状任一节点失败整个 run 即挂（engine 无降级路径）；引擎级 env 承载 → env 语义 needs-approval；节点粒度参数化（新参数=DEFS）归 BK-9006 |
 
 ## 待批准区（已迁移 GitHub Issues · v2）
 
 > 触 UI 项由脚本开 `needs-approval` issue（用户评论「批准 / 驳回」，手机可达；
 > 批复仅认 owner 本人，循环评论带 🤖 前缀），本表不再维护。
 > 历史在档迁移：BK-9001 → liusuren123/agentflow#1。
+> 2026-10-23 T5 提案迁移：BK-9002→#2、BK-9003→#3、BK-9004→#4、BK-9005→#5、BK-9006→#6。
