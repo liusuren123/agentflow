@@ -112,12 +112,17 @@ subagent（各自先读 `.zcode/agents/` 职责定义）、build/gate/test 门�
 docs/evolution/WORKFLOW.md、docs/evolution/STATE.md，然后执行一次「进化心跳」：
 1) 预检：STATE.md 可解析；若 phase 处于迭代中且 updated 距今不足 30 分钟，视为上一运行
    仍在进行，本次直接结束不做任何动作。
-2) 首选路径：用 CreateWorkflow 的 saved 源调用项目工作流 evolution-iteration（无参数），
+2) 工作流互斥：调用 ListWorkflowRuns（statuses=["running","pending"]），若存在进化迭代
+   运行仍在进行，本次直接结束、不启动新工作流（回退路径同样不执行）。对标注
+   possibly_interrupted 的条目用 GetWorkflowRun 复核：已终态（errored/stopped/interrupted/
+   superseded）则不算在跑，可以继续；仍显示 running 则视为僵死——同样不启动，在回复中
+   报告该 run id 与 STATE 停更时长，等用户决定 resume 还是 amend。
+3) 首选路径：用 CreateWorkflow 的 saved 源调用项目工作流 evolution-iteration（无参数），
    一次调用完成整个迭代（内含基线预检 / PLAN / SPEC / BUILD+门禁 / VERIFY / 修复循环≤2 /
    回滚清理 / 归档提交）。运行结束后向用户转述其结论即可，不要重复执行其中的阶段。
-3) 回退路径：工作流未保存、调用被拒或报错时，按 WORKFLOW.md §4 手动协调执行一次迭代
+4) 回退路径：工作流未保存、调用被拒或报错时，按 WORKFLOW.md §4 手动协调执行一次迭代
    （逐阶段派发 .zcode/agents/ 子智能体）。
-4) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
+5) 铁律：触 UI 的项只能转入待批准区；绝不自主实现 UI 变更；绝不运行 npm run gate:update；
    绝不强制推送。与 CONSTITUTION.md 冲突时以宪法为准。
 ```
 
