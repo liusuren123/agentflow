@@ -24,11 +24,8 @@
 | BK-0011 | 悬挂 run 启动终结标记：服务启动时将上次进程遗留的 running 状态 run 收尾 | capability | 否 | P2 | S | ready | T3 | 周报 W43 体检 O1（库里 1 条 running 悬挂记录）；状态值沿用现有枚举、不新增契约字段；若 SPEC 评审发现触 UI 则转待批准区；0007 补题轮晋升 ready——现状核实服务启动无悬挂 run 收尾逻辑（server.ts 全文 grep "running" 仅 :179 注释；store.ts 无启动扫尾），runs 插入即 'running'（store.ts:106）、进程崩溃即永久悬挂；与 BK-0002 冒烟 409 断言（内存注册表判活）正交 |
 | BK-0012 | legacy 模块与 React 骨架职责边界文档化：四模块边界说明合入 docs/（ROADMAP T1-M2） | doc | 否 | P1 | S | done | T1 | 迭代 0008 终态 done：docs/frontend-module-boundaries.md 纯新增 178 行（四模块各一节×四要素 + 总览表 + 组合时序四步 + /api 作用域精确化注记，全部断言挂事实指针），产品提交 1ff70fb（`git show --numstat` 实查 +178/−0）；VERIFY PASS 6/6 AC 零缺陷（行数 182/2419/131/532 零漂移 + 指针抽查 30+ 条全中 + test:canvas 15/0 + 改动面白名单达成），证据 iterations/0008/REPORT.md；ROADMAP T1-M2 关账（T1 四里程碑全部闭环） |
 
-## 待批准区（触 UI —— 用户主权接口）
+## 待批准区（已迁移 GitHub Issues · v2）
 
-> 用户在本区批复「批准」即进入修宪通道：spec-designer 补全 ADR（动机/影响面/像素对比
-> 证据）→ 用户最终批准 → 实现 → 同一变更内重录 golden。未批复项心跳永不触碰。
-
-| ID | 标题 | 类型 | 触UI | 优先 | 状态 | ADR 草案 | 备注 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| BK-9001 | 底部日志面板按级别过滤（info/warn/error） | ui-proposal | 是 | P2 | pending-approval | - | 示范项：等待用户批复或驳回 |
+> 触 UI 项由脚本开 `needs-approval` issue（用户评论「批准 / 驳回」，手机可达；
+> 批复仅认 owner 本人，循环评论带 🤖 前缀），本表不再维护。
+> 历史在档迁移：BK-9001 → liusuren123/agentflow#1。
