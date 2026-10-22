@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | BK-0001 | 现状盘点：核对 ADR-0002 各 CP 落地状态与移植余量，细化 ROADMAP 里程碑 | doc | 否 | P0 | S | blocked | T1 | 迭代 0001 终态 blocked：防打转校验判定产品提交为空（docs/evolution 之外无任何改动）不予提交；盘点与 VERIFY 本身 PASS（iterations/0001/REPORT.md），ROADMAP 回写产出随归档提交入库，重立项口径待治理日裁定 |
 | BK-0002 | 后端 E2E 冒烟脚本：`/api/v1` workflows/runs CRUD + `/api/v1/run` SSE 全事件链 | test | 否 | P1 | M | done | T2 | 迭代 0002 终态 done：`npm run smoke:server` 一键可跑（`tests/smoke/lib.mjs` + `smoke-server.mjs` + 根 package.json 一行，提交 79788a3）；正例两连跑 33 passed/0 failed、exit 0，负例 exit 1 带构建指引，VERIFY PASS 见 iterations/0002/REPORT.md；T3 各项 VERIFY 公共基座就位 |
-| BK-0003 | 契约测试补齐：16 种节点注册表与 SSE 事件契约的 DEFS 漂移防护覆盖核对 | test | 否 | P1 | M | ready | T2 | 已核对现状（2026-10-22）：默认值仅 6/33 抽样断言、HANDLERS 键集无防护、事件反例仅 2 条；补差点见 ROADMAP T2-M1 |
+| BK-0003 | 契约测试补齐：16 种节点注册表与 SSE 事件契约的 DEFS 漂移防护覆盖核对 | test | 否 | P1 | M | done | T2 | 迭代 0003 终态 done：默认值 33/33 全量断言 + 事件反例 12 条 + HANDLERS⊇NODES 三测试落地（defs-drift/events-negative/handlers-coverage，contract.test.mjs 原样未动），engine.ts:26 一词零行为导出 HANDLERS，根 test 链改 build:shared→build:server→test（产品提交 1551994）；VERIFY PASS 零缺陷（node --test 8/8、反演 a/b/c 与裸跑防御先红后还原复绿、E2E P1-P3 全过）见 iterations/0003/REPORT.md；ROADMAP T2-M1 关账 |
 | BK-0006 | README 能力同步：补记 ADR-0006/0007 已落地能力（DELETE 端点 + 服务端工作流/历史回放） | doc | 否 | P1 | S | ready | T4 | 2026-10-22 核实 README 止于 ADR-0005（无 DELETE/删除记述）；纯文档 |
 | BK-0007 | websearch 引擎参数生效化：eng 参数路由（博查/SearXNG），未接入引擎如实降级 | capability | 否 | P1 | M | ready | T3 | 现状 `apps/server/src/handlers.ts` 完全忽略 p.eng；不改 shared DEFS；新增可选 env 走 config zod；VERIFY 依赖 BK-0002 |
 | BK-0004 | 已知陷阱回归用例：portCache 失效场景（节点高度/变换变化后 measurePorts） | test | 否 | P2 | S | ready | T2 | 陷阱出处 AGENTS.md「已知陷阱」；新测试独立于 tools/pixel-gate/（不改门禁），仅新增文件 |
