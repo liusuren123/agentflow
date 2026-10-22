@@ -84,3 +84,17 @@ export async function ddgHtmlSearch(q: string): Promise<Response> {
   await assertPublicUrl(u);
   return fetch(u, { headers:{ 'User-Agent':UA }, signal: AbortSignal.timeout(12000) });
 }
+
+/* SearXNG 动态主机网关（迭代 0005 · BK-0007）：目标主机来自运维 env
+ * SEARXNG_URL（非常量），经 assertPublicUrl 动态校验（私网/回环默认拦截，
+ * 自托管内网实例走 ALLOW_PRIVATE_NET=1 逃生）后请求——与固定主机网关
+ * 同层集中出口。查询词只经 URL API 编码进查询参数。count 不进请求
+ * （SearXNG JSON 格式无服务端条数参数），由调用方在结果侧截断。 */
+export async function searxngSearch(baseUrl: string, q: string, count: number): Promise<Response> {
+  const u = new URL(baseUrl);
+  u.pathname = u.pathname.replace(/\/+$/, '') + '/search';
+  u.searchParams.set('q', q);
+  u.searchParams.set('format', 'json');
+  await assertPublicUrl(u);
+  return fetch(u, { headers:{ 'User-Agent':UA }, signal: AbortSignal.timeout(12000) });
+}

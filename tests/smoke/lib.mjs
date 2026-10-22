@@ -62,13 +62,15 @@ function ringLog(maxLines) {
 /* ---------- 起真实 server 子进程 + 健康等待（SPEC §5.3-5.4）
  * process.execPath + shell:false：Windows 不经 cmd 包装，kill 直达 node 进程；
  * env PORT 传入子进程（config.ts:17-24 .env 不覆盖已有环境变量 → 优先级正确）；
+ * opts.env 为子进程 env 覆盖表（后置于 ...process.env；显式空串可双重压制
+ * 开发者本机 .env 值泄入——config 空串归一为未配置，迭代 0005 SPEC §6.1）；
  * 健康：250ms 轮询 /api/v1/health（server.ts:64-66），200 且 ok===true 即就绪；
  * 子进程提前退出或超时 → 抛错并附 logTail（FAIL 时打印，SPEC §8）。 ---------- */
-export async function startServer(port, timeoutMs = 20000) {
+export async function startServer(port, opts = {}, timeoutMs = 20000) {
   const entry = path.join(REPO_ROOT, 'apps', 'server', 'dist', 'server.js');
   const child = spawn(process.execPath, [entry], {
     cwd: path.join(REPO_ROOT, 'apps', 'server'),
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(port), ...opts.env },
     shell: false,
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -27,7 +27,7 @@ try{
 const rawEnv: Record<string, string | undefined> = {};
 for(const key of [
   'AI_BASE_URL', 'AI_API_KEY', 'AI_MODELS', 'AI_MODEL', 'AI_PROVIDER_NAME',
-  'PORT', 'ALLOW_PRIVATE_NET', 'BOCHA_API_KEY',
+  'PORT', 'ALLOW_PRIVATE_NET', 'BOCHA_API_KEY', 'SEARXNG_URL',
   'DEEPSEEK_API_KEY', 'ZHIPU_API_KEY', 'OPENAI_API_KEY', 'MOONSHOT_API_KEY',
 ]){
   const v = process.env[key];
@@ -55,6 +55,7 @@ const EnvSchema = z.object({
   PORT: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1, '必须在 1-65535').max(65535, '必须在 1-65535').optional(),
   ALLOW_PRIVATE_NET: z.string().refine(v => TRUTHY.test(v) || FALSY.test(v), { message: '只接受 1/true/yes 或 0/false/no' }).optional(),
   BOCHA_API_KEY: z.string().optional(),
+  SEARXNG_URL: z.string().trim().url('必须是合法绝对 URL').optional(),
   DEEPSEEK_API_KEY: z.string().optional(),
   ZHIPU_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
@@ -94,6 +95,7 @@ function loadConfig(){
     aiModel: env.AI_MODEL,
     aiProviderName: env.AI_PROVIDER_NAME,
     bochaApiKey: env.BOCHA_API_KEY,
+    searxngUrl: env.SEARXNG_URL,
     knownKeys: {
       DEEPSEEK_API_KEY: env.DEEPSEEK_API_KEY,
       ZHIPU_API_KEY: env.ZHIPU_API_KEY,

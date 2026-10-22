@@ -4,7 +4,7 @@
  * ================================================================ */
 import { evalExpr } from './expr.js';
 import { retrieve } from './kb.js';
-import { webSearch } from './search.js';
+import { webSearch, strictBochaSearch, strictSearxngSearch } from './search.js';
 import { guardedFetch } from './guard.js';
 import { runUserCode } from './code.js';
 import { abortableSleep, preview, render, strInput, toStr, esc } from './util.js';
@@ -48,7 +48,25 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
 
   async websearch(_ctx, { p, input, vars, emit }): Promise<NodeResult> {
     const q = strInput(input, vars.question || '');
-    const res = (await webSearch(q, Number(p.max)||5)) as { engine: string; results: { title: string; url: string; snippet: string }[] } | null;
+    const eng = String(p.eng ?? 'Bing');
+    const n = Number(p.max) || 5;
+    /* 严格路由（迭代 0005 · BK-0007）：显式选择博查/SearXNG = 明确用户意图，
+       未配置/失败一律如实跳过并指明原因，绝不静默换引擎（REQ-0007-01） */
+    if(eng === '博查' || eng === 'SearXNG'){
+      const r = eng === '博查' ? await strictBochaSearch(q, n) : await strictSearxngSearch(q, n);
+      if(!Array.isArray(r) && 'skipped' in r && r.skipped){
+        emit('log', { lvl:'warn', msg:`搜索不可用：引擎「${eng}」${r.reason}，本次跳过联网参考（不回退其他引擎）` });
+        return { value: [], ports: [[]], out: `搜索不可用 · 已跳过联网参考（eng=${eng} · ${r.reason}）` };
+      }
+      /* 成功（含 0 条结果；空查询 [] 走同款存量边缘，不新增特判） */
+      const res = r as { engine: string; results: { title: string; url: string; snippet: string }[] };
+      vars.results = res.results;
+      vars.context_web = res.results.map((x,i)=>`${i+1}. ${x.title} — ${x.snippet}`).join('\n');
+      return { value: res.results, ports: [res.results], out: `${res.engine} 返回 ${res.results.length} 条结果` };
+    }
+    /* Bing/Google/未知值：后端未接入真实 API——先如实标注，再维持既有回退链（存量零回归） */
+    emit('log', { lvl:'warn', msg:`引擎「${eng}」未接入 AgentFlow 后端，已按回退链（博查 → DuckDuckGo）执行` });
+    const res = (await webSearch(q, n)) as { engine: string; results: { title: string; url: string; snippet: string }[] } | null;
     if(!res){
       emit('log', { lvl:'warn', msg:'搜索服务不可用（未配置 BOCHA_API_KEY 且 DuckDuckGo 不可达），本次跳过联网参考' });
       return { value: [], ports: [[]], out: '搜索不可用 · 已跳过联网参考（其余流程继续）' };

@@ -31,6 +31,16 @@ const WFAPPR = {
   edges: [],
   inputs: {},
 };
+/* E 组夹具工厂（迭代 0005 / BK-0007 · SPEC §6.2）：userinput → websearch(eng) */
+const wfEng = (eng) => ({
+  name: `smoke-eng-${eng}`,
+  nodes: [
+    { id: 1, type: 'userinput', x: 100, y: 100, params: { var: 'question', defv: '冒烟测试问题' } },
+    { id: 2, type: 'websearch', x: 320, y: 100, params: { eng, max: 3 } },
+  ],
+  edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
+  inputs: { question: '冒烟测试问题' },
+});
 
 const C = new Checker();
 const CLEAN = { runIds: [], wfIds: [] };
@@ -96,9 +106,10 @@ async function main() {
   }
   const port = await getFreePort();
 
-  /* H 组：起进程 + 健康等待（H01） */
+  /* H 组：起进程 + 健康等待（H01）；env 空串双重压制 BOCHA_API_KEY/SEARXNG_URL
+   * （SPEC §6.1：.env 不覆盖已有键 + config 空串归一为未配置 → E 组受控环境） */
   try {
-    srv = await startServer(port);
+    srv = await startServer(port, { env: { BOCHA_API_KEY: '', SEARXNG_URL: '' } });
   } catch (e) {
     C.fail('H01', 'GET /api/v1/health → 200 且 ok===true',
       { expected: '200 + ok:true', actual: String(e.message ?? e), ctx: `PORT=${port}` });
@@ -256,6 +267,49 @@ async function main() {
 
   const d7 = await api(srv.base, 'GET', `/api/v1/runs/${apprRunId}`);
   C.eq(d7.status, 404, 'D07', '删除后 GET → 404', ctxOf(d7));
+
+  /* E 组：websearch 节点 eng 参数路由（E01-E03；迭代 0005 / BK-0007 · SPEC §6.2）
+   * 服务以受控 env 启动（H 组空串压制 BOCHA_API_KEY/SEARXNG_URL）：E01/E02 在
+   * 严格路由的配置探测步即如实跳过（不触网）；E03 的「未接入」标注先于回退链
+   * 任何网络调用发出——三条断言在完全离线环境结果一致（只锁路由证据文案，
+   * 不锁外部引擎返回；正路径列 SPEC §7 手动 E2E 可选点位）。 */
+  const runEng = async (eng) => {
+    const sse = await openSse(srv.base, wfEng(eng));
+    const runId = (await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId;
+    CLEAN.runIds.push(runId);
+    /* 30s 覆盖回退链 DDG 12s 超时档（E03 离线时回退链全败，标注已先行发出） */
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    const out = sse.events.filter((e) => e.type === 'node:done' && e.id === 2).map((e) => String(e.out ?? '')).join(' | ');
+    const logs = sse.events.filter((e) => e.type === 'log').map((e) => String(e.msg ?? ''));
+    return { runId, done, out, logs };
+  };
+
+  { /* E01 · eng=博查（未配置 key）：严格路由 → 如实跳过，不回退（AC1 缺 key 半支） */
+    const { done, out, logs } = await runEng('博查');
+    C.ok(done.ok === true && done.done === 2 && done.total === 2
+      && out.includes('eng=博查') && out.includes('BOCHA_API_KEY') && !out.includes('DuckDuckGo')
+      && logs.some((m) => m.includes('不回退其他引擎')),
+      'E01', 'eng=博查（未配置 key）：run:done {ok:true,done:2,total:2}；out 含 eng=博查+BOCHA_API_KEY 且无 DuckDuckGo；log 含「不回退其他引擎」',
+      { expected: 'out=搜索不可用 · 已跳过联网参考（eng=博查 · 未配置 BOCHA_API_KEY）',
+        actual: JSON.stringify({ done: { ok: done.ok, done: done.done, total: done.total }, out, logs: logs.slice(0, 3) }).slice(0, 220),
+        ctx: 'websearch(eng=博查) 受控 env（BOCHA_API_KEY 空串压制）' });
+  }
+  { /* E02 · eng=SearXNG（未配置 URL）：严格路由 → 如实跳过（AC2 缺 URL 半支） */
+    const { done, out } = await runEng('SearXNG');
+    C.ok(done.ok === true && out.includes('eng=SearXNG') && out.includes('SEARXNG_URL'),
+      'E02', 'eng=SearXNG（未配置 URL）：run:done {ok:true}；out 含 eng=SearXNG+SEARXNG_URL',
+      { expected: 'out=搜索不可用 · 已跳过联网参考（eng=SearXNG · 未配置 SEARXNG_URL）',
+        actual: JSON.stringify({ done: { ok: done.ok }, out }).slice(0, 220),
+        ctx: 'websearch(eng=SearXNG) 受控 env（SEARXNG_URL 空串压制）' });
+  }
+  { /* E03 · eng=Bing（未接入）：先导「未接入」标注 + 回退链文案无 eng= 前缀（AC3 标注半支） */
+    const { done, out, logs } = await runEng('Bing');
+    C.ok(done.ok === true && logs.some((m) => m.includes('未接入')) && !out.includes('eng='),
+      'E03', 'eng=Bing：run:done {ok:true}；log 含「未接入」标注（网络无关）；out 不含 eng=（互斥反证：未误入严格分支文案）',
+      { expected: '标注 log「未接入」+ out 无 eng= 前缀',
+        actual: JSON.stringify({ done: { ok: done.ok }, out, logs: logs.slice(0, 3) }).slice(0, 220),
+        ctx: 'websearch(eng=Bing) 受控 env（回退链成败均不改变判据）' });
+  }
 }
 
 /* ---------- 运行器：fail-fast + finally 清理 + 汇总 + 退出码（SPEC §8） ---------- */
