@@ -40,6 +40,7 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 | --- | --- |
 | `npm run gate` | **宪法门禁**（改前端后必跑；需先 `npm run build`） |
 | `npm test` | shared 契约测试（注册表/SSE 事件 schema/单一来源防回归） |
+| `npm run smoke:server` | 后端 E2E 冒烟（独立端口起 server：/api/v1 workflows CRUD + /run SSE 全事件链 + 删除守卫 409/200，自清理） |
 | `npm run build` | 构建 shared + web |
 | `npm run build:server` | 构建后端 TS（tsc → `apps/server/dist`） |
 | `npm start` | 构建（shared+web+server）+ 启动后端 |
@@ -64,14 +65,22 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 · `GET /api/health`（含模型列表，前端据此刷新下拉）。
 全部端点在 `/api/v1/*` 有等价命名空间（ADR-0004，旧 `/api/*` 保留为别名）。
 
-## 持久化与部署（ADR-0004/0005 已落地 2026-10-20）
+## 持久化与部署（ADR-0004~0007 已落地 2026-10-20/21）
 
 - **SQLite 持久化**（已落地 · better-sqlite3，本地文件 `data/agentflow.db`，目录不入库）：
   `workflows` / `runs` / `run_events` 三表；SSE 事件在序列化单一出口「先落库后写网」
   （含 `run:accepted` 首事件；`ping` 保活不落库），支持运行历史回放与崩溃一致。
   v1 端点：`GET|PUT /api/v1/workflows[/:id]` · `GET /api/v1/runs?limit=`（1–100，默认 20）
-  · `GET /api/v1/runs/:id`（含完整事件回放）。
-  **localStorage 仍是前端当前事实源**；前端接入服务端属 UI 变更，需宪法第 3 条流程。
+  · `GET /api/v1/runs/:id`（含完整事件回放）
+  · `DELETE /api/v1/workflows/:id`（不存在 → 404）
+  · `DELETE /api/v1/runs/:id`（活动 run → 409，判据为进程内存注册表而非 DB status；
+    删除时 runs 行与全部 run_events 行同一事务级联删除）。
+  **前端已接入服务端持久化**（ADR-0006/0007，2026-10-21 批准实施）：「工作流」面板
+  「服务端」分组支持保存当前工作流到服务端（PUT upsert）/ 打开 / 覆盖保存 / 删除
+  （两按钮确认弹窗）；「任务历史」面板在线时服务端优先，卡片点击展开只读事件回放
+  （`.logline` 行 × 事件序号），支持单卡删除（运行中 409 转译提示）；离线或后端
+  未连接时回退 localStorage（本地写入路径不变）——localStorage 仍是本地工作流与
+  离线运行历史的存储。
 - **后端 TS 化与运行时强化**（已落地 2026-10-20）：tsc 构建 → `node dist/server.js`
   （`npm run build:server`）；zod 启动期环境校验（非法值 fail-fast）、
   pino 结构化日志（runId 贯穿、密钥脱敏）、SIGINT/SIGTERM 优雅停机（5s 宽限 + 关库）。
