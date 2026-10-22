@@ -179,3 +179,74 @@ A/B/F/G 由工作流脚本门禁通过（§0 分工声明）；PRD AC1–AC7 亲
 采信脚本门禁 + §3 零渲染触碰结构证据；产物结构（文件数/行数/位置/边界规则）
 全部符合 SPEC §3 与 AGENTS 硬性约定。**缺陷清单：空（无 BUG-xxx）。** 建议进入
 CLOSE（产品提交 + 归档）。
+
+## 7. 并行收尾后的独立复验（test-manager 二次会话，2026-10-22）
+
+> **触发背景（如实）**：本次派发为迭代 0002 的 VERIFY，但开工读
+> `docs/evolution/STATE.md` 时发现 `iteration: 0003 / phase: idle`，`last_result`
+> 已记录 0002（BK-0002）终态 done（产品提交 79788a3，归档提交 d0a6c37）——命中
+> 派发指令的例外条款（并行收尾）。故本节为**独立复验**，不改 STATE/BACKLOG/
+> metrics；复验对象 = 已归档的最终提交实物（79788a3，工作区 `git status` 干净，
+> `git log` 头部 d0a6c37→79788a3 与 STATE 一致）。
+
+### 7.1 复验执行清单（全部本会话亲自执行，命令原文）
+
+| # | 命令 / 点位 | 结果 | 证据摘要 |
+| --- | --- | --- | --- |
+| R-C | `npm run smoke:server` | **PASS** | 33 行 PASS（P01→C04 全组）+ `==== smoke:server：33 passed / 0 failed ====`，`EXIT_CODE=0` |
+| R-D | 紧接再次 `npm run smoke:server` | **PASS（幂等）** | 末段 `PASS C01 ×2 / C02 / C03 / C04`，同 `33 passed / 0 failed`、`EXIT_CODE=0` |
+| R-E | 负例（临时目录等价法） | **PASS** | `FAIL P02 … 缺失（请先在仓库根执行 npm run build:server）`→ fail-fast → `SKIP C01-C04` → `1 passed / 1 failed`，`EXIT_CODE=1` |
+| R-H | 人工残留复核（独立服务实例，PORT=39871/39872/39873） | **PASS** | workflows `smoke-` 子串 0 命中；runs 精确夹具前缀 0 命中；3 条子串命中查明为历史 `verify-smoke-*` 行（见 7.1.2）；三个端口 kill 后均确认释放 |
+| R-结构 | `grep -n "smoke" package.json` / `wc -l` / `git show --stat 79788a3` / `git status --short` | **PASS** | `package.json:19` 即 scripts 行；`243 tests/smoke/lib.mjs`、`288 tests/smoke/smoke-server.mjs`（≤400）；产品提交恰 3 文件 +532 行（package.json+1 / lib.mjs 243 / smoke-server.mjs 288）；工作区干净 |
+
+**R-E 执行方式**：与 §2.3 同一既定等价法（`mv apps/server/dist` 会被 Mimosa
+PreToolUse 钩子拦截，AGENTS 禁止绕过）：`mktemp -d` → 复制两枚脚本原文至
+`<tmp>/tests/smoke/` → `<tmp>/apps/web/dist/index.html` 在位、`apps/server/dist`
+缺失（`REPO_ROOT` 经 `lib.mjs:17` 随脚本路径解析）→ `node <tmp>/…/smoke-server.mjs`。
+被测路径（preflight existsSync → C.ok FAIL → exit 1）与正式法完全相同。
+
+**7.1.2 R-H 三条子串命中身份查明**（独立于脚本 C03 的人工复核）：runs 列表 15 条
+中 3 条含 `smoke-` 子串，逐条打印字段：`workflow_name = "verify-smoke-ascii" /
+"verify-smoke-node-error" / "verify-smoke-empty"`（run 顶层无 name 字段，名在
+`workflow_name`），status 全 done，`started_at` 换算 ≈ 2026-10-22 00:1x（CST），
+早于迭代 0002 开始（08:02）——**历史手工验证残留，非本脚本夹具**（夹具
+`smoke-crud` / `smoke-minimal` / `smoke-approval` 精确前缀 0 命中）。与 §5 观察 2
+结论一致，独立复核成立。
+
+### 7.2 代码级复验（对照 SPEC §2/§6/§7，逐行通读两文件）
+
+- **断言覆盖**：SPEC §6 全 32 个断言 id（P2+H1+W7+N3+S5+R3+D7+C4）在
+  `smoke-server.mjs` 逐条落位（C01 按清理清单逐 run 输出 → 正例 2 run = 33 行 PASS，
+  与 §2.1 首验口径一致）。
+- **夹具**：`smoke-server.mjs:14-33` 三夹具与 SPEC §7 逐字一致（WF v2 仅改 name；
+  WFMIN userinput→prompt；WFAPPR `to:'挂起'`），params 显式给出。
+- **边界规则**：lib.mjs 仅 import node 内置（`lib.mjs:11-15`）；smoke-server.mjs 仅
+  import `./lib.mjs`（`smoke-server.mjs:9-11`）；零产品代码 import、零 DB/文件写，
+  触达仅 `/api/v1/*` HTTP + P01/P02 `existsSync`（`lib.mjs:28-33`）。
+- **BUILD 复核轮 5 处修复**（JOURNAL §6.1）逐一在提交实物中确认在位：健康超时先
+  `child.kill('SIGKILL')` 再抛（`lib.mjs:95-99`）；C04 先 `kill()` 再竞速等待
+  （`smoke-server.mjs:78-83`）；清理 `safeApi` 兜底 + finally 外层 try/catch
+  （`smoke-server.mjs:47-53,280-286`）；S01 含流首位判定
+  （`smoke-server.mjs:166-167`）；S01/D01 超时具名 FAIL（`smoke-server.mjs:161-165,219-226`）。
+
+### 7.3 未执行项（如实）
+
+- `npm run build` / `build:server` / `gate` / `test`：按派发指令「已由脚本运行且
+  通过，不要重复跑全套」，本次未运行；AC8 结论继续采信脚本门禁 + 结构证据
+  （`git show 79788a3`：提交仅 `package.json` + `tests/smoke/`，渲染路径零字节改动）。
+- 交互回归抽查：与 §4 结论同因——改动面无任何渲染路径代码，逐项手测点位
+  「不适用（改动面证据）」。
+
+### 7.4 复验观察（非缺陷）
+
+3. **§3 表中行数记录已过期**：首验 REPORT §3 记 `239/258`（首稿实物），其后 BUILD
+   复核轮（JOURNAL §6.1，08:24）修复 5 处后实物为 `243/288` 并以此提交（79788a3
+   stat 实证）。两值均 ≤400，AGENTS 硬性约定 4 不受影响；属并发会话时序造成的
+   文档陈旧，无需修复轮，特此更正备案。
+
+### 7.5 独立复验结论
+
+**PASS（维持）。** 针对已归档提交 79788a3 的最终实物：冒烟两连跑 33/0、退出码 0
+（AC1 正例 + 幂等），负例 fail-fast 退出码 1 + 可操作指引（AC1 负例/REQ-02），
+人工复核零夹具残留（AC7 独立确认），产物结构与模块边界全部符合 SPEC §3/§2。
+**新增缺陷：无。** 原 PASS 结论与并行收尾（done 归档）均维持有效。
