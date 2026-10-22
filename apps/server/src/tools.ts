@@ -23,7 +23,7 @@ async function ensureSandbox(){ await fsp.mkdir(SANDBOX, { recursive:true }); }
 
 type ToolImpl = (args: any) => Promise<any>;
 
-const IMPL: Record<string, Record<string, ToolImpl> | null> = {
+export const IMPL: Record<string, Record<string, ToolImpl> | null> = {
   'filesystem': {
     read_file: async ({ path: rel }) => {
       const p = await safePath(rel);
@@ -74,6 +74,18 @@ const IMPL: Record<string, Record<string, ToolImpl> | null> = {
 
 export interface ToolSpec { desc: string; schema: Record<string, string> }
 
+/* ---------- 如实降级 stub（迭代 0009 · BK-0005）----------
+ * 载荷逐字保留原文；STUB_MARK 供 llm.ts 区分日志级别与摘要——
+ * tools.ts 无 emit/pino 通道，运行态观测一律归 llm.ts 单一出口。 */
+export const STUB_MARK = '__stub';
+export function stubOf(server: string, name: string): ToolImpl {
+  const f: ToolImpl = async () => ({ error: 'not implemented', note: `工具 ${server}.${name} 未接入真实实现` });
+  (f as any)[STUB_MARK] = true;
+  return f;
+}
+export const isStubImpl = (f: unknown): boolean =>
+  typeof f === 'function' && (f as any)[STUB_MARK] === true;
+
 export const TOOL_SPECS: Record<string, ToolSpec> = {
   'filesystem.read_file':      { desc:'读取沙箱目录内的文本文件', schema:{ path:'要读取的相对路径' } },
   'filesystem.write_file':     { desc:'将文本写入沙箱目录内的文件', schema:{ path:'相对路径', content:'要写入的内容' } },
@@ -97,7 +109,7 @@ export function collectTools(mcpSel: Record<string, unknown> | undefined | null)
     for(const n of names){
       const group = IMPL[server];
       if(group && typeof group[n] === 'function') out.set(`${server}.${n}`, group[n]!);
-      else out.set(`${server}.${n}`, async ()=>({ error:'not implemented', note:`工具 ${server}.${n} 未接入真实实现` }));
+      else out.set(`${server}.${n}`, stubOf(server, n));
     }
   }
   return out;

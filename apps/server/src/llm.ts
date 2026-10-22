@@ -6,7 +6,7 @@ import { generateText, streamText, tool, type ToolSet } from 'ai';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import { getModel, providerInfo } from './providers.js';
-import { collectTools, TOOL_SPECS } from './tools.js';
+import { collectTools, isStubImpl, TOOL_SPECS } from './tools.js';
 import { isAbort, preview, renderIfTemplate, strInput, toStr } from './util.js';
 import type { NodeHandler, NodeResult, WFNode } from './types.js';
 
@@ -36,13 +36,14 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
   const maxOutputTokens = Math.min(32768, Math.max(64, Number(p.max) || 2048));
   const t0 = Date.now();
   const toolImpls = collectTools(n.mcp);
-  let text = '', tokens = 0;
+  let text = '', tokens = 0, stubCount = 0;
 
   if(toolImpls.size){
     /* ---- 工具循环（generateText，最多 3 轮；失败自动降级为无工具调用） ---- */
     const zTools: ToolSet = {};
     const keyOf = new Map<string, string>();   // 安全工具名 → 原名
     for(const [name, impl] of toolImpls){
+      if(isStubImpl(impl)) stubCount++;   /* 未接入工具计数（✓ 摘要分项，迭代 0009） */
       const spec = TOOL_SPECS[name] || { desc: name, schema: {} as Record<string, string> };
       const shape: Record<string, any> = {};
       for(const [k, d] of Object.entries(spec.schema || {})){
@@ -52,8 +53,10 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
       keyOf.set(safe, name);
       zTools[safe] = tool({ description: spec.desc, inputSchema: z.object(shape), execute: async (a: any)=>{
         const res = await impl(a || {});
-        ctx.log.info({ tool: name, args: preview(a, 40), result: preview(res, 60) }, '工具调用');
-        emit('log', { lvl:'sys', msg:`🔧 工具调用 ${name}(${preview(a,40)}) → ${preview(res,60)}` });
+        const stub = isStubImpl(impl);   /* 未接入工具如实降级（tools.ts STUB_MARK） */
+        const bound = stub ? 200 : 60;   /* F3：stub 载荷 ≤66 字符，200 保证如实 note 不被截断 */
+        ctx.log[stub ? 'warn' : 'info']({ tool: name, stub, args: preview(a, 40), result: preview(res, bound) }, '工具调用');
+        emit('log', { lvl: stub ? 'warn' : 'sys', msg:`🔧 工具调用 ${name}(${preview(a,40)}) → ${preview(res,bound)}` });
         return res;
       }});
     }
@@ -101,7 +104,8 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
   }
 
   const cap = capSummaryServer(n);
-  const capsTxt = (cap.servers ? ` · MCP ${cap.servers} 服务/${cap.tools} 工具` : '') + (cap.skills ? ` · 技能 ${cap.skills}` : '');
+  const mcpTxt = cap.servers ? ` · MCP ${cap.servers} 服务/${cap.tools} 工具${stubCount ? `（${stubCount} 未接入）` : ''}` : '';
+  const capsTxt = mcpTxt + (cap.skills ? ` · 技能 ${cap.skills}` : '');
   emit('log', { lvl:'ok', msg:`✓ ${n.title || 'LLM'} · 生成 ${tokens || '?'} tokens${capsTxt} · ${((Date.now()-t0)/1000).toFixed(1)}s` });
   return {
     value: text,

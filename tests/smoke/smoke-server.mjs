@@ -9,6 +9,7 @@
 import {
   Checker, SmokeFailError, api, ctxOf, deepEqual, getFreePort, openSse, preflight, sleep, startServer,
 } from './lib.mjs';
+import { runMcpChecks } from './mcp-stubs.mjs';
 
 /* ---------- 夹具（SPEC §7；params 显式给出，不依赖 DEFS 默认值） ---------- */
 const WF = {
@@ -104,6 +105,9 @@ async function main() {
     C.ok(d.exists, d.id, `${d.file} 在位`,
       { expected: '存在', actual: d.exists ? '存在' : `缺失（请先在仓库根执行 ${d.buildCmd}）`, ctx: `file: ${d.abs}` });
   }
+  /* M 组：MCP 未实现工具如实降级离线断言（迭代 0009 / BK-0005 · mcp-stubs.mjs）
+   * 纯离线、不 fail-fast：失败计入汇总，不影响后续组（SPEC §6.1 挂接位点） */
+  await runMcpChecks(C);
   const port = await getFreePort();
 
   /* H 组：起进程 + 健康等待（H01）；env 空串双重压制 BOCHA_API_KEY/SEARXNG_URL
