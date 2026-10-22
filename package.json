@@ -15,7 +15,7 @@
     "build:server": "npm run build -w @agentflow/server",
     "build": "npm run build:shared && npm run build:web",
     "start": "npm run build && npm run build:server && npm start -w @agentflow/server",
-    "test": "npm run build:shared && npm test -w @agentflow/shared",
+    "test": "npm run build:shared && npm run build:server && npm test -w @agentflow/shared",
     "smoke:server": "node tests/smoke/smoke-server.mjs",
     "dev:web": "npm start -w @agentflow/web",
     "dev:server": "npm run build:shared && npm run build:server && npm start -w @agentflow/server"

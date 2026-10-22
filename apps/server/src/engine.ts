@@ -23,7 +23,7 @@ import type { ApprovalWaiters, HandlerArgs, NodeResult, RunCtx, Scope, WFEdge, W
 const DEFS_META = NODE_NAMES;
 const paramsDefaults = (type: string): Record<string, unknown> => paramDefaultsOf(type);
 
-const HANDLERS: Record<string, (ctx: RunCtx, args: HandlerArgs) => Promise<NodeResult>> = {
+export const HANDLERS: Record<string, (ctx: RunCtx, args: HandlerArgs) => Promise<NodeResult>> = {
   ...BASIC_HANDLERS,
   llm: llmHandler,
 };
