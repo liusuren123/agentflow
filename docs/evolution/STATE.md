@@ -5,10 +5,10 @@
 
 ```yaml
 iteration: 0010      # 当前/下一个迭代号（CLOSE 时 +1）
-phase: idle          # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
+phase: PLAN          # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -              # 处理中的 BACKLOG 项 ID（idle 时为 `-`；补题轮无所选 ID 亦为 `-`）
-started: 2026-10-22 21:20  # 本次迭代开始时间
-updated: 2026-10-22 21:59  # 最近更新时间
+started: 2026-10-22 23:04  # 本次迭代开始时间
+updated: 2026-10-23  # 最近更新时间
 repair_round: 0      # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0009（BK-0005）终态 done：MCP 未实现工具如实降级日志一致性落地——tools.ts stub 工厂显式化（stubOf/STUB_MARK/isStubImpl，载荷逐字保留）+ llm.ts stub 调用 SSE lvl warn/sys 与 pino level40+stub:true 双路路由 + preview bound 200（真实路径维持 60）+ ✓ 摘要「（N 未接入）」分项，新增 tests/smoke/mcp-stubs.mjs（M01-M11）挂接 smoke:server（产品提交 50dd43e，恰 SPEC §7 四文件白名单 +160/−7 `git show --numstat` 实查，apps/web 与 packages/shared 零触及），VERIFY PASS 6/6 AC 零缺陷（smoke:server 亲跑 50 passed/0 failed、反演演练四步红绿双向、DEEPSEEK 真模型 E2E 9/0，证据 docs/evolution/iterations/0009/REPORT.md），BACKLOG 置 done、metrics 已追加（矩阵终论 20 格：修复 10/维持 10，三疑点 A/B/C 实判全成立）；ready 队列余 2 项（BK-0010/0011），下次心跳 PLAN 正常选题
+last_result: 周度治理 W43 第二次完成（weekly/43.md §五）：全量回归全绿（gate 4 场景 diffPx=0、test 8/8、smoke 50/0、canvas 15/0）+ dogfooding 发现 BUG-0012 立项 BK-0022；BK-0001 改判 done、BK-0008/0016/0017 晋升 ready、BK-0010 治理日消化（ADR-0009+issue #7）；迭代 0010 仍处 PLAN（10-22 23:04 中断、PRD 未产出）待心跳续跑，续跑选题改为 BK-0022（非 doc ready 表首，勿按旧记录的 BK-0010/0011 取题）
 ```
