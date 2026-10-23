@@ -1,6 +1,6 @@
 # ADR-0009 · golden 场景扩充：s4 工作流面板在线态 / s5 历史面板在线态
 
-- 状态：**草案 · 待用户批准（批准前零实现）**
+- 状态：**已批准（issue#7 用户批复 2026-10-23T15:48:48Z，PLAN 0011 会话 gh 亲核）· 实现于迭代 0011**
 - 日期：2026-10-23（周度治理日产出，BK-0010 承载）
 - 关联：CONSTITUTION.md 第 2 条（执行手段）、第 3 条（变更流程）；POLICY.md 需批准区
   「golden 基线重录与 tools/pixel-gate/ 改动」；ADR-0006/0007（工作流/历史面板服务端
@@ -8,8 +8,9 @@
   门禁保护）；BACKLOG BK-0010；needs-approval issue
   [liusuren123/agentflow#7](https://github.com/liusuren123/agentflow/issues/7)
 
-> **显著声明：本 ADR 属宪法第 3 条通道，须经用户本人批准后方可实施；批准前，
-> 仓库中除本草案外不得出现任何相关实现改动。**
+> **显著声明：本 ADR 已按宪法第 3 条通道获用户本人批准（issue #7 评论「批准」，
+> 2026-10-23T15:48:48Z），实施于迭代 0011；golden 经 golden-created 通道新增
+> s4/s5 基线（§5），s0~s3 既有基线逐字节不动，npm run gate:update 非本项入口。**
 
 ## 1. 动机
 

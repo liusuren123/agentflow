@@ -1,7 +1,9 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 4 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *  · 6 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5 在线态（ADR-0009，issue#7 批准）——Playwright
+ *    路由拦截 fixture 供数（probe 的 /api/health + /api/v1 列表）+ 时区钉死 UTC
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
  *  · 稳定性等待：连续两帧截图一致才算场景就绪（消化入场动画/字体加载）
@@ -57,21 +59,92 @@ const selectNode = sel => page => page.evaluate(s => {
   document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
 }, sel);
 
+/* ---------- s4/s5 在线态场景基建（ADR-0009 · SPEC 0011） ---------- */
+/* probe（app.js ENGINE.probe）打的是 /api/health 旧别名而非 /api/v1，不拦截则
+   ENGINE.online=false → 面板渲染离线分支，快照到错误形态（SPEC §0）。
+   provider.models 刻意留空：probe 的模型列表分支会写 DEFS.llm 并可能触发
+   renderProps，空数组跳过该分支，消除非必要副作用；node/note 只进底部日志行
+   （normalize 已闭面板）与设置面板（s4/s5 不打开），不影响像素。 */
+const HEALTH_FIXTURE = { ok: true, engine: 'agentflow-server', node: 'v20.11.0',
+  provider: { configured: false, endpoint: null, models: [], note: 'gate fixture' } };
+/* fixture 固定字面量：时间戳取整点毫秒（2026-01-01/02/03 UTC），timezoneId:'UTC'
+   下 fmtTs 确定性渲染 1/1 00:00:00 等；名称 ASCII + 固定中文样例覆盖字形路径 */
+const WF_ROUTES = [
+  { pattern: '**/api/health',
+    handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/workflows',
+    handler: route => route.fulfill({ json: { workflows: [
+      { id: 'wf-alpha-001', name: 'Demo Alpha',    updated_at: 1767225600000 },
+      { id: 'wf-beta-002',  name: '示例工作流乙',  updated_at: 1767312000000 },
+      { id: 'wf-gamma-003', name: 'Runner Gamma',  updated_at: 1767398400000 },
+    ] } }) },
+];
+/* s5 三态刻意各一（done/error/running——僵尸行渲染是 ADR-0007 §3.2 关注面）；
+   runs 路由的尾通配 pattern 覆盖 /api/v1/runs?limit=50（fetchRunList 实际请求） */
+const RUN_ROUTES = [
+  { pattern: '**/api/health',
+    handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/runs**',
+    handler: route => route.fulfill({ json: { runs: [
+      { id: 'run-done-001',  workflow_name: 'Demo Alpha',    status: 'done',
+        started_at: 1767225600000, ended_ms: 812300, done: 4, total: 4 },
+      { id: 'run-error-002', workflow_name: '示例工作流乙',  status: 'error',
+        started_at: 1767312000000, ended_ms: 245000, done: 2, total: 5 },
+      { id: 'run-live-003',  workflow_name: 'Runner Gamma',  status: 'running',
+        started_at: 1767398400000, ended_ms: null,    done: 1, total: 3 },
+    ] } }) },
+];
+/* 确定性就绪等待（SPEC 0011 §4）：状态量而非时延量——条件即「在线分支已渲染且
+   fetch 数据已落 DOM」（占位态 0 卡、离线分支无此容器，两种错误形态都被卡住）；
+   超时抛错使该轮 gate 非零退出（红即 FAIL 信号，不落伪基线） */
+const wfReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#wf-cloud-list .wf-item[data-wf-id]').length === 3,
+  undefined, { timeout: 10000, polling: 100 });
+const runReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#sv-runs-list .run-item[data-run-id]').length === 3,
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量增量（SPEC §3.4）：data-wf-id / data-run-id 区别于本地条目，
+   计数不混入；服务端工作流卡（app.js paintServerWfGroup）/ 运行卡（paintServerRuns）
+   专属属性；s0~s3 无 inv 字段 → 零新增键，JSON.stringify 键序不变是硬约束 */
+const wfInv = page => page.evaluate(() => ({
+  sideOpen: document.getElementById('sidebar').classList.contains('open'),
+  sideTitle: document.getElementById('side-title').textContent,
+  serverWf: [...document.querySelectorAll('#wf-cloud-list .wf-item[data-wf-id]')]
+    .map(c => c.dataset.wfId),
+}));
+const runInv = page => page.evaluate(() => ({
+  sideOpen: document.getElementById('sidebar').classList.contains('open'),
+  sideTitle: document.getElementById('side-title').textContent,
+  serverRuns: [...document.querySelectorAll('#sv-runs-list .run-item[data-run-id]')]
+    .map(c => `${c.dataset.runId}:${c.classList.contains('ok') ? 'ok' : 'stop'}`),
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
   { id: 's2-settings', steps: [clickRail('settings')] },
   { id: 's3-library',  steps: [clickRail('nodes')] },
+  { id: 's4-workflows-online', routes: WF_ROUTES, timezoneId: 'UTC',
+    steps: [clickRail('workflows')], ready: wfReady, inv: wfInv },
+  { id: 's5-history-online',  routes: RUN_ROUTES, timezoneId: 'UTC',
+    steps: [clickRail('history')],  ready: runReady, inv: runInv },
 ];
 
 const runScenario = async (browser, sc) => {
-  const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 1600, height: 900 },
+    ...(sc.timezoneId ? { timezoneId: sc.timezoneId } : {}) });   /* 仅 s4/s5 传 'UTC' */
+  /* 路由拦截须在 goto 之前注册（SPEC §3.1.2）；page.route 在 reload 后持续生效，
+     localStorage.clear→reload 流程的二次 probe 由同一路由继续供数 */
+  for (const r of sc.routes || []) await page.route(r.pattern, r.handler);
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(1000);
   for (const step of sc.steps) await step(page);
+  /* 在线态 DOM 就绪等待（仅 s4/s5）：fetch 数据落 DOM 后才进 normalize/稳定帧，
+     杜绝稳定双帧在「加载中…」占位态连取两帧一致产生伪基线 */
+  if (sc.ready) await sc.ready(page);
   await normalize(page);
   /* 稳定性等待：连续两帧一致 */
   let prev = await page.screenshot();
@@ -81,23 +154,28 @@ const runScenario = async (browser, sc) => {
     if (Buffer.compare(cur, prev) === 0) break;
     prev = cur;
   }
-  const invariants = await page.evaluate(() => ({
-    view: document.getElementById('world').style.transform,
-    zoom: document.getElementById('zoom-lvl').textContent,
-    nodes: [...document.querySelectorAll('.node')].map(n => {
-      const r = n.getBoundingClientRect();
-      return `${n.dataset.id}:${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)}x${Math.round(r.height)}`;
-    }),
-    cssVars: Object.fromEntries([...document.styleSheets[0].cssRules].flatMap(r => r.style ? [...r.style].filter(p => p.startsWith('--')).map(p => [p, r.style.getPropertyValue(p)]) : [])),
-    counts: {
-      nodes: document.querySelectorAll('.node').length,
-      edges: document.querySelectorAll('#edges g.edge').length,
-      widgets: document.querySelectorAll('.wdg').length,
-      ports: document.querySelectorAll('.port').length,
-      tabs: document.querySelectorAll('.wtab').length,
-    },
-    bottomClosed: document.getElementById('bottompanel').classList.contains('closed'),
-  }));
+  /* 不变量 = 公共六键原样采集 + per-scenario 增量键（展开序保证 s0~s3 键序与
+     内容与既有 golden 完全一致——124 行 JSON.stringify 全等比对，键序敏感） */
+  const invariants = {
+    ...(await page.evaluate(() => ({
+      view: document.getElementById('world').style.transform,
+      zoom: document.getElementById('zoom-lvl').textContent,
+      nodes: [...document.querySelectorAll('.node')].map(n => {
+        const r = n.getBoundingClientRect();
+        return `${n.dataset.id}:${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.width)}x${Math.round(r.height)}`;
+      }),
+      cssVars: Object.fromEntries([...document.styleSheets[0].cssRules].flatMap(r => r.style ? [...r.style].filter(p => p.startsWith('--')).map(p => [p, r.style.getPropertyValue(p)]) : [])),
+      counts: {
+        nodes: document.querySelectorAll('.node').length,
+        edges: document.querySelectorAll('#edges g.edge').length,
+        widgets: document.querySelectorAll('.wdg').length,
+        ports: document.querySelectorAll('.port').length,
+        tabs: document.querySelectorAll('.wtab').length,
+      },
+      bottomClosed: document.getElementById('bottompanel').classList.contains('closed'),
+    }))),
+    ...(sc.inv ? await sc.inv(page) : {}),
+  };
   await page.close();
   return { png: prev, invariants };
 };
