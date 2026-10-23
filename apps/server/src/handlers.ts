@@ -2,6 +2,7 @@
  *  handlers.ts — 节点处理器（基础 16 种；LLM 见 llm.ts）
  *  自 engine.js 原文拆出，逻辑逐字保留（ADR-0004 TS 化拆分）。
  * ================================================================ */
+import { paramDefaultsOf } from '@agentflow/shared';
 import { evalExpr } from './expr.js';
 import { retrieve } from './kb.js';
 import { webSearch, strictBochaSearch, strictSearxngSearch } from './search.js';
@@ -96,7 +97,20 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
   async code(_ctx, { p, input, vars, emit }): Promise<NodeResult> {
     const t = Date.now();
     const logs: string[] = [];
-    const result = await runUserCode(p.lang || 'Python', p.code || '', input, vars, logs);
+    /* BUG-0012 兜底（迭代 0014 / BK-0022）：前端切 lang 只写 lang 不动代码框（app.js
+       change 处理器直写 params），引擎默认合并出 lang=JavaScript + Python 默认样例的
+       错配组合，JS wrapper 会把样例首行 # 注释按函数体语法执行即 SyntaxError。窄口径
+       兜底：仅「lang=JavaScript 且 code 逐字等于 DEFS 默认样例」时替换为 JS 等价样例
+       并告知（默认样例经 paramDefaultsOf 取自 shared 单一来源，不本地复制字面量；
+       JS 等价串为本执行层常量，非 DEFS 复制——DEFS 无 JS 样例）；其余组合零行为
+       变化，不猜测语言。 */
+    const pySample = paramDefaultsOf('code').code as string;
+    let src = p.code || '';
+    if(p.lang === 'JavaScript' && src === pySample){
+      src = '// 处理输入后返回\nresult = input\nreturn result';
+      emit('log', { lvl:'warn', msg:'code 节点默认样例与所选语言不匹配，已替换为等价样例执行（lang=JavaScript，编辑代码框可覆盖）' });
+    }
+    const result = await runUserCode(p.lang || 'Python', src, input, vars, logs);
     logs.slice(0,10).forEach(l=>emit('log',{lvl:'info',msg:'<span style="color:var(--text3)">stdout:</span> '+esc(l)}));
     const tdesc = Array.isArray(result) ? `数组(${result.length})`
       : result && typeof result === 'object' ? `对象(${Object.keys(result).length} 字段)`

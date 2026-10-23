@@ -2,7 +2,7 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→H→W→N→S→R→D→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→H→W→N→S→R→D→E→K→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
  * ================================================================ */
@@ -41,6 +41,14 @@ const wfEng = (eng) => ({
   ],
   edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
   inputs: { question: '冒烟测试问题' },
+});
+/* K 组夹具工厂（迭代 0014 / BK-0022 · BUG-0012）：单 code 节点。K01/K03 刻意不给
+ * code 参数——缺陷本体即「不显式给 code 时 DEFS 默认值合并出错配」，勿补 code
+ * （豁免上方「params 显式给出」夹具约定，PRD 背景 5 已论证）。 */
+const wfCode = (params, name) => ({
+  name,
+  nodes: [{ id: 1, type: 'code', x: 100, y: 100, params }],
+  edges: [],
 });
 
 const C = new Checker();
@@ -313,6 +321,38 @@ async function main() {
       { expected: '标注 log「未接入」+ out 无 eng= 前缀',
         actual: JSON.stringify({ done: { ok: done.ok }, out, logs: logs.slice(0, 3) }).slice(0, 220),
         ctx: 'websearch(eng=Bing) 受控 env（回退链成败均不改变判据）' });
+  }
+
+  /* K 组：code 节点 lang=JavaScript 默认码错配后端兜底（K01-K03；迭代 0014 / BK-0022 ·
+   * REQ-0022-02）。K01=AC1 正路径：兜底替换 + 告知 log + 执行成功；K02/K03=AC3
+   * 不误伤对照：自定义 JS 码 / lang=Python 默认路径 → 零告知、行为与现状一致。 */
+  const CODE_NOTE = '默认样例与所选语言不匹配，已替换为等价样例执行';
+  const runCode = async (params, name) => {
+    const sse = await openSse(srv.base, wfCode(params, name));
+    CLEAN.runIds.push((await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    return { done,
+      out: sse.events.filter((e) => e.type === 'node:done' && e.id === 1).map((e) => String(e.out ?? '')).join(' | '),
+      logs: sse.events.filter((e) => e.type === 'log').map((e) => String(e.msg ?? '')),
+      errCount: sse.events.filter((e) => e.type === 'node:error').length };
+  };
+  { /* K01 · AC1：lang=JavaScript 不带 code（DEFS 默认合并错配）→ 兜底后 run 完成、out 执行成功、log 含告知子串 */
+    const { done, out, logs, errCount } = await runCode({ lang: 'JavaScript' }, 'smoke-code-js-default');
+    C.ok(done.ok === true && errCount === 0 && out.startsWith('执行成功') && logs.some((m) => m.includes(CODE_NOTE)),
+      'K01', 'code 节点 lang=JavaScript 不带 code：run:done {ok:true}、无 node:error、out「执行成功」类文案、log 含兜底告知子串',
+      { expected: 'run 完成 + out=执行成功… + log 含告知子串', actual: JSON.stringify({ ok: done.ok, errCount, out, logs: logs.slice(0, 3) }).slice(0, 260), ctx: 'POST /api/v1/run（单 code 节点，params 仅 lang:JavaScript）' });
+  }
+  { /* K02 · AC3 对照①：自定义 JS 码（≠默认样例字面量）→ 零替换零告知，行为与现状一致 */
+    const { done, out, logs, errCount } = await runCode({ lang: 'JavaScript', code: 'result = "smoke-" + String(input)' }, 'smoke-code-js-custom');
+    C.ok(done.ok === true && errCount === 0 && out.startsWith('执行成功') && !logs.some((m) => m.includes(CODE_NOTE)),
+      'K02', 'code 节点 lang=JavaScript + 自定义码：run:done {ok:true}、无 node:error、out「执行成功」、log 无兜底告知（不误伤）',
+      { expected: 'run 完成 + out=执行成功… + log 无告知子串', actual: JSON.stringify({ ok: done.ok, errCount, out, logs: logs.slice(0, 3) }).slice(0, 260), ctx: 'POST /api/v1/run（单 code 节点，自定义 JS 码）' });
+  }
+  { /* K03 · AC3 对照②：lang=Python 不带 code（code=默认样例逐字）→ 恒不触发兜底（反向组合不存在，PRD 背景 3） */
+    const { done, out, logs, errCount } = await runCode({ lang: 'Python' }, 'smoke-code-py-default');
+    C.ok(done.ok === true && errCount === 0 && out.startsWith('执行成功') && !logs.some((m) => m.includes(CODE_NOTE)),
+      'K03', 'code 节点 lang=Python 不带 code：run:done {ok:true}、无 node:error、out「执行成功」（默认样例按 Python 原样执行）、log 无兜底告知',
+      { expected: 'run 完成 + out=执行成功… + log 无告知子串', actual: JSON.stringify({ ok: done.ok, errCount, out, logs: logs.slice(0, 3) }).slice(0, 260), ctx: 'POST /api/v1/run（单 code 节点，params 仅 lang:Python；依赖本机 python 运行时）' });
   }
 }
 
