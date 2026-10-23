@@ -39,3 +39,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test            # shared 契约测试（节点注册表 + SSE 事件 schema）
+      # SIGTERM 优雅停机断言（BK-0025 / issue#8，周报 W43 观察 O4）：server 启动
+      # 硬依赖 apps/web/dist/index.html（server.ts:52-56 fatal），故 build 全量后
+      # 再起断言；本 job（ubuntu-latest）为权威断言路径（Windows 本机 SKIP）
+      - run: npm run build && npm run build:server
+      - run: npm run smoke:shutdown
