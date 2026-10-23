@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0013      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0014      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle         # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -             # 处理中的 BACKLOG 项 ID（idle 时为 `-`；补题轮无所选 ID 亦为 `-`）
-started: 2026-10-24 02:04  # 本次迭代开始时间
-updated: 2026-10-24 02:23  # 最近更新时间
+started: 2026-10-24 03:30  # 本次迭代开始时间
+updated: 2026-10-24 04:26  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0012（BK-0025）终态 done：CI contracts job 挂接 SIGTERM 优雅停机断言——tests/smoke/shutdown-sigterm.mjs 新增 185 行（P01/P02 前置缺产物 FAIL 不静默 + H01 spawn dist/server.js 健康探针就绪 + T01-T04 停机三要素断言，win32 SKIP+原因 exit 0）+ package.json 恰 +1 行 smoke:shutdown + .github/workflows/ci.yml contracts job +5 行（恰 2 step，ui-constitution job 零改动），产品提交 592be6e（恰 PRD 白名单三处 +191/−0，git show --numstat 实查；apps/web/packages/shared/apps/server src 零触及），VERIFY PASS 零 BUG（AC2 反演 T01/T02 双 FAIL exit 1 还原复绿零残留 / AC3 本机 SKIP exit 0 / AC5 smoke:server 50/50 + test:canvas 15/15 实跑，证据 docs/evolution/iterations/0012/REPORT.md）；AC1 PASS 路径与 AC4 CI 绿属 CI 权威未到时点（沿 0011 先例不判过不判挂），推送后盯 contracts job 与 issue#8 回执关单由脚本执行；BUILD 偏差 1（CI build step 补 npm run build，server.ts:52-56 硬依赖）记 JOURNAL §2；BACKLOG 置 done、metrics 已追加；ready 队列余 10 项（队首 BK-9001 修宪轮，issue#1 已批；L 项 BK-9002~9005 先拆分再实现），下次心跳按 §4 优先序选题
+last_result: 迭代 0013（BK-9001）终态 done（修宪轮）：底部日志面板按级别过滤 chips 全部/sys/info/warn/ok + gate s6/s7 新场景与基线落地——产品三文件纯插入零删改（Skeleton +7 / app.css +11 / app.js +7）+ ADR-0010（issue#1 批复 2026-10-23T15:50:05Z）+ gate.mjs +57 + s6/s7 基线 4 文件 golden-created 通道（未用 gate:update），产品提交 9bcb3bd（+375/−0 + 2 PNG，git show --numstat 实查）；首轮 VERIFY FAIL（BUG-0026 Major：s6/s7 minimap 视口矩形过渡相位固化致间歇像素抖动）经修复轮 1 关闭——产品代码零改动（app.js hash c55b2dd0 前后一致），gate.mjs logPanelAfter 点击 #rail-bp 前置内联 transition:'none' + 基线重录；复验 PASS 零未决 BUG（gate 连续 6 轮 8/8 diffPx=0 含反演重做 + canvas 确定性探针 ×10 单一哈希，证据 docs/evolution/iterations/0013/REPORT.md §七）；AC8 CI 盯守未到时点（沿 0012 先例不判过不判挂），推送后盯 ui-constitution 8 场景与 issue#1 回执关单由脚本执行；BACKLOG 置 done、metrics 已追加；ready 队列余 9 项（修宪 BK-9002~9005 均 L 先拆分再实现、非修宪 BK-0022/0016/0017/0011/0008），下次心跳按 §4 优先序选题
 ```
