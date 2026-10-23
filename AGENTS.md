@@ -22,8 +22,12 @@ apps/server/src/    TS 模块群：server（HTTP/SSE/优雅停机）· engine（
 packages/shared/    单一事实源（TS）：节点注册表 + SSE 事件契约（前后端共享）
 tools/pixel-gate/   宪法门禁执行器（Playwright 像素 diff + DOM 不变量）
 tests/golden/ui/    golden 基线（2026-10 定稿，永不重录）
+tests/smoke/        冒烟测试
+tests/canvas/       画布连线几何的回归测试
 docs/adr/           架构决策记录
+docs/evolution/     进化机制文件群：WORKFLOW / STATE / BACKLOG / ROADMAP / POLICY / metrics / iterations / weekly
 docs/ai-sdk-7-功能汇总.md  AI SDK 7 API 清单（本仓实装版本逐项提取）
+docs/frontend-module-boundaries.md   四模块边界文档，BK-0012 产出
 ```
 
 > 原单文件 `index.html` 与提取工具 `tools/extract-web.mjs` 已退役（git 历史可溯）；
@@ -41,6 +45,9 @@ docs/ai-sdk-7-功能汇总.md  AI SDK 7 API 清单（本仓实装版本逐项提
 | `npm run dev:web` | Vite 开发服（热更新，/api 代理 :3000，需另跑 dev:server） |
 | `npm run dev:server` | 仅启动后端（自动先构建 shared + server） |
 | `npm run build:server` | 构建后端 TS → `apps/server/dist`（tsc，ADR-0004） |
+| `npm run smoke:server` | 后端 E2E 冒烟（现 50 断言；迭代 0002 建立，0005/0009 扩充） |
+| `npm run test:canvas` | 画布 portCache 离线几何断言（迭代 0006） |
+
 
 ## 硬性约定
 
