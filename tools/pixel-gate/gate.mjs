@@ -119,6 +119,60 @@ const runInv = page => page.evaluate(() => ({
     .map(c => `${c.dataset.runId}:${c.classList.contains('ok') ? 'ok' : 'stop'}`),
 }));
 
+/* ---------- s6/s7 底部日志面板场景基建（ADR-0010 · SPEC 0013） ---------- */
+/* 时序：normalize 收起面板（gate.mjs:46-52）→ 本钩子经 #rail-bp 真实 toggle 重开
+   （走 app.js:1790 真实交互路径，含 renderMinimap；normalize 保证前置必为 closed，
+   toggle 结果必为展开，幂等成立）。注入不走 addLog：规避 now() 时间戳（app.js:32）
+   与时区依赖，改 evaluate 直写固定字面量（.t 恒 '00:00:00'）；innerHTML='' 先清
+   boot 欢迎行（app.js:2416）；probe 失败静默（app.js:2250 catch 无 addLog）且无
+   周期重试 → 注入后 #log-body 无新行来源。字面量仅 ASCII+CJK（沿 ADR-0009 §3
+   fixture 字形安全口径，规避 emoji 跨环境字形差异）；5 行不溢出（面板体约 188px
+   可视高，5 行约 110px）→ 无滚动条不确定性。login 入场动画 .2s 由既有稳定双帧等待
+   （gate.mjs:149-156，350ms×10）消化；面板 max-height 过渡 .22s 由 logPanelAfter
+   内 style.transition='none' 禁用（BUG-0026 修复轮修订：过渡途中的 viewport 高度
+   相位会被 renderMinimap 一次性绘制固化，稳定双帧无法回改已绘制 canvas——原
+   「过渡被稳定双帧消化」论证对一次性 canvas 绘制不成立）。 */
+const logPanelAfter = openLvl => async page => {
+  await page.evaluate(() => {
+    /* BUG-0026 修复（迭代 0013 修复轮，VERIFY REPORT §四）：#rail-bp 的 click 同步
+       调 renderMinimap（app.js:1790），其视口矩形取绘制当刻 viewport 高度
+       （app.js:1095-1104）并一次绘制固化；须在点击前禁面板过渡使高度立即跳变，
+       绘制必捕获终态 → canvas 确定性成立（内联 style 覆盖 app.css 过渡声明） */
+    document.getElementById('bottompanel').style.transition = 'none';
+    document.getElementById('rail-bp').click();
+  });
+  await page.evaluate(() => {
+    const body = document.getElementById('log-body');
+    body.innerHTML = '';
+    const LINES = [
+      ['sys',  '执行后端已连接 node v20.11.0'],
+      ['info', 'LLM 节点开始执行 #3'],
+      ['warn', 'HTTP 请求节点已旁路，跳过执行'],
+      ['ok',   '运行完成 3/3 节点，总耗时 2.4s'],
+      ['info', '最终输出：你好，AgentFlow'],
+    ];
+    for (const [lvl, m] of LINES) {
+      const div = document.createElement('div');
+      div.className = 'logline ' + lvl;
+      div.innerHTML = '<span class="t">00:00:00</span><span class="m">' + m + '</span>';
+      body.appendChild(div);
+    }
+  });
+  if (openLvl) await page.evaluate(lvl => {
+    document.querySelector('#log-filter .chip[data-lvl="' + lvl + '"]').click();
+  }, openLvl);
+};
+/* s6/s7 专属不变量（spread 于公共六键之后，s0~s5 零新增键，JSON 键序稳定）：
+   chips 词表+激活态（'*' 后缀）、过滤属性缺省读作 'all'、逐行级别+可见性
+   （display:none 判定，'-' 隐藏 / '+' 可见） */
+const logInv = page => page.evaluate(() => ({
+  chips: [...document.querySelectorAll('#log-filter .chip')]
+    .map(c => c.dataset.lvl + (c.classList.contains('on') ? '*' : '')),
+  filter: document.getElementById('log-body').dataset.lvl || 'all',
+  lines: [...document.querySelectorAll('#log-body .logline')]
+    .map(l => (getComputedStyle(l).display === 'none' ? '-' : '+') + l.className.replace('logline ', '')),
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -128,6 +182,8 @@ const SCENARIOS = [
     steps: [clickRail('workflows')], ready: wfReady, inv: wfInv },
   { id: 's5-history-online',  routes: RUN_ROUTES, timezoneId: 'UTC',
     steps: [clickRail('history')],  ready: runReady, inv: runInv },
+  { id: 's6-log-panel',       steps: [], after: logPanelAfter(null),   inv: logInv },
+  { id: 's7-log-filter-warn', steps: [], after: logPanelAfter('warn'), inv: logInv },
 ];
 
 const runScenario = async (browser, sc) => {
@@ -146,6 +202,7 @@ const runScenario = async (browser, sc) => {
      杜绝稳定双帧在「加载中…」占位态连取两帧一致产生伪基线 */
   if (sc.ready) await sc.ready(page);
   await normalize(page);
+  if (sc.after) await sc.after(page);   /* s6/s7 post-normalize 钩子（迭代 0013）；s0~s5 无此字段=无操作 */
   /* 稳定性等待：连续两帧一致 */
   let prev = await page.screenshot();
   for (let i = 0; i < 10; i++) {

@@ -530,3 +530,14 @@ body.running #float-bar{display:block}
 #pal-drag-ghost{position:fixed;z-index:999;pointer-events:none;display:none;padding:7px 12px;border-radius:8px;
   background:var(--panel3);border:1px solid var(--accent);color:var(--text);font-size:12px;
   box-shadow:0 8px 24px rgba(0,0,0,.5);white-space:nowrap}
+
+/* ===== 日志级别过滤 chips（迭代 0013 · BK-9001 · ADR-0010 · issue#1 批复追加） ===== */
+#log-filter{display:inline-flex;align-items:center;gap:5px}
+#log-filter .chip{display:inline-flex;align-items:center;height:22px;padding:0 9px;border:1px solid var(--border2);
+  background:var(--panel2);color:var(--text3);border-radius:99px;cursor:pointer;font-size:11px;white-space:nowrap;transition:all .15s}
+#log-filter .chip:hover{background:var(--panel3);color:var(--text2);border-color:#45454f}
+#log-filter .chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--text)}
+#log-body[data-lvl="sys"] .logline:not(.sys){display:none}
+#log-body[data-lvl="info"] .logline:not(.info){display:none}
+#log-body[data-lvl="warn"] .logline:not(.warn){display:none}
+#log-body[data-lvl="ok"] .logline:not(.ok){display:none}

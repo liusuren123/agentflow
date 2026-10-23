@@ -119,6 +119,13 @@ export default function Skeleton(){
           {/* 底部面板：执行日志 */}
           <div id="bottompanel">
             <div id="bp-head"><span className="ldot"></span>执行日志
+              <span id="log-filter">
+                <button className="chip on" data-lvl="all">全部</button>
+                <button className="chip" data-lvl="sys">sys</button>
+                <button className="chip" data-lvl="info">info</button>
+                <button className="chip" data-lvl="warn">warn</button>
+                <button className="chip" data-lvl="ok">ok</button>
+              </span>
               <button className="ibtn" id="log-clear">清空</button>
               <button className="ibtn" id="bp-close">收起</button>
             </div>

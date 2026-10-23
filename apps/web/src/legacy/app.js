@@ -1790,6 +1790,13 @@ $('#help-modal').addEventListener('mousedown', e=>{ if(e.target===e.currentTarge
 $('#rail-bp').addEventListener('click', ()=>{ $('#bottompanel').classList.toggle('closed'); renderMinimap(); });
 $('#bp-close').addEventListener('click', ()=>{ $('#bottompanel').classList.add('closed'); renderMinimap(); });
 $('#log-clear').addEventListener('click', ()=>{ $('#log-body').innerHTML=''; });
+$('#log-filter').addEventListener('click', e=>{
+  const chip = e.target.closest('.chip'); if(!chip) return;
+  document.querySelectorAll('#log-filter .chip').forEach(c=>c.classList.toggle('on', c===chip));
+  const lvl = chip.dataset.lvl;
+  if(lvl==='all') delete $('#log-body').dataset.lvl;
+  else $('#log-body').dataset.lvl = lvl;
+});
 $('#rail-menu').addEventListener('click', e=>{
   const r = e.currentTarget.getBoundingClientRect();
   showMenu(r.right+6, r.top+4, [
