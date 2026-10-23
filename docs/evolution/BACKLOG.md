@@ -15,11 +15,23 @@
 > （ADR-0009 草案 + needs-approval issue #7）转 done；新增 BK-0022（BUG-0012 修复，
 > dogfooding 发现）与 BK-0023/BK-0024（调研立项）；T5 正式并图（ROADMAP）；ready
 > 非 doc 队列 5 项（BK-0022/0016/0017/0011/0008）。
+> 2026-10-24 迭代 0011 PLAN 轮（批复同步）：心跳档案「approved：无」滞后于实况——
+> PLAN 会话 gh 亲核用户已于 2026-10-23T15:48~15:50Z 批复 #1~#5/#7/#8 七项；按
+> WORKFLOW §4 优先序①全部落 ready P0（新增 BK-0025/BK-0026，BK-9001~9005 入主池），
+> 本轮选 BK-0026（issue#7 修宪轮）；#6 未获批维持待批准；#9 经核实三处 AGENTS.md
+> 漂移用户已亲改在库、不建行（禁止区）。存证见 iterations/0011/PRD.md 选题过程存证。
 
 ## 主池
 
 | ID | 标题 | 类型 | 触UI | 优先 | 大小 | 状态 | 来源 | 备注 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| BK-0026 | golden 场景扩充实现：s4 工作流面板在线态 / s5 历史面板在线态（ADR-0009） | test | 否 | P0 | M | done | issue#7 | 迭代 0011 终态 done：gate.mjs 147→225 行（HEALTH_FIXTURE/WF_ROUTES/RUN_ROUTES 三路由 fixture 含 /api/health probe、wfReady/runReady 确定性等待、wfInv/runInv 不变量增量、runScenario 四处增强；s0~s3 四行零字节改动）+ ADR-0009 状态行/显著声明改已批准口径（issue#7，2026-10-23T15:48:48Z）+ s4/s5 四基线经 golden-created 通道落盘（gate.mjs:192-196，未用 gate:update，ADR §5 通道兑现）；产品提交 e3bf60b（+227/−22 + 2 PNG 二进制，`git show --numstat` 实查；产品渲染路径 apps/web、apps/server、packages/shared、.github 与既有 8 基线零触及）；VERIFY PASS 零 BUG（AC1~AC5 过：gate 6/6 diffPx=0 实跑复绿、s0~s3 逐字节零漂移、AC3 反演红→绿、npm test 8/8、交互抽查 17/17；AC6 属推送后义务未到时点），证据 iterations/0011/REPORT.md；BK-0010 的实现阶段就此关账，ROADMAP T2-M3 实现段回写留治理日 PM |
+| BK-0025 | CI 补 SIGTERM 优雅停机断言（周报 W43 观察 O4） | test | 否 | P0 | S | ready | issue#8 | 用户批复在案（issue#8 评论「批准」2026-10-23T15:48:25Z，PLAN 0011 会话 gh 亲核）；CI 变更属 POLICY 需批准区→已获批；无 golden/UI 接触，非修宪轮（gate:update 不适用）；实现=CI workflow/断言脚本，落点 BUILD 前定 |
+| BK-9001 | 底部日志面板按级别过滤（info/warn/error） | ui-proposal | 是 | P0 | M | ready | issue#1 | 修宪通道：ADR 入 docs/adr/（标注已获用户 issue#1 批复 2026-10-23T15:50:05Z）→ 实现 → 同迭代重录 golden；触 UI=是，仅在修宪轮通道内可选取 |
+| BK-9002 | 通用智能体节点 + goal 模式会话面板 | ui-proposal | 是 | P0 | L | ready | issue#2 | 修宪通道同上（issue#2 批复 2026-10-23T15:49:39Z）；前置：BK-0016 会话 API + BK-0021 NDP（ROADMAP T5-M3「先迁移后扩展，不得跳过」）；L 项先拆分再实现（BK-0013 先例），SPEC 先行 |
+| BK-9003 | 呈现三件套节点：网页展示 / 终端只读流 / JSON 画布 | ui-proposal | 是 | P0 | L | ready | issue#3 | 修宪通道同上（issue#3 批复 2026-10-23T15:49:32Z）；前置：BK-0021 NDP（三个新节点一律按 NDP 定义）；L 项先拆分再实现 |
+| BK-9004 | 会话面板右侧工作台：git 信息 / diff 审查 compare / 项目目录树 | ui-proposal | 是 | P0 | L | ready | issue#4 | 修宪通道同上（issue#4 批复 2026-10-23T15:49:17Z）；前置：BK-0016 持久会话 API；建议治理日拆分排序（三特性可分批修宪） |
+| BK-9005 | 交互式 PTY 终端节点（用户与 agent 共享 shell 会话） | ui-proposal | 是 | P0 | L | ready | issue#5 | 修宪通道同上（issue#5 批复 2026-10-23T15:49:06Z）；立项语「安全世界设计先行」——SPEC 须先出安全方案；前置：BK-0021 NDP；L 项先拆分再实现 |
 | BK-0001 | 现状盘点：核对 ADR-0002 各 CP 落地状态与移植余量，细化 ROADMAP 里程碑 | doc | 否 | P0 | S | done | T1 | 2026-10-23 治理日终局改判 done（原 blocked）：VERIFY 本身 PASS（AC1–AC5 全过，iterations/0001/REPORT.md「结论 PASS」+ 矛盾清单空）且全部交付物已在库——盘点矩阵/余量清单在 iterations/0001/{REPORT,JOURNAL}.md、ROADMAP 回写内容（+24/−10）已随归档提交入库（现行 ROADMAP.md T1-M1 关账文本即其产物）；blocked 根因是 v1 防打转校验对「改动全在 docs/evolution/ 的产品提交」判空，v2（doc 项归治理日批处理）已结构性消除，重跑无增量信息；metrics 0001 行维持历史原样不改写 |
 | BK-0002 | 后端 E2E 冒烟脚本：`/api/v1` workflows/runs CRUD + `/api/v1/run` SSE 全事件链 | test | 否 | P1 | M | done | T2 | 迭代 0002 终态 done：`npm run smoke:server` 一键可跑（`tests/smoke/lib.mjs` + `smoke-server.mjs` + 根 package.json 一行，提交 79788a3）；正例两连跑 33 passed/0 failed、exit 0，负例 exit 1 带构建指引，VERIFY PASS 见 iterations/0002/REPORT.md；T3 各项 VERIFY 公共基座就位 |
 | BK-0003 | 契约测试补齐：16 种节点注册表与 SSE 事件契约的 DEFS 漂移防护覆盖核对 | test | 否 | P1 | M | done | T2 | 迭代 0003 终态 done：默认值 33/33 全量断言 + 事件反例 12 条 + HANDLERS⊇NODES 三测试落地（defs-drift/events-negative/handlers-coverage，contract.test.mjs 原样未动），engine.ts:26 一词零行为导出 HANDLERS，根 test 链改 build:shared→build:server→test（产品提交 1551994）；VERIFY PASS 零缺陷（node --test 8/8、反演 a/b/c 与裸跑防御先红后还原复绿、E2E P1-P3 全过）见 iterations/0003/REPORT.md；ROADMAP T2-M1 关账 |
@@ -53,3 +65,7 @@
 > 2026-10-23 T5 提案迁移：BK-9002→#2、BK-9003→#3、BK-9004→#4、BK-9005→#5、BK-9006→#6。
 > 2026-10-23 治理日新增：golden s4/s5 扩充提案（BK-0010 承载，ADR-0009）→#7；
 > CI SIGTERM 停机断言（周报 O4）→#8；AGENTS.md 漂移请用户亲改（禁止区）→#9（user-request 通知）。
+> 2026-10-24 迭代 0011 PLAN 轮批复同步（gh 亲核）：用户已批 #1~#5/#7/#8（时间戳见
+> 主池各行备注）→ BK-9001~9005 迁入主池 ready、#7/#8 落 BK-0026/BK-0025；**#6 仍待
+> 批复**（维持本区，不建行）；#9 三处漂移经核用户已亲改在库（AGENTS.md:28,30,48-49，
+> 提交 21d94a3），待用户自行确认关单。
