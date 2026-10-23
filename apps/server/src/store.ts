@@ -10,6 +10,10 @@
  *    workflows(id, text, updated_at)
  *    runs(id, text, workflow_name, status, started_at, ended_ms, done, total)
  *    run_events(run_id, seq, json, PRIMARY KEY(run_id, seq))
+ *    sessions(id, title, model, sys, created_at, updated_at)（迭代 0015 / BK-0016）
+ *    messages(session_id, seq, role, text, created_at, PRIMARY KEY(session_id, seq))
+ *    —— 会话/消息与 runs/run_events 完全正交：无外键、无联合查询；
+ *    会话的持久资产是 messages 表（turn 的 SSE 事件不入 run_events）。
  * ================================================================ */
 import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
@@ -37,6 +41,17 @@ export interface RunRow {
 }
 export interface WorkflowSummary { id: string; name: string; updated_at: number }
 
+/* 会话与消息的对外形状（GET /api/v1/sessions* 行，迭代 0015 / BK-0016） */
+export interface SessionRow {
+  id: string;
+  title: string;
+  model: string | null;
+  sys: string | null;
+  created_at: number;
+  updated_at: number;
+}
+export interface MessageRow { seq: number; role: 'user' | 'assistant'; text: string; created_at: number }
+
 /* SSE 事件落库钩子：一个 run 一个 recorder（首条事件与 runs 行插入同事务） */
 export interface RunRecorder { record(seq: number, ev: Record<string, unknown>): void }
 
@@ -63,6 +78,22 @@ const DDL = `
     json TEXT NOT NULL,
     PRIMARY KEY(run_id, seq)
   );
+  CREATE TABLE IF NOT EXISTS sessions(
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    model TEXT,
+    sys TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS messages(
+    session_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    role TEXT NOT NULL,          -- 'user' | 'assistant'
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(session_id, seq)
+  );
 `;
 
 let db: Database.Database | null = null;
@@ -79,6 +110,13 @@ let S: {
   listEvents: Database.Statement;
   deleteRun: Database.Statement;
   deleteEvents: Database.Statement;
+  insertSession: Database.Statement;
+  listSessionsStmt: Database.Statement;
+  getSessionStmt: Database.Statement;
+  listMessages: Database.Statement;
+  listRecentMessages: Database.Statement;
+  insertMessage: Database.Statement;
+  touchSession: Database.Statement;
 };
 /* 两个事务（openRunRecorder 复用；runId 等经闭包外的参数传入） */
 let txFirst: (runId: string, wfText: string, wfName: string, startedAt: number, seq: number, json: string) => void;
@@ -86,6 +124,8 @@ let txEvent: (runId: string, seq: number, json: string,
   status: string | null, done: number | null, total: number | null, endedMs: number | null) => void;
 /* run 级联删除事务（ADR-0007：run_events 无外键，须手工先删事件行再删 runs 行） */
 let txDeleteRun: (runId: string) => boolean;
+/* 会话消息事务（迭代 0015）：消息行 + sessions.updated_at 同步更新原子成立 */
+let txAppendMessage: (sessionId: string, role: 'user' | 'assistant', text: string) => void;
 
 /* ---------- 初始化（server.ts 启动期调用一次） ---------- */
 export function initStore(): void {
@@ -121,6 +161,23 @@ export function initStore(): void {
     listEvents: db.prepare(`SELECT json FROM run_events WHERE run_id = ? ORDER BY seq ASC`),
     deleteRun: db.prepare(`DELETE FROM runs WHERE id = ?`),
     deleteEvents: db.prepare(`DELETE FROM run_events WHERE run_id = ?`),
+
+    /* 会话/消息（迭代 0015 / BK-0016；seq 由单语句内子查询自增——跨进程原子，
+       双实例共用同一 DB 文件时语句级锁保证不重号） */
+    insertSession: db.prepare(
+      `INSERT INTO sessions(id, title, model, sys, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)`),
+    listSessionsStmt: db.prepare(
+      `SELECT id, title, model, sys, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT ?`),
+    getSessionStmt: db.prepare(
+      `SELECT id, title, model, sys, created_at, updated_at FROM sessions WHERE id = ?`),
+    listMessages: db.prepare(
+      `SELECT seq, role, text, created_at FROM messages WHERE session_id = ? ORDER BY seq ASC`),
+    listRecentMessages: db.prepare(
+      `SELECT seq, role, text FROM messages WHERE session_id = ? ORDER BY seq DESC LIMIT ?`),
+    insertMessage: db.prepare(
+      `INSERT INTO messages(session_id, seq, role, text, created_at)
+       VALUES(?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?)`),
+    touchSession: db.prepare(`UPDATE sessions SET updated_at = ? WHERE id = ?`),
   };
 
   /* 事务①：runs 行插入 + 首事件（run:accepted）——run 的存在性与首事件原子成立 */
@@ -140,6 +197,11 @@ export function initStore(): void {
   txDeleteRun = db.transaction((runId: string) => {
     S.deleteEvents.run(runId);
     return S.deleteRun.run(runId).changes > 0;
+  });
+  /* 事务④：会话消息行 + sessions.updated_at 同一事务（迭代 0015 / BK-0016） */
+  txAppendMessage = db.transaction((sessionId: string, role: 'user' | 'assistant', text: string) => {
+    S.insertMessage.run(sessionId, sessionId, role, text, Date.now());
+    S.touchSession.run(Date.now(), sessionId);
   });
   logger.info({ dbFile: DB_FILE }, 'SQLite 存储就绪（WAL，表迁移完成）');
 }
@@ -245,6 +307,40 @@ export function getRunDetail(id: string): { run: RunRow; events: unknown[] } | n
 /* 删除运行记录（ADR-0007）：事务级联清理 run_events（先删事件行再删 runs 行，原子） */
 export function deleteRun(id: string): boolean {
   return txDeleteRun(id);
+}
+
+/* ---------- 会话（迭代 0015 / BK-0016，仅 v1 命名空间；与 runs 正交） ---------- */
+export function createSession(doc: { title?: string; model?: string; sys?: string }): SessionRow {
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const title = typeof doc.title === 'string' && doc.title.trim() ? doc.title : '新会话';
+  const model = typeof doc.model === 'string' && doc.model.trim() ? doc.model : null;
+  const sys = typeof doc.sys === 'string' ? doc.sys : null;
+  S.insertSession.run(id, title, model, sys, now, now);
+  return getSession(id)!;
+}
+
+export function listSessions(limit: number): SessionRow[] {
+  return S.listSessionsStmt.all(limit) as SessionRow[];       // updated_at 倒序
+}
+
+export function getSession(id: string): SessionRow | null {
+  return (S.getSessionStmt.get(id) as SessionRow | undefined) ?? null;
+}
+
+export function getSessionDetail(id: string): { session: SessionRow; messages: MessageRow[] } | null {
+  const session = getSession(id);
+  if(!session) return null;
+  return { session, messages: S.listMessages.all(id) as MessageRow[] };   // seq 升序
+}
+
+/* 送模历史截断取数（DB 全量保存不截断；返回 seq DESC，调用方自行反序为 ASC） */
+export function listRecentMessages(sessionId: string, limit: number): { seq: number; role: 'user' | 'assistant'; text: string }[] {
+  return S.listRecentMessages.all(sessionId, limit) as { seq: number; role: 'user' | 'assistant'; text: string }[];
+}
+
+export function appendMessage(sessionId: string, role: 'user' | 'assistant', text: string): void {
+  txAppendMessage(sessionId, role, text);   // 本迭代无删除端点，sessionId 必存在（chat handler 已判 404）
 }
 
 /* ---------- 关闭（优雅停机时 WAL checkpoint 落盘） ---------- */

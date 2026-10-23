@@ -34,6 +34,10 @@ import {
   initStore, closeStore, openRunRecorder, listWorkflows, getWorkflow, saveWorkflow, listRuns, getRunDetail,
   deleteWorkflow, deleteRun,
 } from './store.js';
+import {
+  sessionsCreateHandler, sessionsListHandler, sessionDetailHandler, sessionChatHandler, sessionStopHandler,
+  abortActiveSessions, activeSessionCount,
+} from './sessions.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -200,6 +204,12 @@ app.get('/api/v1/runs/:id', runDetailHandler);
 /* ADR-0007 删除端点：仅注册 v1（沿 ADR-0005：持久化端点无旧别名） */
 app.delete('/api/v1/workflows/:id', workflowDeleteHandler);
 app.delete('/api/v1/runs/:id', runDeleteHandler);
+/* 迭代 0015 / BK-0016 会话端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
+app.post('/api/v1/sessions', sessionsCreateHandler);
+app.get('/api/v1/sessions', sessionsListHandler);
+app.get('/api/v1/sessions/:id', sessionDetailHandler);
+app.post('/api/v1/sessions/:id/chat', sessionChatHandler);
+app.post('/api/v1/sessions/:id/stop', sessionStopHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{
@@ -213,17 +223,21 @@ async function shutdown(signal: string): Promise<void> {
   if(shuttingDown) return;
   shuttingDown = true;
   const active = Object.keys(runsById);
-  logger.info({ signal, activeRuns: active.length }, '优雅停机开始');
+  /* 会话活动 turn 与 run 同批中止（迭代 0015 / BK-0016）：各 turn 走停止路径
+     （部分文本落库 → run:done(stopped) → finally 自清注册表），shutdown 只轮询不代删 */
+  const sessionsAborted = abortActiveSessions();
+  logger.info({ signal, activeRuns: active.length, activeSessions: sessionsAborted }, '优雅停机开始');
   server.close();                                    /* ① 停止接受新请求 */
   for(const id of active){                           /* ② 中止活动 run：SSE 发 run:done(stopped) 后收尾 */
     try{ runsById[id]!.ac.abort(); }catch{ /* 已结束 */ }
   }
   const deadline = Date.now() + 5000;                /* 宽限上限 5s（Docker 默认 10s 窗口内） */
-  while(Object.keys(runsById).length && Date.now() < deadline){
+  while(Object.keys(runsById).length + activeSessionCount() && Date.now() < deadline){
     await new Promise(r=>setTimeout(r, 100));
   }
-  if(Object.keys(runsById).length){
-    logger.warn({ remaining: Object.keys(runsById).length }, '停机宽限期内 run 未收尾，强制退出');
+  if(Object.keys(runsById).length + activeSessionCount()){
+    logger.warn({ remaining: Object.keys(runsById).length, remainingSessions: activeSessionCount() },
+      '停机宽限期内 run 未收尾，强制退出');
   }
   logger.info('优雅停机完成');
   closeStore();                                     /* SQLite 关闭（WAL checkpoint 落盘，ADR-0005） */

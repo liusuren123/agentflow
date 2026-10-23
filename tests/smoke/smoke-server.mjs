@@ -2,10 +2,17 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→H→W→N→S→R→D→E→K→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→H→W→N→S→R→D→E→K→G→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
+ * G 组（迭代 0015 / BK-0016）：三实例矩阵——主实例 G01-G04（CRUD/404/limit
+ * 反例/stop 404，零模型调用）、mock 实例 G05-G08（进程内 OpenAI 兼容端点，
+ * AI_BASE_URL 注入显式配置分支，分块延时流出保证时序确定）、minimal 实例
+ * G09（全密钥空串压制 → 降级路径无条件确定）；G10 契约校验仅作校验器使用
+ * @agentflow/shared validateEvent（被测系统仍只经 HTTP 触达，0015 SPEC §3.4-6）。
  * ================================================================ */
+import http from 'node:http';
+import { validateEvent } from '@agentflow/shared';
 import {
   Checker, SmokeFailError, api, ctxOf, deepEqual, getFreePort, openSse, preflight, sleep, startServer,
 } from './lib.mjs';
@@ -54,7 +61,117 @@ const wfCode = (params, name) => ({
 const C = new Checker();
 const CLEAN = { runIds: [], wfIds: [] };
 let srv = null;
+let mockModel = null;   /* G 组：进程内 mock 模型端点（迭代 0015） */
+let mockSrv = null;     /* G 组：AI_BASE_URL 指向 mock 的第二实例 */
+let minimalSrv = null;  /* G 组：全密钥空串压制的第三实例（降级路径确定性） */
 let cleanupPromise = null;
+
+/* ---------- G 组基础设施（迭代 0015 / BK-0016 · SPEC §3.4-2/3） ---------- */
+/* 进程内 OpenAI 兼容 mock 端点：接受任何 POST（@ai-sdk/openai-compatible 发
+ * ${AI_BASE_URL}/chat/completions）；三块固定文本、块间 400ms 延时流出（总流出
+ * ≥800ms，为 G07 停止窗与 G08 并发窗留确定性时序）；逐请求记录 body 供 G06
+ * 续聊历史断言；客户端中止（stop abort）后写失败容忍。 */
+const MOCK_FULL = '你好，我是会话冒烟助手。';
+const MOCK_CHUNKS = ['你好，', '我是会话', '冒烟助手。'];
+function startMockModel() {
+  return new Promise((resolve) => {
+    const requests = [];
+    const m = http.createServer((req, res) => {
+      const bufs = [];
+      req.on('data', (c) => bufs.push(c));
+      req.on('end', async () => {
+        let body = null;
+        try { body = JSON.parse(Buffer.concat(bufs).toString('utf8')); } catch { /* 非 JSON 容忍 */ }
+        requests.push(body);
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        const writeChunk = (delta, finish) => {
+          res.write(`data: ${JSON.stringify({
+            id: 'chatcmpl-mock', object: 'chat.completion.chunk', created: 1700000000, model: 'mock-model',
+            choices: [{ index: 0, delta, finish_reason: finish }],
+          })}\n\n`);
+        };
+        try {
+          for (let i = 0; i < MOCK_CHUNKS.length; i += 1) {
+            if (i > 0) await sleep(400);   /* 首块无延时（chat 发出后 ~即时可达） */
+            writeChunk(i === 0 ? { role: 'assistant', content: MOCK_CHUNKS[i] } : { content: MOCK_CHUNKS[i] }, null);
+          }
+          writeChunk({}, 'stop');
+          res.write('data: [DONE]\n\n');
+          res.end();
+        } catch { /* 客户端断开（stop abort）后写失败容忍 */ }
+      });
+    });
+    getFreePort().then((port) => {
+      m.listen(port, '127.0.0.1', () => resolve({ srv: m, url: `http://127.0.0.1:${port}`, requests }));
+    });
+  });
+}
+
+/* POST /api/v1/sessions/:id/chat 的 SSE 消费（lib.mjs openSse 硬编码 /api/v1/run
+ * 且 lib.mjs 不在本迭代白名单——帧解析/waitFor/waitEnd 以本地函数复制，
+ * 语义与 lib.mjs:126-189 互逆一致）。 */
+async function chatSse(base, sessionId, body, timeoutMs = 60000) {
+  const res = await fetch(`${base}/api/v1/sessions/${sessionId}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (res.status !== 200) throw new Error(`POST /api/v1/sessions/${sessionId}/chat 意外状态 ${res.status}`);
+  const events = [];
+  const waiters = new Set();
+  let ended = false;
+  let endErr = null;
+  let endResolve;
+  const endPromise = new Promise((r) => { endResolve = r; });
+  const wake = () => { for (const w of [...waiters]) w(); waiters.clear(); };
+  void (async () => {
+    try {
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n\n')) >= 0) {
+          const frame = buf.slice(0, i);
+          buf = buf.slice(i + 2);
+          for (const line of frame.split('\n')) {
+            if (!line.startsWith('data: ')) continue;   /* `: ping` 等注释行跳过 */
+            try { events.push(JSON.parse(line.slice(6))); } catch { /* 非法帧忽略 */ }
+          }
+        }
+      }
+    } catch (e) { endErr = e; }
+    ended = true;
+    wake();
+    endResolve();
+  })();
+  return {
+    events,
+    async waitFor(predicate, timeoutMs2) {
+      const t0 = Date.now();
+      for (;;) {
+        const hit = events.find(predicate);
+        if (hit) return hit;
+        if (ended) throw endErr ?? new Error('SSE 流已收束，未等到期望事件');
+        if (Date.now() - t0 > timeoutMs2) throw new Error(`SSE 等待超时（${timeoutMs2}ms，已收 ${events.length} 事件）`);
+        await new Promise((resolve) => {
+          const w = () => { clearTimeout(timer); waiters.delete(w); resolve(); };
+          const timer = setTimeout(() => { waiters.delete(w); resolve(); }, 250);
+          waiters.add(w);
+        });
+      }
+    },
+    async waitEnd(ms = 10000) {
+      const ok = await Promise.race([endPromise.then(() => true), sleep(ms).then(() => false)]);
+      if (ok && endErr) throw endErr;
+      return ok;
+    },
+  };
+}
 
 /* ---------- C 组：自清理与零残留（finally 内；尽力而为 + 如实报告，不抛） ---------- */
 async function doCleanup() {
@@ -100,6 +217,15 @@ async function doCleanup() {
   exited = await Promise.race([srv.exitPromise.then(() => true), sleep(1000).then(() => false)]);
   C.check(exited, 'C04', 'server 子进程已终止（kill → 3s → SIGKILL 兜底）',   /* C04 */
     { expected: 'exit 事件到达', actual: exited ? '已终止' : '未观察到退出' });
+  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言） */
+  for (const inst of [mockSrv, minimalSrv]) {
+    if (!inst) continue;
+    try { inst.child.kill(); } catch { /* 已退出 */ }
+    let ex = await Promise.race([inst.exitPromise.then(() => true), sleep(3000).then(() => false)]);
+    if (!ex) { try { inst.child.kill('SIGKILL'); } catch { /* 已退出 */ } }
+    await Promise.race([inst.exitPromise.then(() => true), sleep(1000).then(() => false)]);
+  }
+  if (mockModel) { try { await new Promise((r) => mockModel.srv.close(() => r())); } catch { /* 已关闭 */ } }
 }
 function cleanup() {
   if (!cleanupPromise) cleanupPromise = doCleanup();
@@ -353,6 +479,169 @@ async function main() {
     C.ok(done.ok === true && errCount === 0 && out.startsWith('执行成功') && !logs.some((m) => m.includes(CODE_NOTE)),
       'K03', 'code 节点 lang=Python 不带 code：run:done {ok:true}、无 node:error、out「执行成功」（默认样例按 Python 原样执行）、log 无兜底告知',
       { expected: 'run 完成 + out=执行成功… + log 无告知子串', actual: JSON.stringify({ ok: done.ok, errCount, out, logs: logs.slice(0, 3) }).slice(0, 260), ctx: 'POST /api/v1/run（单 code 节点，params 仅 lang:Python；依赖本机 python 运行时）' });
+  }
+
+  /* G 组：持久会话与流式会话 API（G01-G10；迭代 0015 / BK-0016 · SPEC §6）
+   * 三实例矩阵：主实例 G01-G04（零模型调用）→ mock 实例 G05-G08（分块延时流出，
+   * 时序确定）→ minimal 实例 G09（降级路径无条件确定）→ G10 离线契约校验。
+   * 残留纪律：会话无删除端点，一律按自建 id 存在性断言，不做全局计数（0015 SPEC §3.4-5）。 */
+  const newSession = async (base, title, assertId) => {
+    const r = await api(base, 'POST', '/api/v1/sessions', { title });
+    if (r.status !== 201 || typeof r.json?.id !== 'string' || r.json.id === '') {
+      C.fail(assertId, `建会话前置（${title}）`, { expected: '201 {id}', actual: `${r.status} ${r.text.slice(0, 120)}`, ctx: ctxOf(r) });
+      throw new SmokeFailError(assertId);
+    }
+    return r.json.id;
+  };
+  { /* G01 · 建会话：201 + SessionRow 形状 */
+    const g1 = await api(srv.base, 'POST', '/api/v1/sessions', { title: '测试' });
+    C.ok(g1.status === 201 && typeof g1.json?.id === 'string' && g1.json.id !== '' && g1.json?.title === '测试'
+      && g1.json?.model === null && g1.json?.sys === null
+      && typeof g1.json?.created_at === 'number' && typeof g1.json?.updated_at === 'number',
+      'G01', 'POST /sessions {title:"测试"} → 201 SessionRow（id 非空、title、"model/sys":null、时间戳 number）',
+      { expected: '201 {id,title:"测试",model:null,sys:null,created_at,updated_at}', actual: `${g1.status} ${g1.text.slice(0, 160)}`, ctx: ctxOf(g1) });
+    var sidG1 = g1.json?.id;   /* G02/G03/G04 复用 */
+  }
+  { /* G02 · 列表含自建 id + limit 反例（N02/N03 同型） */
+    const g2 = await api(srv.base, 'GET', '/api/v1/sessions');
+    const g2a = await api(srv.base, 'GET', '/api/v1/sessions?limit=0');
+    const g2b = await api(srv.base, 'GET', '/api/v1/sessions?limit=101');
+    const hit = (g2.json?.sessions ?? []).some((x) => x?.id === sidG1);
+    C.ok(g2.status === 200 && hit && g2a.status === 400 && g2a.json?.error === 'limit 必须是 1-100 的整数'
+      && g2b.status === 400 && g2b.json?.error === 'limit 必须是 1-100 的整数',
+      'G02', 'GET /sessions 列表含自建 id（updated_at 倒序）；limit=0 / limit=101 → 400 {error:"limit 必须是 1-100 的整数"}',
+      { expected: '200 含自建 id + 两个 400 反例', actual: `list=${g2.status}（含 id=${hit}）limit0=${g2a.status} limit101=${g2b.status}`, ctx: `${ctxOf(g2)} | ${ctxOf(g2a)}` });
+  }
+  { /* G03 · 恢复（session + 空 messages）+ 不存在 404 */
+    const g3 = await api(srv.base, 'GET', `/api/v1/sessions/${sidG1}`);
+    const g3b = await api(srv.base, 'GET', '/api/v1/sessions/00000000-0000-0000-0000-000000000000');
+    C.ok(g3.status === 200 && g3.json?.session?.id === sidG1 && Array.isArray(g3.json?.messages) && g3.json.messages.length === 0
+      && g3b.status === 404 && g3b.json?.error === 'session not found',
+      'G03', 'GET /sessions/:id → 200 {session.id===id, messages:[]}；GET 不存在 id → 404 {error:"session not found"}',
+      { expected: '200 空 messages + 404 反例', actual: `detail=${g3.status}（messages=${g3.json?.messages?.length}）404=${g3b.status} ${g3b.json?.error}`, ctx: ctxOf(g3b) });
+  }
+  { /* G04 · stop 无活动 turn → 404（主实例全程零模型调用） */
+    const g4 = await api(srv.base, 'POST', `/api/v1/sessions/${sidG1}/stop`, {});
+    C.ok(g4.status === 404 && g4.json?.error === 'session turn not found',
+      'G04', 'POST /sessions/:id/stop（无活动 turn）→ 404 {error:"session turn not found"}',
+      { expected: '404 session turn not found', actual: `${g4.status} ${g4.text.slice(0, 80)}`, ctx: ctxOf(g4) });
+  }
+  /* mock 实例：AI_BASE_URL 注入显式配置分支（providers.ts 显式优先），宿主密钥不影响 */
+  mockModel = await startMockModel();
+  try {
+    mockSrv = await startServer(await getFreePort(), {
+      env: { AI_BASE_URL: mockModel.url, AI_API_KEY: 'smoke-mock-key', AI_MODELS: 'MockChat:mock-model', AI_MODEL: 'mock-model' },
+    });
+  } catch (e) {
+    C.fail('G05', 'mock 实例启动（AI_BASE_URL 显式注入）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+    throw new SmokeFailError('G05');
+  }
+  let g05Events = [];
+  { /* G05 · 确定性流式 turn + 落库复核（正常路径） */
+    const sidM = await newSession(mockSrv.base, 'mock 会话', 'G05');
+    const s5 = await chatSse(mockSrv.base, sidM, { text: '你好' });
+    const d5 = await s5.waitFor((e) => e.type === 'run:done', 30000);
+    const ended5 = await s5.waitEnd(10000);
+    g05Events = s5.events;   /* G10 契约校验素材 */
+    const deltas = g05Events.filter((e) => e.type === 'node:delta');
+    const nd = g05Events.find((e) => e.type === 'node:done');
+    const msgs = (await api(mockSrv.base, 'GET', `/api/v1/sessions/${sidM}`)).json?.messages ?? [];
+    C.ok(d5.ok === true && d5.done === 1 && d5.total === 1 && d5.outputs?.[0] === MOCK_FULL
+      && /^run:accepted,node:start,(?:node:delta,)+node:done,log,run:done$/.test(g05Events.map((e) => e.type).join(','))
+      && deltas.length >= 1 && deltas[deltas.length - 1]?.text === MOCK_FULL
+      && nd?.out === MOCK_FULL && nd?.firePort === null && nd?.iteration === null && ended5
+      && msgs.length === 2 && msgs[0]?.role === 'user' && msgs[0]?.text === '你好' && msgs[0]?.seq === 1
+      && msgs[1]?.role === 'assistant' && msgs[1]?.text === MOCK_FULL && msgs[1]?.seq === 2,
+      'G05', 'chat {text:"你好"}：事件序恰 run:accepted→node:start→node:delta×N（末次=全文）→node:done{out=全文,firePort:null,iteration:null}→log→run:done{ok:true,done:1,total:1,outputs:[全文]}；GET :id → messages 恰 2 条（user+assistant 全文，seq 1,2）',
+      { expected: '正常路径事件序 + 2 条落库', actual: JSON.stringify({ types: g05Events.map((e) => e.type).join(','), done: { ok: d5.ok, done: d5.done, total: d5.total, outputs: d5.outputs }, msgs: msgs.map((m) => `${m.seq}:${m.role}`), ended: ended5 }).slice(0, 280), ctx: 'mock 实例 POST chat + GET :id' });
+  }
+  { /* G06 · 续聊上下文：第二轮请求含第一轮 user/assistant 历史（mock 记录断言） */
+    const sidM = await newSession(mockSrv.base, '续聊会话', 'G06');
+    const s6a = await chatSse(mockSrv.base, sidM, { text: '你好' });
+    await s6a.waitFor((e) => e.type === 'run:done', 30000);
+    await s6a.waitEnd(10000);
+    const s6 = await chatSse(mockSrv.base, sidM, { text: '再问' });
+    await s6.waitFor((e) => e.type === 'run:done', 30000);
+    await s6.waitEnd(10000);
+    const msgs = (await api(mockSrv.base, 'GET', `/api/v1/sessions/${sidM}`)).json?.messages ?? [];
+    const reqMsgs = (mockModel.requests ?? []).find((r) => {
+      const ms = r?.messages ?? [];
+      const l = ms[ms.length - 1];
+      return l?.role === 'user' && String(l?.content) === '再问';
+    })?.messages ?? [];
+    const last = reqMsgs[reqMsgs.length - 1];
+    C.ok(mockModel.requests.length >= 3
+      && reqMsgs.some((m) => m?.role === 'user' && String(m?.content) === '你好')
+      && reqMsgs.some((m) => m?.role === 'assistant' && String(m?.content) === MOCK_FULL)
+      && last?.role === 'user' && String(last?.content) === '再问' && msgs.length === 4,
+      'G06', '第二轮 chat {text:"再问"}：mock 收到的第二轮请求 messages 含第一轮 user/assistant 历史且末位 {role:"user",content:"再问"}；GET :id → messages 恰 4 条（续聊上下文生效）',
+      { expected: '第二轮含历史 + 4 条落库', actual: JSON.stringify({ reqMsgs: reqMsgs.map((m) => `${m?.role}:${String(m?.content).slice(0, 8)}`), msgs: msgs.length }), ctx: `mock 请求数=${mockModel.requests.length}` });
+  }
+  let g07Events = [];
+  { /* G07 · 停止信号与部分保留（三块 ×400ms 流出未完即停 → 已累积为前缀） */
+    const sid7 = await newSession(mockSrv.base, '停止会话', 'G07');
+    const s7 = await chatSse(mockSrv.base, sid7, { text: '长输出' });
+    await s7.waitFor((e) => e.type === 'node:delta', 20000);
+    const stop = await api(mockSrv.base, 'POST', `/api/v1/sessions/${sid7}/stop`, {});
+    const d7 = await s7.waitFor((e) => e.type === 'run:done', 20000);
+    g07Events = s7.events;   /* G10 契约校验素材 */
+    const msgs = (await api(mockSrv.base, 'GET', `/api/v1/sessions/${sid7}`)).json?.messages ?? [];
+    const asst = [...msgs].reverse().find((m) => m?.role === 'assistant');
+    C.ok(stop.status === 200 && stop.json?.ok === true
+      && d7.stopped === true && d7.ok === false && d7.done === 0 && d7.total === 1
+      && asst && asst.text !== '' && MOCK_FULL.startsWith(asst.text),
+      'G07', '流出中 POST stop → 200 {ok:true} 且 SSE 以 run:done{stopped:true,ok:false,done:0,total:1} 收尾；GET :id → assistant 消息非空且为 MOCK_FULL 前缀（已累积部分保留落库）',
+      { expected: 'stopped 终态 + 部分文本落库', actual: JSON.stringify({ stop: stop.status, done: { stopped: d7.stopped, ok: d7.ok, done: d7.done, total: d7.total }, asst: asst?.text }), ctx: `POST /api/v1/sessions/:id/stop（首块已流出后停止）` });
+  }
+  { /* G08 · 并发守卫：活动 turn 中二次 chat → 409；不存在 session chat → 404；stop 清场 */
+    const sid8 = await newSession(mockSrv.base, '并发会话', 'G08');
+    const s8 = await chatSse(mockSrv.base, sid8, { text: '并发' });
+    await s8.waitFor((e) => e.type === 'node:delta', 20000);
+    const dup = await api(mockSrv.base, 'POST', `/api/v1/sessions/${sid8}/chat`, { text: '并发2' });
+    const nf = await api(mockSrv.base, 'POST', '/api/v1/sessions/00000000-0000-0000-0000-000000000000/chat', { text: 'x' });
+    const stop = await api(mockSrv.base, 'POST', `/api/v1/sessions/${sid8}/stop`, {});
+    await s8.waitEnd(10000);
+    C.ok(dup.status === 409 && dup.json?.error === 'session turn is active'
+      && nf.status === 404 && nf.json?.error === 'session not found' && stop.status === 200,
+      'G08', '活动 turn 进行中同 session 二次 chat → 409 {error:"session turn is active"}；chat 不存在 session → 404 {error:"session not found"}；对活动会话 stop 清场 → 200',
+      { expected: '409 + 404 + 清场 200', actual: `dup=${dup.status} ${dup.json?.error} / nf=${nf.status} ${nf.json?.error} / stop=${stop.status}`, ctx: ctxOf(dup) });
+  }
+  /* minimal 实例：全密钥空串压制（config 空串归一）→ configured=false 确定，降级路径无条件触发 */
+  try {
+    minimalSrv = await startServer(await getFreePort(), {
+      env: {
+        AI_BASE_URL: '', AI_API_KEY: '', AI_MODELS: '', AI_MODEL: '', AI_PROVIDER_NAME: '',
+        DEEPSEEK_API_KEY: '', ZHIPU_API_KEY: '', OPENAI_API_KEY: '', MOONSHOT_API_KEY: '',
+      },
+    });
+  } catch (e) {
+    C.fail('G09', 'minimal 实例启动（全密钥空串压制）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+    throw new SmokeFailError('G09');
+  }
+  { /* G09 · 降级路径：模型未配置 → log(warn) + run:error + run:done{ok:false}，assistant 不落库 */
+    const sid9 = await newSession(minimalSrv.base, '降级会话', 'G09');
+    const s9 = await chatSse(minimalSrv.base, sid9, { text: '无模型' });
+    const d9 = await s9.waitFor((e) => e.type === 'run:done', 15000);
+    await s9.waitEnd(10000);
+    const types = s9.events.map((e) => e.type).join(',');
+    const det9 = await api(minimalSrv.base, 'GET', `/api/v1/sessions/${sid9}`);
+    const msgs = det9.json?.messages ?? [];
+    C.ok(types === 'run:accepted,log,run:error,run:done'
+      && d9.ok === false && d9.done === 0 && d9.total === 1
+      && msgs.length === 1 && msgs[0]?.role === 'user' && msgs[0]?.text === '无模型',
+      'G09', 'minimal 实例 chat：事件序恰 run:accepted→log(warn)→run:error→run:done{ok:false,done:0,total:1}；GET :id → messages 恰 1 条 user（assistant 不落库）',
+      { expected: '降级事件序 + 恰 1 条 user', actual: JSON.stringify({ types, done: { ok: d9.ok, done: d9.done, total: d9.total }, msgs: msgs.map((m) => `${m.seq}:${m.role}`) }), ctx: ctxOf(det9) });
+  }
+  { /* G10 · SSE 契约零漂移：G05/G07 全事件流逐条 RunEventSchema 校验（AC5 机器证明） */
+    const all = [...g05Events, ...g07Events];
+    let parsed = 0;
+    let bad = null;
+    for (const ev of all) {
+      try { validateEvent(ev); parsed += 1; } catch (e) { bad = { type: ev?.type, err: String(e?.message ?? e) }; break; }
+    }
+    C.ok(bad === null && parsed === all.length,
+      'G10', 'G05 与 G07 捕获的全部事件（run:accepted/node:start/node:delta/node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约，packages/shared 零改动）',
+      { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
   }
 }
 
