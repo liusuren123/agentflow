@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0017      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0018      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`；补题轮无所选 ID 亦为 `-`）
-started: 2026-10-24 07:58  # 本次迭代开始时间
-updated: 2026-10-24 08:57  # 最近更新时间
+started: 2026-10-24 16:45  # 本次迭代开始时间
+updated: 2026-10-24 17:19  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0016 / BK-0017 CLOSE=done（R0 FAIL→修复轮 R1 PASS）：approval 审批人节点引用（role=node:id 受控 LLM 裁决 + zod 降级链 + approval_audits 审计）落地，产品提交 a9ac875（初始+R1 合一，+382/−4 恰白名单四路径，零 UI/零 shared/零新 SSE 事件），BUG-0013/OBS-001 均修复经 smoke 84/0 + API/UI 复验收定——docs/evolution/iterations/0016/REPORT.md（R1 复验节）
+last_result: 迭代 0017 / BK-0027 CLOSE=done（纯文档轮，VERIFY PASS 零 BUG）：ADR-0012 真 MCP client 传输选型草案（278 行：两传输都做/统一 McpConnection 抽象/Streamable HTTP 先行/@modelcontextprotocol/client ^2.4 推荐）+ BK-0028~0030 定界回写 VERBATIM ×3（维持 proposed）+ 附录 A needs-approval issue 草案落盘，产品提交 de278bb（+278/−0 恰 1 路径），smoke:server 亲跑 84/0——docs/evolution/iterations/0017/REPORT.md；issue 待脚本开启，批复前三子项不转 ready
 ```
