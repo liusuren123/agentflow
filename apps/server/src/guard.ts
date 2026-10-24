@@ -98,3 +98,12 @@ export async function searxngSearch(baseUrl: string, q: string, count: number): 
   await assertPublicUrl(u);
   return fetch(u, { headers:{ 'User-Agent':UA }, signal: AbortSignal.timeout(12000) });
 }
+
+/* MCP Streamable HTTP 出站网关（迭代 0025 / BK-0030 · ADR-0012 §6.2）：
+ * 目标主机来自运维 env 注册表（MCP_HTTP_SERVERS），经 assertPublicUrl 动态
+ * 校验后请求——与 searxngSearch 动态主机网关同层集中出口；作为 SDK transport
+ * 的 fetch 注入（http.ts HttpMcpOptions.fetch，BK-0028 预留注入面）。
+ * init.signal 由连接层注入（callTool 30s 硬顶在 connection.ts）。 */
+export async function mcpFetch(rawUrl: unknown, init: RequestInit = {}): Promise<Response> {
+  return guardedFetch(rawUrl, init);
+}

@@ -6,7 +6,8 @@ import { generateText, streamText, tool, type ToolSet } from 'ai';
 import type { ModelMessage } from 'ai';
 import { z } from 'zod';
 import { getModel, providerInfo } from './providers.js';
-import { collectTools, isStubImpl, TOOL_SPECS } from './tools.js';
+import { isStubImpl, TOOL_SPECS } from './tools.js';
+import { buildToolSession } from './mcp/inject.js';
 import { isAbort, preview, renderIfTemplate, strInput, toStr } from './util.js';
 import type { NodeHandler, NodeResult, WFNode } from './types.js';
 
@@ -35,7 +36,8 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
   const temperature = Number(p.temp ?? 0.7);
   const maxOutputTokens = Math.min(32768, Math.max(64, Number(p.max) || 2048));
   const t0 = Date.now();
-  const toolImpls = collectTools(n.mcp);
+  const sess = await buildToolSession(n.mcp, ctx.ac.signal);   /* 三分会话：内置/外部动态/降级 stub（迭代 0025 / BK-0030） */
+  const toolImpls = sess.impls;
   let text = '', tokens = 0, stubCount = 0;
 
   if(toolImpls.size){
@@ -44,9 +46,11 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
     const keyOf = new Map<string, string>();   // 安全工具名 → 原名
     for(const [name, impl] of toolImpls){
       if(isStubImpl(impl)) stubCount++;   /* 未接入工具计数（✓ 摘要分项，迭代 0009） */
-      const spec = TOOL_SPECS[name] || { desc: name, schema: {} as Record<string, string> };
+      const ext = sess.extSpecs.get(name);   /* 分支②：发现快照桥接 spec（mcp/inject.ts bridgeSpec） */
+      const spec = TOOL_SPECS[name] || { desc: ext?.desc ?? name, schema: {} as Record<string, string> };
       const shape: Record<string, any> = {};
-      for(const [k, d] of Object.entries(spec.schema || {})){
+      if(ext) Object.assign(shape, ext.shape);
+      else for(const [k, d] of Object.entries(spec.schema || {})){
         shape[k] = /数量|count/i.test(k) ? z.number().optional().describe(String(d)) : z.string().optional().describe(String(d));
       }
       const safe = name.replace(/[^\w]/g,'_');   /* OpenAI 函数名仅允许 \w，连字符/点号一并清洗 */

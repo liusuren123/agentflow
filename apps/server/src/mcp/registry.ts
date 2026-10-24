@@ -17,6 +17,7 @@
 import { createHttpMcpConnection } from './http.js';
 import { createStdioMcpConnection } from './stdio.js';
 import type { McpConnection, McpToolInfo } from './connection.js';
+import type { FetchLike } from '@modelcontextprotocol/client';
 import { logger } from '../logger.js';
 
 /* ---- 注册表条目（plain data：双传输构造参数的载体） ---- */
@@ -109,6 +110,7 @@ export const envLoader: McpServersLoader = () => ({
 /* ---- 注册表构建（语义层：内置 id 冲突 warn+拒绝该条；格式合法性由 config 前置保证） ---- */
 export interface BuildRegistryOptions {
   warn?: (fields: { serverId: string; kind: string }, msg: string) => void;   /* 缺省 logger.warn（冒烟注入 collector） */
+  httpFetch?: FetchLike;   /* BK-0030：HTTP 发现连接的 fetch 注入（默认 SDK 全局 fetch，MR 兼容） */
 }
 
 export function buildMcpRegistry(sources: McpRegistrySources, opts?: BuildRegistryOptions): McpRegistry {
@@ -126,7 +128,7 @@ export function buildMcpRegistry(sources: McpRegistrySources, opts?: BuildRegist
     }
     entries.push(e);
   }
-  return new McpRegistry(entries);
+  return new McpRegistry(entries, opts?.httpFetch);
 }
 
 /* ---- 注册表：tools/list 发现入口 + 进程级快照缓存（SPEC §2.3） ---- */
@@ -136,9 +138,11 @@ export class McpRegistry {
   private readonly toolsCache = new Map<string, McpToolInfo[]>();
   private readonly discoveryCounts = new Map<string, number>();
   private readonly stdioPids = new Map<string, number | null>();
+  private readonly httpFetch?: FetchLike;   /* BK-0030 注入缝：undefined = 现行为（SDK 全局 fetch） */
 
-  constructor(entries: readonly McpServerEntry[]) {
+  constructor(entries: readonly McpServerEntry[], httpFetch?: FetchLike) {
     this.entries = entries;
+    this.httpFetch = httpFetch;
     for (const e of entries) this.byId.set(e.serverId, e);
   }
 
@@ -154,7 +158,7 @@ export class McpRegistry {
     if (!entry) throw new Error(`未注册的 MCP server: ${serverId}`);
     this.discoveryCounts.set(serverId, (this.discoveryCounts.get(serverId) ?? 0) + 1);
     const conn: McpConnection = entry.kind === 'http'
-      ? createHttpMcpConnection(entry.serverId, entry.url)
+      ? createHttpMcpConnection(entry.serverId, entry.url, this.httpFetch ? { fetch: this.httpFetch } : undefined)
       : createStdioMcpConnection(entry.serverId, entry.command, entry.args);
     try {
       await conn.connect();

@@ -10,12 +10,24 @@
  *  stdout 只写协议帧（无杂音输出）；stderr 全程静默。
  * ================================================================ */
 import readline from 'node:readline';
+import { writeFileSync } from 'node:fs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/* argv 门控探针（迭代 0025 / BK-0030 冒烟夹具增量）：
+ * --pid-file <path>：启动即写 pid（尽力而为吞错）——MI 孤儿断言数据源；
+ * --hang-tool：tools/list 增补 hang 清单项——MI08 中止级联的确定性在途源。
+ * 两参均未传 = 行为零变化（MT08-MT11/MR08 冻结面零回退）。 */
+const ARGV = process.argv.slice(2);
+const PID_IDX = ARGV.indexOf('--pid-file');
+if (PID_IDX >= 0 && ARGV[PID_IDX + 1]) {
+  try { writeFileSync(ARGV[PID_IDX + 1], String(process.pid)); } catch { /* 尽力而为 */ }
+}
 
 const MOCK_TOOLS = [
   { name: 'echo', description: '回显输入', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } },
   { name: 'add', description: '两数相加', inputSchema: { type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] } },
+  ...(ARGV.includes('--hang-tool') ? [{ name: 'hang', description: '挂起 3 秒后返回', inputSchema: { type: 'object', properties: {} } }] : []),
 ];
 const MOCK_DELAY = { slow_echo: 800, hang: 3000 };
 

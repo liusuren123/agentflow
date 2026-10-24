@@ -101,7 +101,10 @@ export const TOOL_SPECS: Record<string, ToolSpec> = {
   'browser.screenshot':        { desc:'（未实现）截屏', schema:{} },
 };
 
-/* 把节点勾选的 mcp 配置（{serverId:[toolName,...]}）展开为 {toolName: impl} 映射 */
+/* 把节点勾选的 mcp 配置（{serverId:[toolName,...]}）展开为 {toolName: impl} 映射。
+ * 三分支解析表（迭代 0025 / BK-0030 · SPEC §2）的内核两臂：IMPL 命中 → 内置
+ * impl；否则 → stub。第三臂「外部注册工具动态覆写」在会话层 mcp/inject.ts
+ * （buildToolSession：只覆写 isStubImpl===true 的条目，绝不替换内置 impl）。 */
 export function collectTools(mcpSel: Record<string, unknown> | undefined | null): Map<string, ToolImpl> {
   const out = new Map<string, ToolImpl>();
   for(const [server, names] of Object.entries(mcpSel || {})){
