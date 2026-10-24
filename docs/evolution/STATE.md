@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0016      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0017      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`；补题轮无所选 ID 亦为 `-`）
-started: 2026-10-24 06:28  # 本次迭代开始时间
-updated: 2026-10-24 07:05  # 最近更新时间
+started: 2026-10-24 07:58  # 本次迭代开始时间
+updated: 2026-10-24 08:57  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0015 / BK-0016 终态 done 归档完成：VERIFY PASS 零 BUG（AC1-AC7 全过——冒烟独立复跑 66/0、E2E 三路 24+8+6、AC7 反演两轮红绿，证据 docs/evolution/iterations/0015/REPORT.md），产品提交 7239afb 恰 SPEC 白名单四处 +580/−5（零 UI/零 shared 契约/零新依赖，15 种既有 SSE 事件内取用 7 种）；BACKLOG 置 done、metrics 已追加行；BK-9002 goal 模式 UI 的后端地基就位
+last_result: 迭代 0016 / BK-0017 CLOSE=done（R0 FAIL→修复轮 R1 PASS）：approval 审批人节点引用（role=node:id 受控 LLM 裁决 + zod 降级链 + approval_audits 审计）落地，产品提交 a9ac875（初始+R1 合一，+382/−4 恰白名单四路径，零 UI/零 shared/零新 SSE 事件），BUG-0013/OBS-001 均修复经 smoke 84/0 + API/UI 复验收定——docs/evolution/iterations/0016/REPORT.md（R1 复验节）
 ```
