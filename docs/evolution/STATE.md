@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0023      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0024      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
-item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`；补题轮无所选 ID 亦为 `-`）——BK-0021 跨迭代批次续填链已于迭代 0022 终轮收口（done 与 `-` 同置，iterations/0021/PRD.md:215/REPORT.md §六② 编排兑现）
-started: 2026-10-24 23:36  # 本次迭代开始时间
-updated: 2026-10-25 00:31  # 最近更新时间
+item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
+started: 2026-10-25 00:43  # 本次迭代开始时间
+updated: 2026-10-25 01:15  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0022 / BK-0021 批次 2 终轮 CLOSE=done（VERIFY PASS 零 BUG，产品提交 c17866f 恰 30 路径 +990/−56 白名单零越界、不变式 A 终态 sha256 08ba1229…f275/11521B、shared 30/30、在线五点位 5/5；BK-0023 随批关账 done、T5-M3 修宪链解阻、STATE.item 置 `-` 收口；issue#11 实况 OPEN，标准关单+🤖 回执留脚本执行）——iterations/0022/REPORT.md
+last_result: 迭代 0023 / BK-0028 CLOSE=done（VERIFY PASS 零 BUG：smoke:mcp 亲跑 12/0 + smoke:server 亲跑 89/0，产品提交 b560334 恰 SPEC §6 白名单 8 路径 +694/−0、禁区 diff 恒空；BK-0029/0030 前置就此满足、issue#10 授权继续覆盖（gh 亲核 OPEN））——iterations/0023/REPORT.md
 ```
