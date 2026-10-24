@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0020      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0021      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`；补题轮无所选 ID 亦为 `-`）
-started: 2026-10-24 18:47  # 本次迭代开始时间
-updated: 2026-10-24 19:15  # 最近更新时间
+started: 2026-10-24 19:35  # 本次迭代开始时间
+updated: 2026-10-24 20:15  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0019 / BK-0011 CLOSE=done（启动扫尾落地：真实悬挂 run 161ce4ff 经重启收敛 stopped、事件 22→22 零伪造，smoke 亲跑 89/0+反演红绿双向，产品提交 12b6527 恰三路径 +92/−3 零依赖，VERIFY PASS 仅 BUG-0001 Minor 文档笔误留治理日；周报 W43 O1 关账）——docs/evolution/iterations/0019/REPORT.md
+last_result: 迭代 0020 / BK-0008 CLOSE=blocked（环境阻塞非需求失败，二次裁决定案：Mimosa 编辑钩子对 exec 命名调用形态启发式误报——better-sqlite3 进程内 SQL，store.ts:21 同库先例——两轮对照实验（含纯字面量假体）均命中，代码内变形无解；零产品提交、tools.ts 零残留，不回滚 failed；等待用户侧调整钩子规则/加白后 BACKLOG 翻回 ready 重试）——docs/evolution/iterations/0020/JOURNAL.md §3-§4
 ```
