@@ -45,7 +45,8 @@ docs/frontend-module-boundaries.md   四模块边界文档，BK-0012 产出
 | `npm run dev:web` | Vite 开发服（热更新，/api 代理 :3000，需另跑 dev:server） |
 | `npm run dev:server` | 仅启动后端（自动先构建 shared + server） |
 | `npm run build:server` | 构建后端 TS → `apps/server/dist`（tsc，ADR-0004） |
-| `npm run smoke:server` | 后端 E2E 冒烟（现 50 断言；迭代 0002 建立，0005/0009 扩充） |
+| `npm run smoke:server` | 后端 E2E 冒烟（现 84 断言；迭代 0002 建立，0005/0009/0014~0016 扩充） |
+| `npm run smoke:shutdown` | 后端优雅停机 SIGTERM 冒烟（win32 自动 SKIP，CI Linux 为权威；迭代 0012） |
 | `npm run test:canvas` | 画布 portCache 离线几何断言（迭代 0006） |
 
 
