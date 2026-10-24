@@ -131,6 +131,8 @@ let S: {
   insertMessage: Database.Statement;
   touchSession: Database.Statement;
   insertApprovalAudit: Database.Statement;
+  listDanglingRuns: Database.Statement;
+  sweepRuns: Database.Statement;
 };
 /* 两个事务（openRunRecorder 复用；runId 等经闭包外的参数传入） */
 let txFirst: (runId: string, wfText: string, wfName: string, startedAt: number, seq: number, json: string) => void;
@@ -140,6 +142,7 @@ let txEvent: (runId: string, seq: number, json: string,
 let txDeleteRun: (runId: string) => boolean;
 /* 会话消息事务（迭代 0015）：消息行 + sessions.updated_at 同步更新原子成立 */
 let txAppendMessage: (sessionId: string, role: 'user' | 'assistant', text: string) => void;
+let txSweepDanglingRuns: () => string[];   /* 启动扫尾事务（迭代 0019 / BK-0011）：SELECT+UPDATE 同事务，SET 仅 status（ended_ms/done/total 原值、事件零新增——不伪造历史） */
 
 /* ---------- 初始化（server.ts 启动期调用一次） ---------- */
 export function initStore(): void {
@@ -196,6 +199,8 @@ export function initStore(): void {
     insertApprovalAudit: db.prepare(
       `INSERT INTO approval_audits(run_id, node_id, reviewer, mode, verdict, reason, created_at)
        VALUES(?, ?, ?, ?, ?, ?, ?)`),
+    listDanglingRuns: db.prepare(`SELECT id FROM runs WHERE status = 'running'`),
+    sweepRuns: db.prepare(`UPDATE runs SET status = 'stopped' WHERE status = 'running'`),
   };
 
   /* 事务①：runs 行插入 + 首事件（run:accepted）——run 的存在性与首事件原子成立 */
@@ -220,6 +225,11 @@ export function initStore(): void {
   txAppendMessage = db.transaction((sessionId: string, role: 'user' | 'assistant', text: string) => {
     S.insertMessage.run(sessionId, sessionId, role, text, Date.now());
     S.touchSession.run(Date.now(), sessionId);
+  });
+  txSweepDanglingRuns = db.transaction((): string[] => {
+    const ids = (S.listDanglingRuns.all() as { id: string }[]).map(r => r.id);
+    S.sweepRuns.run();
+    return ids;
   });
   logger.info({ dbFile: DB_FILE }, 'SQLite 存储就绪（WAL，表迁移完成）');
 }
@@ -325,6 +335,11 @@ export function getRunDetail(id: string): { run: RunRow; events: unknown[] } | n
 /* 删除运行记录（ADR-0007）：事务级联清理 run_events（先删事件行再删 runs 行，原子） */
 export function deleteRun(id: string): boolean {
   return txDeleteRun(id);
+}
+
+export function sweepDanglingRuns(): { count: number; ids: string[] } {
+  const ids = txSweepDanglingRuns();
+  return { count: ids.length, ids };
 }
 
 /* ---------- 会话（迭代 0015 / BK-0016，仅 v1 命名空间；与 runs 正交） ---------- */

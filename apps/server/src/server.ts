@@ -32,7 +32,7 @@ import { logger } from './logger.js';
 import { sseWriteEvent, sseWriteComment } from './util.js';
 import {
   initStore, closeStore, openRunRecorder, listWorkflows, getWorkflow, saveWorkflow, listRuns, getRunDetail,
-  deleteWorkflow, deleteRun,
+  deleteWorkflow, deleteRun, sweepDanglingRuns,
 } from './store.js';
 import {
   sessionsCreateHandler, sessionsListHandler, sessionDetailHandler, sessionChatHandler, sessionStopHandler,
@@ -63,6 +63,13 @@ app.get('/index.html', (_q, res)=>res.sendFile(WEB_INDEX));
 
 /* ---------- SQLite 持久化（ADR-0005：data/agentflow.db，WAL） ---------- */
 initStore();
+
+/* 启动扫尾（迭代 0019 / BK-0011）：上次进程崩溃/强杀遗留的 running 行收敛 stopped
+ *（不伪造终结事件、不回填 ended_ms）；零命中静默（正常路径无噪音） */
+const swept = sweepDanglingRuns();
+if (swept.count > 0) {
+  logger.warn({ count: swept.count, ids: swept.ids.slice(0, 20) }, '启动扫尾：遗留 running run 已标记 stopped');
+}
 
 /* ---------- 状态 ---------- */
 const healthHandler: RequestHandler = (_q, res)=>{

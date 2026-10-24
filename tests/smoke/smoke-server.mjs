@@ -13,6 +13,10 @@
  * V 组（迭代 0016 / BK-0017）：智能体互审协议——mock 端点按请求体 stream 标志
  * 路由裁决三态+1（非流式=裁决子任务，SPEC §4.6）；V01-V03/V07/V08 mock 实例、
  * V04/V05 主实例、V06 minimal 实例；审计核对 = auditsOf 只读直查共享 SQLite（SPEC §5.1）。
+ * Z 组（迭代 0019 / BK-0011）：悬挂 run 启动扫尾——独立实例 WFAPPR 挂起 run（事件为门）
+ * → SIGKILL 崩溃语义击杀（不经优雅停机）→ 同端口重启（扫尾在 listen 前，health 200
+ * 即扫尾完成时序门）→ 经 API 断言 status 收敛 stopped、ended_ms/done/total 原值、
+ * events 恰 N 条（零伪造终结事件）→ DELETE 自清理；断言全程走 /api/v1（lib.mjs 边界）。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -71,6 +75,7 @@ let srv = null;
 let mockModel = null;   /* G 组：进程内 mock 模型端点（迭代 0015） */
 let mockSrv = null;     /* G 组：AI_BASE_URL 指向 mock 的第二实例 */
 let minimalSrv = null;  /* G 组：全密钥空串压制的第三实例（降级路径确定性） */
+let zSrv = null;        /* Z 组：启动扫尾专用实例（迭代 0019 / BK-0011，SIGKILL 后同端口重启） */
 let cleanupPromise = null;
 
 /* ---------- G 组基础设施（迭代 0015 / BK-0016 · SPEC §3.4-2/3） ---------- */
@@ -270,8 +275,8 @@ async function doCleanup() {
   exited = await Promise.race([srv.exitPromise.then(() => true), sleep(1000).then(() => false)]);
   C.check(exited, 'C04', 'server 子进程已终止（kill → 3s → SIGKILL 兜底）',   /* C04 */
     { expected: 'exit 事件到达', actual: exited ? '已终止' : '未观察到退出' });
-  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言） */
-  for (const inst of [mockSrv, minimalSrv]) {
+  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组实例同批（迭代 0019） */
+  for (const inst of [mockSrv, minimalSrv, zSrv]) {
     if (!inst) continue;
     try { inst.child.kill(); } catch { /* 已退出 */ }
     let ex = await Promise.race([inst.exitPromise.then(() => true), sleep(3000).then(() => false)]);
@@ -846,6 +851,68 @@ async function main() {
     C.ok(bad === null && parsed === all.length && sharedDirty === '',
       'V09', `V01-V04、V06 捕获的全部事件（${all.length} 条，含互审 log/approval:done/approval:required）逐条通过 RunEventSchema 校验；git status --porcelain -- packages/shared 为空（DEFS 零漂移）`,
       { expected: `${all.length}/${all.length} 通过 + shared 干净`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}；shared=${sharedDirty === '' ? '干净' : sharedDirty}`, ctx: '@agentflow/shared validateEvent + git status（均仅作校验器，被测系统只经 HTTP 触达）' });
+  }
+
+  /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例
+   * 隔离（不杀主实例：C01/C03 清理与实例收尾依赖其存活）；被测进程经 store.ts ROOT 推导
+   * 共享仓库根 data/agentflow.db（与 spawn cwd 无关），重启实例的启动扫尾即触达本组悬挂行。 */
+  const zPort = await getFreePort();
+  let zRunId = null;
+  let zPre = null;   /* 击杀前采样 {done, total, n} */
+  try {
+    zSrv = await startServer(zPort);
+  } catch (e) {
+    C.fail('Z01', 'Z 实例启动（专用端口）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+    throw new SmokeFailError('Z01');
+  }
+  { /* Z01 · WFAPPR 挂起 run（D 组同款事件门）→ 击杀前采样 status='running'、ended_ms=null、events 长度 N */
+    const zs = await openSse(zSrv.base, WFAPPR);
+    let zReq = null;
+    try {
+      zReq = await zs.waitFor((e) => e.type === 'approval:required', 20000);
+    } catch (e) {
+      C.fail('Z01', 'waitFor approval:required（run 确定处于挂起活动态）', { expected: 'approval:required nodeId=1', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（WFAPPR，SSE 流）' });
+      throw new SmokeFailError('Z01');
+    }
+    zRunId = zs.events.find((e) => e.type === 'run:accepted')?.runId;
+    if (typeof zRunId === 'string') CLEAN.runIds.push(zRunId);
+    const r = await api(zSrv.base, 'GET', `/api/v1/runs/${zRunId}`);
+    const run = r.json?.run;
+    zPre = { done: run?.done, total: run?.total, n: (r.json?.events ?? []).length };
+    C.ok(zReq?.nodeId === 1 && typeof zRunId === 'string' && r.status === 200
+      && run?.status === 'running' && run?.ended_ms === null && zPre.n >= 1,
+      'Z01', 'WFAPPR run 挂起中 GET /runs/:id → 200 {status:"running", ended_ms:null}，events 长度 N≥1（击杀前采样；事件为门，挂起后无新事件，N 稳定）',
+      { expected: 'running + ended_ms:null + N≥1', actual: JSON.stringify({ nodeId: zReq?.nodeId, runId: zRunId, status: run?.status, ended_ms: run?.ended_ms, ...zPre }), ctx: ctxOf(r) });
+  }
+  { /* Z02 · SIGKILL 崩溃语义击杀（双平台一致，lib.mjs:63；不经优雅停机）→ 同端口重启 */
+    try { zSrv.child.kill('SIGKILL'); } catch { /* 已退出 */ }
+    const zExit = await zSrv.exitPromise;
+    try {
+      zSrv = await startServer(zPort);
+    } catch (e) {
+      C.fail('Z02', '同端口重启（健康 200 = 扫尾已完成时序门）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+      throw new SmokeFailError('Z02');
+    }
+    C.ok(!!zExit && zSrv.health.status === 200 && zSrv.health.json?.ok === true,
+      'Z02', 'SIGKILL → exitPromise 到达（崩溃退出，不经优雅停机）；同端口重启健康 200（扫尾在 listen 前，health 即扫尾完成时序门）',
+      { expected: '退出到达 + 200 ok:true', actual: JSON.stringify({ exit: zExit, health: zSrv.health.json }), ctx: `PORT=${zPort}（kill SIGKILL → restart）` });
+  }
+  { /* Z03 · 扫尾语义：status 收敛 stopped；ended_ms=null、done/total 保持击杀前值；events 仍恰 N 条（无合成 run:done/run:error）；日志含「启动扫尾」 */
+    const r = await api(zSrv.base, 'GET', `/api/v1/runs/${zRunId}`);
+    const run = r.json?.run;
+    const n2 = (r.json?.events ?? []).length;
+    const sweptLog = zSrv.log.tail().includes('启动扫尾');
+    C.ok(r.status === 200 && run?.status === 'stopped' && run?.ended_ms === null
+      && run?.done === zPre.done && run?.total === zPre.total && n2 === zPre.n && sweptLog,
+      'Z03', '重启后 GET /runs/:id → 200 {status:"stopped", ended_ms:null, done/total 保持击杀前值}；events 仍恰 N 条（零伪造终结事件，回放止于最后一条真实事件）；重启实例日志含「启动扫尾」',
+      { expected: `stopped + ended_ms:null + done=${zPre.done} total=${zPre.total} + ${zPre.n} 条`, actual: `${r.status} ${JSON.stringify(run)} events=${n2} 扫尾日志=${sweptLog}`, ctx: ctxOf(r) });
+  }
+  { /* Z04 · 自清理：重启后非活动（内存注册表空）→ DELETE 200 无 409；删除后 GET → 404 */
+    const d = await api(zSrv.base, 'DELETE', `/api/v1/runs/${zRunId}`);
+    const g = await api(zSrv.base, 'GET', `/api/v1/runs/${zRunId}`);
+    C.ok(d.status === 200 && d.json?.ok === true && g.status === 404,
+      'Z04', 'DELETE /runs/:id → 200 {ok:true}（重启后非活动，无 409）；删除后 GET → 404（零残留）',
+      { expected: '200 {ok:true} + 404', actual: `DELETE=${d.status} GET=${g.status}`, ctx: ctxOf(d) });
   }
 }
 
