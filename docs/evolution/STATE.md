@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0025      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0026      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
-started: 2026-10-25 01:22  # 本次迭代开始时间
-updated: 2026-10-25 01:59  # 最近更新时间
+started: 2026-10-25 02:04  # 本次迭代开始时间
+updated: 2026-10-25 03:01  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0024 / BK-0029 CLOSE=done（VERIFY PASS 零 BUG：smoke:mcp:registry 亲跑 11/0 + smoke:mcp 12/0，产品提交 82f5b56 恰 SPEC §6 白名单 4 路径 +540/−0、禁区 diff 恒空；BK-0030 前置就此满足、issue#10 授权继续覆盖不关单）——iterations/0024/REPORT.md
+last_result: 迭代 0025 BK-0030 终态 done：CLOSE 归档完成——产品提交 dded158（+565/−8 恰 SPEC §6 白名单 8 路径，`git show --numstat` CLOSE 亲核）+ VERIFY PASS 0 BUG（AC1-AC7 全过，证据 iterations/0025/REPORT.md），BACKLOG 置 done、metrics 已记行，BK-0013 拆分三子项全部收官（issue#10 关单回执由脚本执行）
 ```
