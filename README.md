@@ -41,6 +41,8 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 | `npm run gate` | **宪法门禁**（改前端后必跑；需先 `npm run build`） |
 | `npm test` | shared 契约测试（注册表/SSE 事件 schema/单一来源防回归） |
 | `npm run smoke:server` | 后端 E2E 冒烟（独立端口起 server：/api/v1 workflows CRUD + /run SSE 全事件链 + 删除守卫 409/200，自清理） |
+| `npm run smoke:shutdown` | 后端优雅停机 SIGTERM 冒烟（win32 自动 SKIP，CI Linux 为权威） |
+| `npm run test:canvas` | 画布连线 portCache 几何离线断言（5 锁定点反演，迭代 0006 起） |
 | `npm run build` | 构建 shared + web |
 | `npm run build:server` | 构建后端 TS（tsc → `apps/server/dist`） |
 | `npm start` | 构建（shared+web+server）+ 启动后端 |
@@ -52,7 +54,7 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 | --- | --- |
 | LLM 对话 | `streamText` 逐 token 流式 / `generateText` 多轮 MCP 工具循环；usage 回传 |
 | 知识库检索 | 内置 3 语料库，CJK 二字组 + TF-IDF 余弦，分数归一化后过阈值，写 `confidence` |
-| 网页搜索 | 博查（`BOCHA_API_KEY`）> DuckDuckGo > 如实降级（不伪造结果） |
+| 网页搜索 | 节点 eng 严格路由：博查（`BOCHA_API_KEY`）/ SearXNG（`SEARXNG_URL`）未配置或失败如实跳过、不回退；Bing/Google 未接入 → warn 后按回退链（博查 → DuckDuckGo）执行；不伪造结果 |
 | HTTP 请求 | 真实 fetch（SSRF 守卫：私网/回环默认拦截） |
 | 代码执行 | Python / JS 独立子进程 + 5s 超时强杀 + JSON over stdio |
 | MCP 工具 | filesystem（沙箱）/ fetch / web-search；未实现者如实告知模型 |
