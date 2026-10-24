@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { webSearch } from './search.js';
 import type { SearchResponse } from './search.js';
 import { guardedFetch } from './guard.js';
+import Database from 'better-sqlite3';
 
 /* 编译产物位于 dist/，沙箱锚定到包根 apps/server/sandbox（与 TS 化前一致） */
 const SANDBOX = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'sandbox');
@@ -20,6 +21,37 @@ async function safePath(rel: unknown): Promise<string> {
   return p;
 }
 async function ensureSandbox(){ await fsp.mkdir(SANDBOX, { recursive:true }); }
+
+/* ---------- sqlite 沙箱工具基建（迭代 0026 / BK-0008 · SPEC §3）----------
+ * DB 锚定沙箱专用文件 mcp-sqlite.db：路径仅由 SANDBOX 常量派生，与主库
+ * data/agentflow.db（store.ts:31，不同根）物理隔离；惰性单例连接，句柄缓存到
+ * 进程退出（不注册停机钩子，SPEC §3.1 边界声明）。
+ * 越界防护 = 无 SQL 解析器前提下的全文 token 黑名单（ATTACH/DETACH/PRAGMA/
+ * VACUUM + load_extension 调用面；实证向量见迭代 0020 SPEC §2.2），命中即
+ * throw（对齐 safePath 异常语义）；沙箱锚定为第二道兜底。模型传入 SQL 原样
+ * 透传 prepare/exec，代码零拼装（SPEC §3.7）。 */
+const SQLITE_DB = path.join(SANDBOX, 'mcp-sqlite.db');
+const MAX_ROWS = 100;    /* query 行上限（iterate 早停，不整表物化） */
+const MAX_CELL = 512;    /* 单元格文本化截断上限（对齐 read_file/fetch 限幅族） */
+const SQL_DENY = /\b(attach|detach|pragma|vacuum)\b/i;
+const SQL_DENY_FN = /\bload_extension\s*\(/i;
+let sdb: Database.Database | null = null;   /* 惰性单例（进程生命周期） */
+
+async function getDb(): Promise<Database.Database> {
+  if(!sdb){ await ensureSandbox(); sdb = new Database(SQLITE_DB); }
+  return sdb;
+}
+function assertSql(raw: unknown): string {
+  if(typeof raw !== 'string' || !raw.trim()) throw new Error('sqlite 工具参数错误：sql 必须为非空字符串');
+  if(SQL_DENY.test(raw) || SQL_DENY_FN.test(raw))
+    throw new Error('SQL 越界：ATTACH/DETACH/PRAGMA/VACUUM/扩展加载被拒（sqlite 工具仅允许操作沙箱专用数据库）');
+  return raw;
+}
+function cellOf(v: unknown): unknown {
+  if(v === null || v === undefined) return null;
+  const s = typeof v === 'string' ? v : Buffer.isBuffer(v) ? v.toString('utf8') : String(v);
+  return s.length > MAX_CELL ? s.slice(0, MAX_CELL) + '…' : s;
+}
 
 type ToolImpl = (args: any) => Promise<any>;
 
@@ -56,7 +88,31 @@ export const IMPL: Record<string, Record<string, ToolImpl> | null> = {
       return { savedAs:name, bytes:buf.length, status:r.status };
     },
   },
-  'sqlite': null,   /* 未实现：如实告知模型 */
+  'sqlite': {
+    query: async ({ sql }) => {
+      const q = assertSql(sql);
+      const stmt = (await getDb()).prepare(q);   /* 多语句/语法错由 better-sqlite3 原生 throw，如实透传 */
+      if(!stmt.reader) throw new Error('sqlite.query 仅支持返回行集的语句；写入或建表请用 sqlite.execute');
+      const rows: Record<string, unknown>[] = [];
+      let truncated = false;
+      for(const row of stmt.iterate()){
+        if(rows.length >= MAX_ROWS){ truncated = true; break; }   /* 早停：不整表物化 */
+        const cells: Record<string, unknown> = {};
+        for(const [k, v] of Object.entries(row as Record<string, unknown>)) cells[k] = cellOf(v);
+        rows.push(cells);
+      }
+      return { rows, truncated };
+    },
+    execute: async ({ sql }) => {
+      const q = assertSql(sql);
+      const db = await getDb();
+      const before = (db.prepare('SELECT total_changes() AS c').get() as { c:number }).c;
+      db.exec(q);   /* 多语句以 ; 分隔累计计数；SELECT 行集被丢弃（desc 已声明） */
+      const after = (db.prepare('SELECT total_changes() AS c').get() as { c:number }).c;
+      const lastInsertRowid = (db.prepare('SELECT last_insert_rowid() AS r').get() as { r:number }).r;
+      return { changes: after - before, lastInsertRowid };
+    },
+  },
   'browser': null,  /* 未实现 */
   'web-search': {
     search: async ({ query, count = 5 }) => {
@@ -94,8 +150,8 @@ export const TOOL_SPECS: Record<string, ToolSpec> = {
   'fetch.download':            { desc:'下载 URL 资源保存到沙箱目录', schema:{ url:'URL' } },
   'web-search.search':         { desc:'联网搜索，返回标题/链接/摘要', schema:{ query:'搜索关键词', count:'结果数量，默认5' } },
   'web-search.news':           { desc:'检索某话题的最新新闻', schema:{ query:'话题关键词', count:'结果数量，默认5' } },
-  'sqlite.query':              { desc:'（未实现）执行 SQL 查询', schema:{ sql:'SQL 语句' } },
-  'sqlite.execute':            { desc:'（未实现）执行 SQL 写入', schema:{ sql:'SQL 语句' } },
+  'sqlite.query':              { desc:'在沙箱数据库执行 SELECT 查询并返回行集（上限 100 行；仅限沙箱数据库，不能访问其他数据库文件）', schema:{ sql:'SQL 语句' } },
+  'sqlite.execute':            { desc:'在沙箱数据库执行写入或结构 SQL（CREATE/INSERT/UPDATE/DELETE 等，多语句以 ; 分隔；仅限沙箱数据库）', schema:{ sql:'SQL 语句' } },
   'browser.navigate':          { desc:'（未实现）打开页面', schema:{ url:'URL' } },
   'browser.click':             { desc:'（未实现）点击元素', schema:{ selector:'选择器' } },
   'browser.screenshot':        { desc:'（未实现）截屏', schema:{} },
