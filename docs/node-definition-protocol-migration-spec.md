@@ -1,7 +1,7 @@
 # BK-0021 实施轮 SPEC · NDP 节点定义目录制迁移（16 节点 → `src/nodes/<type>/`）
 
 > 状态：**SPEC · 待 needs-approval issue 获批后进入实施（BK-0021），批准前零实现。**
-> （needs-approval issue 草案见附录 A；草案在库 ≠ 开 issue ≠ 获批——三段分清。）
+> （needs-approval issue 已开 **#11**，正文见附录 A；草案在库 ≠ 开 issue ≠ 获批——三段分清。）
 > 上游依据：NDP v0.2 `docs/node-definition-protocol.md`（§10 迁移四步与九条验收
 > `:597-620`）· PRD `docs/evolution/iterations/0018/PRD.md`（BK-0031 三件先行产物
 > 之二）· 等价基线快照已入库 `packages/shared/test/nodes.baseline.json`

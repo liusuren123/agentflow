@@ -1,6 +1,6 @@
 # ADR-0012 · 真 MCP client 传输选型与依赖方案（stdio / Streamable HTTP）
 
-- 状态：**草案 · 待用户批准（对应 needs-approval issue，正文见附录 A），批准前零实现**
+- 状态：**草案 · 待用户批准（needs-approval issue **#10**，正文见附录 A），批准前零实现**
 - 日期：2026-10-24（SPEC 阶段产出，迭代 0017 / BK-0027）
 - 关联：BACKLOG BK-0027（本 SPEC 先行轮）/ BK-0028~0030（三实施子项，proposed）/
   BK-0013（skipped，拆分母项）/ BK-0014（扩展发现器，下游）/ BK-9006（issue #6，
