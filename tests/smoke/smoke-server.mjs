@@ -10,11 +10,18 @@
  * AI_BASE_URL 注入显式配置分支，分块延时流出保证时序确定）、minimal 实例
  * G09（全密钥空串压制 → 降级路径无条件确定）；G10 契约校验仅作校验器使用
  * @agentflow/shared validateEvent（被测系统仍只经 HTTP 触达，0015 SPEC §3.4-6）。
+ * V 组（迭代 0016 / BK-0017）：智能体互审协议——mock 端点按请求体 stream 标志
+ * 路由裁决三态+1（非流式=裁决子任务，SPEC §4.6）；V01-V03/V07/V08 mock 实例、
+ * V04/V05 主实例、V06 minimal 实例；审计核对 = auditsOf 只读直查共享 SQLite（SPEC §5.1）。
  * ================================================================ */
 import http from 'node:http';
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+import Database from 'better-sqlite3';
 import { validateEvent } from '@agentflow/shared';
 import {
   Checker, SmokeFailError, api, ctxOf, deepEqual, getFreePort, openSse, preflight, sleep, startServer,
+  REPO_ROOT,
 } from './lib.mjs';
 import { runMcpChecks } from './mcp-stubs.mjs';
 
@@ -83,6 +90,25 @@ function startMockModel() {
         let body = null;
         try { body = JSON.parse(Buffer.concat(bufs).toString('utf8')); } catch { /* 非 JSON 容忍 */ }
         requests.push(body);
+        /* 裁决路由（迭代 0016 / BK-0017 · SPEC §4.6）：generateText 走 provider doGenerate
+         * ——请求体不带 stream 键、期望 application/json 的 chat.completion；streamText（G 组
+         * 会话流量）恒带 stream:true → SSE 分块。按最后一条 user 消息 content（含审批节点
+         * 标题）路由三态+1。 */
+        if (body?.stream !== true) {
+          const lastUser = [...(body?.messages ?? [])].reverse().find((m) => m?.role === 'user');
+          const c = String(lastUser?.content ?? '');
+          let content = '{"verdict":"allow","reason":"mock 允许：符合规范"}';
+          if (c.includes('互审驳回')) content = '{"verdict":"deny","reason":"mock 拒绝：内容不合规"}';
+          else if (c.includes('互审坏输出')) content = '抱歉，我认为这个请求无法用 JSON 回答。';
+          else if (c.includes('互审错形状')) content = '{"verdict":"maybe","reason":"不确定"}';
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            id: 'chatcmpl-verdict', object: 'chat.completion', created: 1700000000, model: 'mock-model',
+            choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 9, completion_tokens: 9, total_tokens: 18 },
+          }));
+          return;
+        }
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         const writeChunk = (delta, finish) => {
           res.write(`data: ${JSON.stringify({
@@ -172,6 +198,33 @@ async function chatSse(base, sessionId, body, timeoutMs = 60000) {
     },
   };
 }
+
+/* ---------- V 组基础设施（迭代 0016 / BK-0017 · SPEC §5/§5.1） ---------- */
+/* auditsOf：审计只读直查（lib.mjs「不读写 data/agentflow.db」边界的窄口径例外，SPEC §5.1
+ * 论证）——readonly/单表单 SELECT/finally close；仅 run waitEnd 后调用；三实例共享 DB。 */
+function auditsOf(runId) {
+  const db = new Database(path.join(REPO_ROOT, 'data', 'agentflow.db'), { readonly: true, fileMustExist: true });
+  try {
+    return db.prepare(
+      'SELECT id, run_id, node_id, reviewer, mode, verdict, reason, created_at FROM approval_audits WHERE run_id = ? ORDER BY id ASC',
+    ).all(runId);
+  } finally { db.close(); }
+}
+
+/* V 组夹具工厂（SPEC §5）：审官节点一律 bypass:true——只跳过审官自身拓扑执行，
+ * 不影响被引为审官（每 run 恰一次裁决调用、零多余流式调用）。 */
+const wfReview = (title, to, reviewer = 'llm') => ({
+  name: `smoke-review-${title}-${to}`,
+  nodes: [
+    { id: 1, type: 'approval', x: 100, y: 100, title, params: { role: 'node:2', to } },
+    reviewer === 'llm'
+      ? { id: 2, type: 'llm', x: 320, y: 100, title: '审官A', bypass: true, params: { model: 'MockChat', sys: '你是审官' } }
+      : { id: 2, type: 'prompt', x: 320, y: 100, title: '审官B', bypass: true, params: { tpl: 'x' } },
+  ],
+  edges: [],
+});
+/* 单 approval 节点夹具（V04/V05：不存在审官 id / 普通文本 role 的人工对照） */
+const wfPlain = (name, role, to) => ({ name, nodes: [{ id: 1, type: 'approval', x: 100, y: 100, title: '人工审批', params: { role, to } }], edges: [] });
 
 /* ---------- C 组：自清理与零残留（finally 内；尽力而为 + 如实报告，不抛） ---------- */
 async function doCleanup() {
@@ -643,6 +696,157 @@ async function main() {
       'G10', 'G05 与 G07 捕获的全部事件（run:accepted/node:start/node:delta/node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约，packages/shared 零改动）',
       { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
   }
+
+  /* V 组：智能体互审协议（V01-V09 · SPEC §5）——mock 实例 V01-V03/V07/V08、主实例 V04/V05、minimal 实例 V06（§12 偏移 1）。 */
+  const vRun = async (base, wf) => {
+    const sse = await openSse(base, wf);
+    const runId = (await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId;
+    CLEAN.runIds.push(runId);
+    return { sse, runId };
+  };
+  const vOut = (events) => events.filter((e) => e.type === 'node:done' && e.id === 1).map((e) => String(e.out ?? '')).join(' | ');
+  const vLogs = (events) => events.filter((e) => e.type === 'log').map((e) => String(e.msg ?? ''));
+  const vDone = (events, approve) => !events.some((e) => e.type === 'approval:required')
+    && events.some((e) => e.type === 'approval:done' && e.nodeId === 1 && e.approve === approve);
+  /* 恰一行审计且 mode/verdict 命中（extra 追加断言以行内回调给出） */
+  const vAudit = (rows, mode, verdict, extra = () => true) => rows.length === 1
+    && rows[0]?.mode === mode && rows[0]?.verdict === verdict && extra(rows[0]);
+  const inOrder = (events, preds) => {
+    let i = 0;
+    for (const e of events) { if (i < preds.length && preds[i](e)) i += 1; }
+    return i === preds.length;
+  };
+  const vCap = { v01: [], v02: [], v03: [], v04: [], v06: [] };   /* V09 素材 */
+  { /* V01 · AC1 互审正路径（mock allow）：裁决中 sys log → approval:done{true}，全程无 approval:required，审计 agent/allow */
+    const { sse, runId } = await vRun(mockSrv.base, wfReview('互审放行', '挂起'));
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    vCap.v01 = sse.events;
+    const sysLog = sse.events.find((e) => e.type === 'log' && e.lvl === 'sys' && String(e.msg).includes('互审裁决中'));
+    const out = vOut(sse.events), a = auditsOf(runId);
+    C.ok(inOrder(sse.events, [
+      (e) => e.type === 'run:accepted', (e) => e.type === 'run:start',
+      (e) => e.type === 'node:start' && e.id === 1,
+      (e) => e.type === 'log' && e.lvl === 'sys' && String(e.msg).includes('互审裁决中'),
+      (e) => e.type === 'approval:done' && e.nodeId === 1 && e.approve === true,
+      (e) => e.type === 'node:done' && e.id === 1, (e) => e.type === 'node:bypass' && e.id === 2,
+      (e) => e.type === 'run:done',
+    ]) && !sse.events.some((e) => e.type === 'approval:required')
+      && done.ok === true && done.done === 2 && done.total === 2
+      && sysLog && String(sysLog.msg).includes('审官A') && String(sysLog.msg).includes('node:2')
+      && out.includes('智能体裁决') && out.includes('审官A')
+      && vAudit(a, 'agent', 'allow', (r) => r.node_id === 1 && r.reviewer === 'node:2' && r.reason === 'mock 允许：符合规范' && typeof r.created_at === 'number'),
+      'V01', '互审正路径：有序子序列 run:accepted→run:start→node:start(1)→log(sys 互审裁决中·审官A·node:2)→approval:done{1,true}→node:done(1)→node:bypass(2)→run:done{ok:true,done:2,total:2}；全程无 approval:required；out 含「智能体裁决」「审官A」；审计恰 1 行 {node:1,reviewer:node:2,mode:agent,verdict:allow,reason:mock 允许：符合规范}',
+      { expected: '裁决 allow + 审计 agent/allow', actual: JSON.stringify({ done: { ok: done.ok, done: done.done, total: done.total }, sysLog: sysLog?.msg, out, a }).slice(0, 320), ctx: `runId=${runId}（mock 实例，role=node:2）` });
+  }
+  { /* V02 · AC2 deny 分支：approval:done{approve:false}，out 以「审批拒绝」开头，审计 agent/deny 带 mock 理由 */
+    const { sse, runId } = await vRun(mockSrv.base, wfReview('互审驳回', '挂起'));
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    vCap.v02 = sse.events;
+    const out = vOut(sse.events), a = auditsOf(runId);
+    C.ok(vDone(sse.events, false) && done.ok === true && out.startsWith('审批拒绝')
+      && vAudit(a, 'agent', 'deny', (r) => r.reason === 'mock 拒绝：内容不合规'),
+      'V02', 'mock 返回 deny JSON：无 approval:required；approval:done{approve:false}；run:done{ok:true}；out 以「审批拒绝」开头；审计恰 1 行 {mode:agent, verdict:deny, reason:mock 拒绝：内容不合规}',
+      { expected: 'deny 裁决 + 审计 agent/deny', actual: JSON.stringify({ out, a }).slice(0, 280), ctx: `runId=${runId}（mock 实例，互审驳回）` });
+  }
+  { /* V03 · AC3 前半 F5 降级：mock 非 JSON + to=自动拒绝 → 不挂起直接 deny + warn + agent-fallback 审计 */
+    const { sse, runId } = await vRun(mockSrv.base, wfReview('互审坏输出', '自动拒绝'));
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    vCap.v03 = sse.events;
+    const logs = vLogs(sse.events), a = auditsOf(runId);
+    C.ok(vDone(sse.events, false) && done.ok === true
+      && logs.some((m) => m.includes('互审裁决失败') && m.includes('输出不可解析'))
+      && vAudit(a, 'agent-fallback', 'deny', (r) => String(r.reason ?? '').startsWith('裁决失败：')),
+      'V03', 'mock 返回非 JSON + to=自动拒绝：无 approval:required（不挂起）；直接 approval:done{approve:false}；warn log 含「互审裁决失败」「输出不可解析」；审计 {mode:agent-fallback, verdict:deny, reason 前缀「裁决失败：」}',
+      { expected: 'F5 降级 deny', actual: JSON.stringify({ logs: logs.slice(0, 3), a }).slice(0, 280), ctx: `runId=${runId}（mock 实例，互审坏输出）` });
+  }
+  { /* V04 · AC3 后半 F1 回退人工：审官 node:99 不存在 → warn + approval:required → approve 端点 → run 完成；审计恰 1 行 human */
+    const { sse, runId } = await vRun(srv.base, wfPlain('smoke-review-missing', 'node:99', '挂起'));
+    const required = await sse.waitFor((e) => e.type === 'approval:required', 20000);
+    const ap = await api(srv.base, 'POST', `/api/v1/run/${runId}/approve`, { nodeId: 1, approve: true });
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    vCap.v04 = sse.events;
+    const logs = vLogs(sse.events), a = auditsOf(runId);
+    C.ok(required?.nodeId === 1 && required?.role === 'node:99' && ap.status === 200 && ap.json?.ok === true
+      && done.ok === true && logs.some((m) => m.includes('审官节点不可用'))
+      && vAudit(a, 'human', 'allow', (r) => r.reviewer === 'node:99'),
+      'V04', '审官 node:99 不存在 + to=挂起：warn 含「审官节点不可用」；approval:required{nodeId:1, role:node:99} 出现（回退人工）；POST approve {nodeId:1,approve:true} → 200 {ok:true}；run:done{ok:true}；审计恰 1 行 {mode:human, verdict:allow, reviewer:node:99}',
+      { expected: 'F1 回退人工 + human 审计', actual: JSON.stringify({ required, ap: ap.status, ok: done.ok, logs: logs.slice(0, 3), a }).slice(0, 320), ctx: `runId=${runId}（主实例，role=node:99）` });
+  }
+  { /* V05 · AC4 人工零回归：①挂起+人工通过与现状同型（事件序/out/审计 human）；②纯自动拒绝零审批事件（审计 auto） */
+    const { sse, runId } = await vRun(srv.base, wfPlain('smoke-review-human', '普通审批人', '挂起'));
+    await sse.waitFor((e) => e.type === 'approval:required', 20000);
+    await api(srv.base, 'POST', `/api/v1/run/${runId}/approve`, { nodeId: 1, approve: true });
+    const done1 = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const a1 = auditsOf(runId);
+    const { sse: sse2, runId: runId2 } = await vRun(srv.base, wfPlain('smoke-review-auto', '普通审批人', '自动拒绝'));
+    const done2 = await sse2.waitFor((e) => e.type === 'run:done', 30000);
+    await sse2.waitEnd(10000);
+    const a2 = auditsOf(runId2);
+    C.ok(inOrder(sse.events, [
+      (e) => e.type === 'approval:required',
+      (e) => e.type === 'approval:done' && e.nodeId === 1 && e.approve === true, (e) => e.type === 'run:done',
+    ]) && done1.ok === true && vOut(sse.events) === '审批通过 · 普通审批人'
+      && vAudit(a1, 'human', 'allow', (r) => r.reviewer === '普通审批人')
+      && !sse2.events.some((e) => e.type === 'approval:required' || e.type === 'approval:done')
+      && done2.ok === true && vOut(sse2.events) === '审批拒绝 · 普通审批人'
+      && vAudit(a2, 'auto', 'deny'),
+      'V05', 'role=普通审批人（无前缀）：①挂起+人工通过——approval:required→approval:done{true}→run:done{ok:true}，out=「审批通过 · 普通审批人」（与现状同型），审计 {mode:human,verdict:allow}；②to=自动拒绝——无 approval:required 且无 approval:done（现状行为），out=「审批拒绝 · 普通审批人」，审计 {mode:auto,verdict:deny}',
+      { expected: '人工路径零回归 + auto 审计', actual: JSON.stringify({ out1: vOut(sse.events), a1, out2: vOut(sse2.events), a2 }).slice(0, 300), ctx: `runId=${runId} / ${runId2}（主实例，普通文本 role）` });
+  }
+  { /* V06 · F3 模型未配置降级（minimal 实例确定性，SPEC §12 偏移 1）：无挂起、deny、warn「模型未配置」 */
+    const { sse, runId } = await vRun(minimalSrv.base, wfReview('互审放行', '自动拒绝'));
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    vCap.v06 = sse.events;
+    const logs = vLogs(sse.events), a = auditsOf(runId);
+    C.ok(vDone(sse.events, false) && done.ok === true && logs.some((m) => m.includes('模型未配置'))
+      && vAudit(a, 'agent-fallback', 'deny'),
+      'V06', 'minimal 实例（模型必未配置）+ to=自动拒绝：无 approval:required；approval:done{approve:false}；warn 含「模型未配置」；审计 {mode:agent-fallback, verdict:deny}',
+      { expected: 'F3 降级 deny', actual: JSON.stringify({ logs: logs.slice(0, 3), a }).slice(0, 260), ctx: `runId=${runId}（minimal 实例，全密钥空串压制）` });
+  }
+  { /* V07 · F6 zod 拒收：合法 JSON 但 verdict='maybe' → 按 to=自动通过降级 allow；审计 reason 含协议不符 */
+    const { sse, runId } = await vRun(mockSrv.base, wfReview('互审错形状', '自动通过'));
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const logs = vLogs(sse.events), a = auditsOf(runId);
+    C.ok(vDone(sse.events, true) && done.ok === true && logs.some((m) => m.includes('输出不符合裁决协议'))
+      && vAudit(a, 'agent-fallback', 'allow', (r) => String(r.reason ?? '').includes('输出不符合裁决协议')),
+      'V07', 'mock 返回 {"verdict":"maybe"}（JSON 但 schema 不符）+ to=自动通过：无 approval:required；降级 approval:done{approve:true}；warn 含「输出不符合裁决协议」；审计 {mode:agent-fallback, verdict:allow}',
+      { expected: 'F6 降级 allow', actual: JSON.stringify({ logs: logs.slice(0, 3), a }).slice(0, 260), ctx: `runId=${runId}（mock 实例，互审错形状）` });
+  }
+  { /* V08 · F2 非 LLM 审官（prompt 节点）：warn「审官节点不可用」→ deny 降级；mock 请求数不增（零模型调用） */
+    const reqBefore = mockModel.requests.length;
+    const { sse, runId } = await vRun(mockSrv.base, wfReview('互审放行', '自动拒绝', 'prompt'));
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const logs = vLogs(sse.events), a = auditsOf(runId);
+    C.ok(vDone(sse.events, false) && done.ok === true && logs.some((m) => m.includes('审官节点不可用'))
+      && mockModel.requests.length === reqBefore && vAudit(a, 'agent-fallback', 'deny'),
+      'V08', '审官节点 type=prompt（非 LLM）+ to=自动拒绝：无 approval:required；降级 approval:done{approve:false}；warn 含「审官节点不可用」；mock 请求数不增（F2 零模型调用）；审计 {mode:agent-fallback, verdict:deny}',
+      { expected: 'F2 降级 deny + 零模型调用', actual: JSON.stringify({ mockReqs: mockModel.requests.length - reqBefore, logs: logs.slice(0, 3), a }).slice(0, 280), ctx: `runId=${runId}（mock 实例，审官B=prompt）` });
+  }
+  { /* V09 · AC5 契约零漂移：V01-V04/V06 全事件流逐条 RunEventSchema 校验 + git packages/shared 零改动 */
+    const all = [...vCap.v01, ...vCap.v02, ...vCap.v03, ...vCap.v04, ...vCap.v06];
+    let parsed = 0, bad = null;
+    for (const ev of all) {
+      try { validateEvent(ev); parsed += 1; } catch (e) { bad = { type: ev?.type, err: String(e?.message ?? e) }; break; }
+    }
+    const sharedDirty = await new Promise((resolve) => {
+      const p = spawn('git', ['status', '--porcelain', '--', 'packages/shared'], { cwd: REPO_ROOT, shell: false });
+      let out = '';
+      p.stdout.on('data', (c) => { out += c; });
+      p.on('error', () => resolve('git 不可用'));
+      p.on('close', () => resolve(out.trim()));
+    });
+    C.ok(bad === null && parsed === all.length && sharedDirty === '',
+      'V09', `V01-V04、V06 捕获的全部事件（${all.length} 条，含互审 log/approval:done/approval:required）逐条通过 RunEventSchema 校验；git status --porcelain -- packages/shared 为空（DEFS 零漂移）`,
+      { expected: `${all.length}/${all.length} 通过 + shared 干净`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}；shared=${sharedDirty === '' ? '干净' : sharedDirty}`, ctx: '@agentflow/shared validateEvent + git status（均仅作校验器，被测系统只经 HTTP 触达）' });
+  }
 }
 
 /* ---------- 运行器：fail-fast + finally 清理 + 汇总 + 退出码（SPEC §8） ---------- */
@@ -662,6 +866,7 @@ try {
     console.log(`（fail-fast：断言 ${e.assertId} 失败，停止后续断言，进入清理）`);
   } else {
     console.error(`ERROR 未预期的异常：${e?.stack ?? e}`);
+    C.failed += 1;   /* OBS-001：未预期异常计入 failed，退出码如实为 1（不再 73/0/exit 0 误报全绿） */
   }
   if (srv?.log) console.log(`---- server 日志尾（末 200 行）----\n${srv.log.tail(200)}`);
 } finally {

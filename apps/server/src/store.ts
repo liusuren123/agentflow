@@ -14,6 +14,9 @@
  *    messages(session_id, seq, role, text, created_at, PRIMARY KEY(session_id, seq))
  *    —— 会话/消息与 runs/run_events 完全正交：无外键、无联合查询；
  *    会话的持久资产是 messages 表（turn 的 SSE 事件不入 run_events）。
+ *    approval_audits(id, run_id, node_id, reviewer, mode, verdict, reason, created_at)
+ *    （迭代 0016 / BK-0017）—— 审批决议留痕（auto/agent/agent-fallback/human 四方式
+ *    全覆盖）；与 runs/run_events 正交（对齐靠 run_id+node_id，run 级联删除不清理）。
  * ================================================================ */
 import Database from 'better-sqlite3';
 import crypto from 'node:crypto';
@@ -94,6 +97,16 @@ const DDL = `
     created_at INTEGER NOT NULL,
     PRIMARY KEY(session_id, seq)
   );
+  CREATE TABLE IF NOT EXISTS approval_audits(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    node_id INTEGER NOT NULL,
+    reviewer TEXT NOT NULL,      -- 原样 role 参数文本（'node:2' / '值班经理' / 'node:99'）
+    mode TEXT NOT NULL,          -- 'auto' | 'agent' | 'agent-fallback' | 'human'（迭代 0016 值域）
+    verdict TEXT NOT NULL,       -- 'allow' | 'deny'
+    reason TEXT,                 -- 可空：LLM 理由 / 裁决失败 why / 人工 comment / 策略名
+    created_at INTEGER NOT NULL
+  );
 `;
 
 let db: Database.Database | null = null;
@@ -117,6 +130,7 @@ let S: {
   listRecentMessages: Database.Statement;
   insertMessage: Database.Statement;
   touchSession: Database.Statement;
+  insertApprovalAudit: Database.Statement;
 };
 /* 两个事务（openRunRecorder 复用；runId 等经闭包外的参数传入） */
 let txFirst: (runId: string, wfText: string, wfName: string, startedAt: number, seq: number, json: string) => void;
@@ -178,6 +192,10 @@ export function initStore(): void {
       `INSERT INTO messages(session_id, seq, role, text, created_at)
        VALUES(?, (SELECT COALESCE(MAX(seq), 0) + 1 FROM messages WHERE session_id = ?), ?, ?, ?)`),
     touchSession: db.prepare(`UPDATE sessions SET updated_at = ? WHERE id = ?`),
+    /* 审批审计（迭代 0016 / BK-0017；单条 INSERT，同 insertEvent 形态） */
+    insertApprovalAudit: db.prepare(
+      `INSERT INTO approval_audits(run_id, node_id, reviewer, mode, verdict, reason, created_at)
+       VALUES(?, ?, ?, ?, ?, ?, ?)`),
   };
 
   /* 事务①：runs 行插入 + 首事件（run:accepted）——run 的存在性与首事件原子成立 */
@@ -341,6 +359,22 @@ export function listRecentMessages(sessionId: string, limit: number): { seq: num
 
 export function appendMessage(sessionId: string, role: 'user' | 'assistant', text: string): void {
   txAppendMessage(sessionId, role, text);   // 本迭代无删除端点，sessionId 必存在（chat handler 已判 404）
+}
+
+/* ---------- 审批审计（迭代 0016 / BK-0017，与 runs/run_events 正交；无查询端点） ---------- */
+export type ApprovalAuditMode = 'auto' | 'agent' | 'agent-fallback' | 'human';
+
+/* 决议留痕：纯策略短路/智能体裁决/裁决失败降级/人工（含超时中止）统一落一行；
+ * 写入时序为「先落库后写网」doctrine 延伸——决议产生 → 本函数 → emit。
+ * 容错（SPEC §4.5）：内部 catch + pino warn（镜像 openRunRecorder 先例），不阻断决议。 */
+export function recordApprovalAudit(runId: string, nodeId: number, reviewer: string,
+  mode: ApprovalAuditMode, verdict: 'allow' | 'deny', reason: string | null): void {
+  try{
+    S.insertApprovalAudit.run(runId, nodeId, reviewer, mode, verdict, reason, Date.now());
+  }catch(e){
+    logger.warn({ runId, nodeId, reviewer, mode, verdict, err: String((e as Error).message || e) },
+      '审批审计落库失败（决议照常执行）');
+  }
 }
 
 /* ---------- 关闭（优雅停机时 WAL checkpoint 落盘） ---------- */

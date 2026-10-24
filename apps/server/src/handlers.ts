@@ -9,6 +9,9 @@ import { webSearch, strictBochaSearch, strictSearxngSearch } from './search.js';
 import { guardedFetch } from './guard.js';
 import { runUserCode } from './code.js';
 import { abortableSleep, preview, render, strInput, toStr, esc } from './util.js';
+import { parseAgentRole, runAgentReview } from './approval-review.js';
+import type { AgentReviewResult } from './approval-review.js';
+import { recordApprovalAudit } from './store.js';
 import type { NodeHandler, NodeResult } from './types.js';
 
 export const BASIC_HANDLERS: Record<string, NodeHandler> = {
@@ -234,12 +237,14 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
     return { value: input ?? null, out: `${name} 已写入变量` };
   },
 
-  async approval(_ctx, { n, p, input, emit, approvalWaiters, ctx: runCtx }): Promise<NodeResult> {
+  async approval(_ctx, { n, p, input, emit, approvalWaiters, byId, ctx: runCtx }): Promise<NodeResult> {
     const policy = p.to || '挂起';
     let ok = true, note = '';
-    if(policy === '自动通过'){ ok = true; }
-    else if(policy === '自动拒绝'){ ok = false; }
-    else {
+    const reviewerText = p.role || '审批人';
+    /* 人工挂起分支（现状语句逐字保留；含互审失败回退；迭代 0016 仅追加审计行）——
+     * 提为闭包供「无前缀挂起」与「互审失败回退」两条路径真正执行（BUG-0013 修复：
+     * 原实现在互审块自然结束后落入末尾 return，ok 保持初始 true 即静默自动通过） */
+    const humanApproval = async (): Promise<void> => {
       emit('approval:required', { runId: runCtx.runId, nodeId: n.id, title: n.title || '人工审批',
         role: p.role || '审批人', inputPreview: preview(input, 200) });
       runCtx.log.info({ nodeId: n.id, title: n.title || '人工审批', role: p.role || '审批人' }, '审批挂起：等待人工决议');
@@ -250,9 +255,44 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
       });
       ok = res.ok;
       if(res.comment) note = ` · ${res.comment}`;
+      recordApprovalAudit(runCtx.runId, n.id, reviewerText, 'human', ok ? 'allow' : 'deny', res.comment || null);
       emit('approval:done', { nodeId: n.id, approve: ok });
       runCtx.log.info({ nodeId: n.id, approve: ok, comment: res.comment || undefined }, '审批决议');
+    };
+    const agentId = parseAgentRole(p.role);
+    if(agentId !== null){
+      /* ---- 智能体互审（迭代 0016 / BK-0017）：role=node:<id> 指派画布 LLM 节点为审官 ----
+       * 裁决子任务与审官节点自身的拓扑执行互不影响（approval-review.ts 头注）；
+       * 裁决失败降级链（SPEC §4.4）：挂起→回退人工全链路；自动通过/拒绝→按超时策略降级。 */
+      const reviewer = byId.get(agentId);
+      let review: AgentReviewResult;
+      if(!reviewer || reviewer.type !== 'llm'){
+        review = { kind:'fail', why: !reviewer ? `审官节点不可用：node:${agentId} 不存在` : '审官节点不可用：节点类型不是 LLM' };
+      } else {
+        emit('log', { lvl:'sys', msg:`⚖ 互审裁决中 · 审官 ${reviewer.title || 'LLM'}（node:${reviewer.id}）` });
+        review = await runAgentReview(runCtx, reviewer, { wfName: runCtx.wf.name, nodeTitle: n.title || '人工审批', nodeId: n.id, inputPreview: preview(input, 200) });
+      }
+      if(review.kind === 'verdict'){
+        ok = review.ok;
+        recordApprovalAudit(runCtx.runId, n.id, reviewerText, 'agent', ok ? 'allow' : 'deny', review.reason ?? null);
+        emit('approval:done', { nodeId: n.id, approve: ok });
+        runCtx.log.info({ nodeId: n.id, approve: ok, reviewer: reviewerText, reason: review.reason ?? undefined }, '智能体裁决');
+        return { value: input ?? null, out: `审批${ok?'通过':'拒绝'} · 智能体裁决 · 审官 ${reviewer?.title || 'LLM'}（node:${agentId}）${review.reason ? ` · ${review.reason}` : ''}` };
+      }
+      if(policy === '自动通过' || policy === '自动拒绝'){
+        ok = policy === '自动通过';
+        recordApprovalAudit(runCtx.runId, n.id, reviewerText, 'agent-fallback', ok ? 'allow' : 'deny', `裁决失败：${review.why}`);
+        emit('log', { lvl:'warn', msg:`⚖ 互审裁决失败（${review.why}），按超时策略「${policy}」降级` });
+        emit('approval:done', { nodeId: n.id, approve: ok });
+        return { value: input ?? null, out: `审批${ok?'通过':'拒绝'} · ${reviewerText}（裁决失败降级：${preview(review.why, 60)}）` };
+      }
+      /* 挂起（及未知 to 值）→ 回退人工全链路（安全侧默认：裁决失败不自动放行） */
+      emit('log', { lvl:'warn', msg:`⚖ 互审裁决失败（${review.why}），回退人工审批` });
+      await humanApproval();
     }
+    else if(policy === '自动通过'){ ok = true; recordApprovalAudit(runCtx.runId, n.id, reviewerText, 'auto', 'allow', `超时策略「${policy}」`); }
+    else if(policy === '自动拒绝'){ ok = false; recordApprovalAudit(runCtx.runId, n.id, reviewerText, 'auto', 'deny', `超时策略「${policy}」`); }
+    else { await humanApproval(); }
     return { value: input ?? null, out: `审批${ok?'通过':'拒绝'} · ${p.role || '审批人'}${note}` };
   },
 };
