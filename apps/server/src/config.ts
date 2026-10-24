@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { logger } from './logger.js';
+import { parseHttpServersSpec, parseStdioServersSpec } from './mcp/registry.js';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');   // dist/ → apps/server
 
@@ -29,6 +30,7 @@ for(const key of [
   'AI_BASE_URL', 'AI_API_KEY', 'AI_MODELS', 'AI_MODEL', 'AI_PROVIDER_NAME',
   'PORT', 'ALLOW_PRIVATE_NET', 'BOCHA_API_KEY', 'SEARXNG_URL',
   'DEEPSEEK_API_KEY', 'ZHIPU_API_KEY', 'OPENAI_API_KEY', 'MOONSHOT_API_KEY',
+  'MCP_HTTP_SERVERS', 'MCP_STDIO_SERVERS',
 ]){
   const v = process.env[key];
   rawEnv[key] = v !== undefined && v !== '' ? v : undefined;
@@ -60,6 +62,15 @@ const EnvSchema = z.object({
   ZHIPU_API_KEY: z.string().optional(),
   OPENAI_API_KEY: z.string().optional(),
   MOONSHOT_API_KEY: z.string().optional(),
+  /* 外部 MCP server 注册表（BK-0029 / ADR-0012 §7 案 A）：E1-E8 字段内校验
+   * （解析实现 = mcp/registry.ts 两纯函数，复用零漂移）；problems 经既有
+   * fail 通道指明变量名 + 条目序号 + 原因。 */
+  MCP_HTTP_SERVERS: z.string().superRefine((v, ctx) => {
+    for (const p of parseHttpServersSpec(v).problems) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p });
+  }).optional(),
+  MCP_STDIO_SERVERS: z.string().superRefine((v, ctx) => {
+    for (const p of parseStdioServersSpec(v).problems) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p });
+  }).optional(),
 });
 
 function fail(problems: string[]): never {
@@ -83,6 +94,15 @@ function loadConfig(){
     const ids = modelIdsOf(env.AI_MODELS);
     if(!ids.includes(env.AI_MODEL)){
       problems.push(`AI_MODEL=${env.AI_MODEL}：不在 AI_MODELS 的模型 ID 值域 [${ids.join(', ')}] 内`);
+      fail(problems);
+    }
+  }
+  /* 交叉校验（BK-0029 / E9）：两 MCP env 各自合法但 name 跨集合重复 → 歧义 fail-fast */
+  if(env.MCP_HTTP_SERVERS && env.MCP_STDIO_SERVERS){
+    const stdioIds = new Set(parseStdioServersSpec(env.MCP_STDIO_SERVERS).entries.map((e) => e.serverId));
+    const dup = parseHttpServersSpec(env.MCP_HTTP_SERVERS).entries.map((e) => e.serverId).filter((id) => stdioIds.has(id));
+    if(dup.length > 0){
+      problems.push(`MCP_HTTP_SERVERS × MCP_STDIO_SERVERS：name 重复注册 [${dup.join(', ')}]（跨变量同名歧义，逐项修正后重试）`);
       fail(problems);
     }
   }

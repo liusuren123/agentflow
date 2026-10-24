@@ -19,6 +19,7 @@
     "smoke:server": "node tests/smoke/smoke-server.mjs",
     "smoke:shutdown": "node tests/smoke/shutdown-sigterm.mjs",
     "smoke:mcp": "node tests/smoke/mcp-transport.mjs",
+    "smoke:mcp:registry": "node tests/smoke/mcp-registry.mjs",
     "test:canvas": "node tests/canvas/geometry.mjs",
     "dev:web": "npm start -w @agentflow/web",
     "dev:server": "npm run build:shared && npm run build:server && npm start -w @agentflow/server"
