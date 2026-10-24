@@ -1,6 +1,8 @@
 # ADR-0012 · 真 MCP client 传输选型与依赖方案（stdio / Streamable HTTP）
 
-- 状态：**草案 · 待用户批准（needs-approval issue **#10**，正文见附录 A），批准前零实现**
+- 状态：**已批准（issue #10 用户「批准」批复，2026-10-24；证据链见
+  `docs/evolution/iterations/0023/PRD.md` 选题存证——PLAN 轮 gh 亲核）·
+  BK-0028 实施中（迭代 0023）；BK-0029/0030 ready 待序**
 - 日期：2026-10-24（SPEC 阶段产出，迭代 0017 / BK-0027）
 - 关联：BACKLOG BK-0027（本 SPEC 先行轮）/ BK-0028~0030（三实施子项，proposed）/
   BK-0013（skipped，拆分母项）/ BK-0014（扩展发现器，下游）/ BK-9006（issue #6，
@@ -108,6 +110,9 @@ MCP 作为工具生态一等公民（项目级 .mcp.json / 全局注册，以本
   选项面——**实施轮 SPEC 必须复核 v2 `StreamableHTTPClientTransport` 的自定义
   fetch 注入点**；若缺失，回退方案 = 复用 `guardedFetch` 直接包装出站（放弃
   transport 级注入）或降级选 v1（接受其依赖树代价），以复核结论为准。
+  【SPEC 复核 2026-10-25（迭代 0023 SPEC）：v2.4.0 实有 `fetch?: FetchLike`
+  注入点（tarball dist/index.d.mts 类型亲核），回退案不启用；详见
+  `docs/evolution/iterations/0023/SPEC.md` §2-V5/V6。】
 
 ## 5. 调研记录（日期与来源，2026-10-24 查询）
 
