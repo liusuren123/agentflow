@@ -8,7 +8,7 @@ iteration: 0027      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-25 03:07  # 本次迭代开始时间
-updated: 2026-10-25 03:39  # 最近更新时间
+updated: 2026-10-25 03:46  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0026 BK-0008 终态 done：sqlite MCP 工具真实接入落地（沙箱锚定 + SQL 越界黑名单 + M12-M17 断言，产品提交 a66c0e9 恰两路径 +170/−29），VERIFY PASS 0 BUG（smoke:server 两轮 95/0 + AC4 反演红绿双向 + E2E 16/16），证据 iterations/0026/REPORT.md
+last_result: 心跳空转收尾（WORKFLOW v2 §4 空转合法）：侦察无带证据候选、不立项凑数；ready 队列现仅 BK-9002~9006 五项（均触 UI 的 L 级修宪项，L 项拆分排序待治理日，心跳不夹带）；无迭代目录、无 metrics 行、无提交
 ```
