@@ -1,88 +1,137 @@
 /* ================================================================
- *  nodes.ts — 节点注册表（单一事实源）
+ *  nodes.ts — 节点注册表聚合层（单一事实源）
  *  内容自 index.html 的 DEFS 逐字移植（2026-10 定稿，宪法保护对象）。
- *  前端节点库/属性渲染 与 后端 engine 的 DEFS_META/paramsDefaults
- *  均从本表派生，禁止在别处手工复制。
+ *  · 迭代 0021 / BK-0021 批次 1（NDP 目录制迁移）：8 目录
+ *    （trigger/userinput/llm/retrieval/http/code/condition/delay）为
+ *    经 schema 加载校验 + 反向合成的 NDP 纯数据模块；余 8 键
+ *    （prompt/websearch/notify/loop/merge/reply/setvar/approval）暂
+ *    内联，批次 2 迁移。内容零漂移由 test/nodes.baseline.json 常驻
+ *    Buffer 级比对守护（docs/node-definition-protocol-migration-spec.md §2/§5.1）。
+ *  · 前端节点库/属性渲染 与 后端 engine 的 DEFS_META/paramsDefaults
+ *    均从本表派生，禁止在别处手工复制。
+ *  · 对外仍且仅导出 NODES / NODE_NAMES / paramDefaultsOf（不变式 B）；
+ *    loadJsonDef / synthesize 为私有（NDP §3 聚合层边界）。
  * ================================================================ */
 import type { NodeDef } from './types.js';
+import { NodeDefSchema, type NodeDefJson, type ParamJson } from './nodes.schema.js';
+import triggerDef from './nodes/trigger/node.js';
+import userinputDef from './nodes/userinput/node.js';
+import llmDef from './nodes/llm/node.js';
+import retrievalDef from './nodes/retrieval/node.js';
+import httpDef from './nodes/http/node.js';
+import codeDef from './nodes/code/node.js';
+import conditionDef from './nodes/condition/node.js';
+import delayDef from './nodes/delay/node.js';
+
+/* ---------------- 加载期校验（NDP §3：模块初始化期执行、每进程一次） ---------------- */
+function loadJsonDef(raw: unknown): NodeDefJson {
+  const r = NodeDefSchema.safeParse(raw);
+  if (!r.success) {
+    const type = (raw as { type?: unknown } | null | undefined)?.type;
+    throw new Error(
+      `节点定义「${typeof type === 'string' ? type : '<unknown>'}」未通过 NDP schema 校验：` +
+        r.error.issues.map(i => `${i.path.join('.') || '<root>'} ${i.message}`).join('；'),
+    );
+  }
+  return r.data;
+}
+
+/* ---------------- 反向合成（NDP §4.2：新形状 → 现行旧键结构） ----------------
+ * 输出键插入序 = 基线逐字节等价倒逼（迭代 0021 SPEC §4 键序表）：
+ * name, cat, icon, [caps], desc, inputs, outputs, params, kw
+ * （caps 仅 llm/code 有：紧跟 icon 后、desc 前；两者皆无 → 整键省略）。
+ * params 逐 widget：combo k,l,t,o,d · text/textarea/toggle k,l,t,d ·
+ * number k,l,t,d,min?,max?,step?（各自仅提供时输出）· visibleIf 编译为尾键 if。
+ * implemented / runtimeOverridable / protocol / type / edgeRules / binding
+ * 与全部预留字段不进输出（NDP §4.1 统一裁决：忽略即内容零漂移的一部分）。 */
+function compileVisibleIf(v: NonNullable<ParamJson['visibleIf']>): (p: Record<string, unknown>) => boolean {
+  return p => p[v.param] === v.equals;
+}
+
+function synthesizeParam(p: ParamJson): NodeDef['params'][number] {
+  switch (p.widget) {
+    case 'combo':
+      return p.visibleIf
+        ? { k: p.id, l: p.label, t: 'combo', o: p.options.map(op => op.label), d: p.default, if: compileVisibleIf(p.visibleIf) }
+        : { k: p.id, l: p.label, t: 'combo', o: p.options.map(op => op.label), d: p.default };
+    case 'number':
+      return p.visibleIf
+        ? { k: p.id, l: p.label, t: 'number', d: p.default,
+            ...(p.min !== undefined ? { min: p.min } : {}),
+            ...(p.max !== undefined ? { max: p.max } : {}),
+            ...(p.step !== undefined ? { step: p.step } : {}),
+            if: compileVisibleIf(p.visibleIf) }
+        : { k: p.id, l: p.label, t: 'number', d: p.default,
+            ...(p.min !== undefined ? { min: p.min } : {}),
+            ...(p.max !== undefined ? { max: p.max } : {}),
+            ...(p.step !== undefined ? { step: p.step } : {}) };
+    case 'toggle':
+      return p.visibleIf
+        ? { k: p.id, l: p.label, t: 'toggle', d: p.default, if: compileVisibleIf(p.visibleIf) }
+        : { k: p.id, l: p.label, t: 'toggle', d: p.default };
+    case 'text':
+      return p.visibleIf
+        ? { k: p.id, l: p.label, t: 'text', d: p.default, if: compileVisibleIf(p.visibleIf) }
+        : { k: p.id, l: p.label, t: 'text', d: p.default };
+    case 'textarea':
+      return p.visibleIf
+        ? { k: p.id, l: p.label, t: 'textarea', d: p.default, if: compileVisibleIf(p.visibleIf) }
+        : { k: p.id, l: p.label, t: 'textarea', d: p.default };
+  }
+}
+
+function synthesize(def: NodeDefJson): NodeDef {
+  /* caps 固定序 ['mcp','skill'] 先 mcp 后 skill，skills 复数键合成单数 'skill'
+   * （app.js:334 按数组序渲染能力 chip；app.js:989 判定 includes('skill')）
+   * ——禁止按 Object.keys 枚举序合成（NDP §4.2 必踩点 1） */
+  const caps: ('mcp' | 'skill')[] = [];
+  if (def.binding.capabilities.mcp) caps.push('mcp');
+  if (def.binding.capabilities.skills) caps.push('skill');
+  return {
+    name: def.identity.name,
+    cat: def.identity.category,
+    icon: def.identity.icon,
+    ...(caps.length ? { caps } : {}),
+    desc: def.identity.description,
+    inputs: def.ports.inputs.map(pt => ({ n: pt.label, t: pt.type })),
+    outputs: def.ports.outputs.map(pt => ({ n: pt.label, t: pt.type })),
+    params: def.params.map(synthesizeParam),
+    kw: def.identity.keywords,
+  };
+}
 
 export const NODES: Record<string, NodeDef> = {
-  trigger: { name: '触发器', cat: 'input', icon: 'zap', desc: '工作流执行入口，支持手动 / 定时 / Webhook 触发。',
-    inputs: [], outputs: [{ n: '开始', t: 'any' }],
-    params: [
-      { k: 'mode', l: '触发方式', t: 'combo', o: ['手动触发', '定时触发', 'Webhook'], d: '手动触发' },
-      { k: 'cron', l: 'Cron 表达式', t: 'text', d: '0 9 * * 1-5', if: p => p.mode === '定时触发' },
-      { k: 'path', l: 'Webhook 路径', t: 'text', d: '/api/run', if: p => p.mode === 'Webhook' },
-    ], kw: 'trigger start 开始 入口 启动' },
-  userinput: { name: '用户输入', cat: 'input', icon: 'keyboard', desc: '采集用户提供的输入变量。',
-    inputs: [], outputs: [{ n: '值', t: 'text' }],
-    params: [
-      { k: 'var', l: '变量名', t: 'text', d: 'question' },
-      { k: 'vtype', l: '值类型', t: 'combo', o: ['文本', '数字', '布尔'], d: '文本' },
-      { k: 'req', l: '必填', t: 'toggle', d: true },
-      { k: 'defv', l: '默认值', t: 'text', d: '如何申请退货?' },
-    ], kw: 'input variable 变量 用户 参数' },
-  llm: { name: 'LLM 对话', cat: 'chat', icon: 'bot', caps: ['mcp', 'skill'], desc: '调用大语言模型生成回复，可注入提示词与上下文。',
-    inputs: [{ n: '提示词', t: 'text' }, { n: '上下文', t: 'any' }], outputs: [{ n: '回复', t: 'text' }],
-    params: [
-      { k: 'model', l: '模型', t: 'combo', o: ['GLM-4.7', 'GLM-4.7-Air', 'GLM-4.6-Flash', 'DeepSeek-V4', 'GPT-5', 'Claude Sonnet 4.5'], d: 'GLM-4.7' },
-      { k: 'sys', l: '系统提示词', t: 'textarea', d: '你是智能客服助手，回答需准确、简洁、友好。' },
-      { k: 'temp', l: '温度', t: 'number', d: 0.7, min: 0, max: 2, step: 0.1 },
-      { k: 'max', l: '最大 Tokens', t: 'number', d: 2048, min: 64, max: 32768, step: 64 },
-    ], kw: 'llm gpt 大模型 对话 chat glm 生成' },
+  trigger: synthesize(loadJsonDef(triggerDef)),
+  userinput: synthesize(loadJsonDef(userinputDef)),
+  llm: synthesize(loadJsonDef(llmDef)),
   prompt: { name: '提示词模板', cat: 'chat', icon: 'file-text', desc: '使用 {{变量}} 组装提示词文本。',
     inputs: [{ n: '变量', t: 'any' }], outputs: [{ n: '提示词', t: 'text' }],
     params: [
       { k: 'tpl', l: '模板内容', t: 'textarea', d: '你是一名金牌客服。请结合以下资料回答用户问题：\n{{context}}\n\n用户问题：{{question}}' },
     ], kw: 'prompt template 模板 提示词' },
-  retrieval: { name: '知识库检索', cat: 'knowledge', icon: 'book-open', desc: '从知识库中检索相关片段（RAG）。',
-    inputs: [{ n: '查询', t: 'text' }], outputs: [{ n: '片段', t: 'list' }],
-    params: [
-      { k: 'kb', l: '知识库', t: 'combo', o: ['产品手册 v2.3', 'FAQ-售前', '工单历史 2026'], d: '产品手册 v2.3' },
-      { k: 'topk', l: 'Top K', t: 'number', d: 3, min: 1, max: 20, step: 1 },
-      { k: 'th', l: '相似度阈值', t: 'number', d: 0.5, min: 0, max: 1, step: 0.05 },
-    ], kw: 'rag knowledge retrieve 检索 知识库 向量' },
+  retrieval: synthesize(loadJsonDef(retrievalDef)),
   websearch: { name: '网页搜索', cat: 'knowledge', icon: 'globe', desc: '调用搜索引擎查询互联网信息。',
     inputs: [{ n: '查询', t: 'text' }], outputs: [{ n: '结果', t: 'list' }],
     params: [
       { k: 'eng', l: '搜索引擎', t: 'combo', o: ['Bing', 'Google', '博查', 'SearXNG'], d: 'Bing' },
       { k: 'max', l: '结果数量', t: 'number', d: 5, min: 1, max: 20, step: 1 },
     ], kw: 'search web 联网 搜索 engine bing google' },
-  http: { name: 'HTTP 请求', cat: 'tools', icon: 'plug', desc: '调用外部 HTTP 接口获取或提交数据。',
-    inputs: [{ n: '请求体', t: 'any' }], outputs: [{ n: '响应', t: 'object' }],
-    params: [
-      { k: 'm', l: '请求方法', t: 'combo', o: ['GET', 'POST', 'PUT', 'DELETE'], d: 'GET' },
-      { k: 'url', l: 'URL', t: 'text', d: 'https://api.example.com/v1/orders' },
-      { k: 'to', l: '超时 (秒)', t: 'number', d: 30, min: 1, max: 120, step: 1 },
-    ], kw: 'http api request 接口 请求 rest' },
-  code: { name: '代码执行', cat: 'tools', icon: 'code', caps: ['mcp'], desc: '运行自定义 Python / JavaScript 代码片段。',
-    inputs: [{ n: '输入', t: 'any' }], outputs: [{ n: '结果', t: 'any' }],
-    params: [
-      { k: 'lang', l: '语言', t: 'combo', o: ['Python', 'JavaScript'], d: 'Python' },
-      { k: 'code', l: '代码', t: 'textarea', d: '# 处理输入后返回\nresult = input\nreturn result' },
-    ], kw: 'code python js 执行 脚本' },
+  http: synthesize(loadJsonDef(httpDef)),
+  code: synthesize(loadJsonDef(codeDef)),
   notify: { name: '消息通知', cat: 'tools', icon: 'send', desc: '通过邮件 / 短信 / IM 发送通知。',
     inputs: [{ n: '内容', t: 'any' }], outputs: [],
     params: [
       { k: 'ch', l: '通知渠道', t: 'combo', o: ['邮件', '短信', '企业微信', 'Webhook'], d: '邮件' },
       { k: 'to', l: '接收人', t: 'text', d: 'support@team.com' },
     ], kw: 'notify message send 通知 邮件 短信' },
-  condition: { name: '条件分支', cat: 'logic', icon: 'git-branch', desc: '按条件表达式将流程分流为 真 / 假 两路。',
-    inputs: [{ n: '输入', t: 'any' }], outputs: [{ n: '真', t: 'any' }, { n: '假', t: 'any' }],
-    params: [
-      { k: 'expr', l: '条件表达式', t: 'text', d: 'confidence > 0.7' },
-    ], kw: 'if else condition branch 分支 判断 条件' },
+  condition: synthesize(loadJsonDef(conditionDef)),
   loop: { name: '循环', cat: 'logic', icon: 'repeat', desc: '遍历列表，逐项执行下游节点。',
     inputs: [{ n: '列表', t: 'list' }], outputs: [{ n: '元素', t: 'text' }],
     params: [
       { k: 'max', l: '最大迭代', t: 'number', d: 10, min: 1, max: 100, step: 1 },
       { k: 'conc', l: '并发执行', t: 'toggle', d: false },
     ], kw: 'loop for each 循环 遍历 迭代' },
-  delay: { name: '延时等待', cat: 'logic', icon: 'timer', desc: '等待指定时间后继续执行。',
-    inputs: [{ n: '输入', t: 'any' }], outputs: [{ n: '输出', t: 'any' }],
-    params: [
-      { k: 's', l: '等待 (秒)', t: 'number', d: 2, min: 1, max: 60, step: 1 },
-    ], kw: 'delay wait sleep 等待 延时' },
+  delay: synthesize(loadJsonDef(delayDef)),
   merge: { name: '合并', cat: 'logic', icon: 'merge', desc: '汇聚多路输入为一路。',
     inputs: [{ n: 'A', t: 'any' }, { n: 'B', t: 'any' }], outputs: [{ n: '合并', t: 'any' }],
     params: [
