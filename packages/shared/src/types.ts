@@ -20,7 +20,7 @@ export type ParamDef =
   | { k: string; l: string; t: 'number'; d: number; min?: number; max?: number; step?: number; if?: (p: Record<string, unknown>) => boolean; kw?: string }
   | { k: string; l: string; t: 'toggle'; d: boolean; if?: (p: Record<string, unknown>) => boolean; kw?: string };
 
-export type NodeCategory = 'input' | 'chat' | 'knowledge' | 'tools' | 'logic' | 'output' | 'human';
+export type NodeCategory = 'input' | 'chat' | 'agent' | 'knowledge' | 'tools' | 'logic' | 'output' | 'human';
 
 export interface NodeDef {
   /** 节点类型名（显示） */

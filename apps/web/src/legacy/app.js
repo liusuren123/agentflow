@@ -47,6 +47,7 @@ const typeOk = (a,b) => a===b || a==='any' || b==='any';
 const CATS = {
   input:     { name:'输入',   c:'var(--cat-input)' },
   chat:      { name:'对话',   c:'var(--cat-chat)' },
+  agent:     { name:'智能体',   c:'var(--cat-agent)' },
   knowledge: { name:'知识',   c:'var(--cat-knowledge)' },
   tools:     { name:'工具',   c:'var(--cat-tools)' },
   logic:     { name:'逻辑',   c:'var(--cat-logic)' },
@@ -128,7 +129,7 @@ const capSummary = n => {
 };
 
 const catColor = t => getComputedStyle(document.documentElement)
-  .getPropertyValue({input:'--cat-input',chat:'--cat-chat',knowledge:'--cat-knowledge',tools:'--cat-tools',
+  .getPropertyValue({input:'--cat-input',chat:'--cat-chat',agent:'--cat-agent',knowledge:'--cat-knowledge',tools:'--cat-tools',
     logic:'--cat-logic',output:'--cat-output',human:'--cat-human'}[t]).trim()||'#666';
 
 const DEFS = NODES;   /* 单一事实源：@agentflow/shared（ADR-0003） */

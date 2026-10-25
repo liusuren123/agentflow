@@ -16,7 +16,7 @@
   --node-border:#252525;
   --node-line:#2f2f2f;      /* 标题分隔线（node.png 实采） */
   --widget-line:#606060;    /* widget 行底线（实机为亮灰） */
-  --cat-input:#4f8cff; --cat-chat:#a06bff; --cat-knowledge:#22c55e;
+  --cat-input:#4f8cff; --cat-chat:#a06bff; --cat-agent:#14b8a6; --cat-knowledge:#22c55e;
   --cat-tools:#f59e0b; --cat-logic:#22d3ee; --cat-output:#f472b6; --cat-human:#f87171;
   --rail-w:48px;            /* 实测左栏约 48px */
   --sidebar-w:312px;

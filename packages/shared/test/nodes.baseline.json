@@ -152,7 +152,7 @@
   },
   "agent": {
     "name": "通用智能体",
-    "cat": "chat",
+    "cat": "agent",
     "icon": "sparkles",
     "caps": [
       "mcp",
