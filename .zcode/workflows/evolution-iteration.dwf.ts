@@ -333,9 +333,40 @@ const pm = agent("产品经理", {
 });
 
 phase("选题与需求（产品经理）");
-const plan = await pm.ask<PlanResult>(
-  `按 WORKFLOW.md §4 的 PLAN 契约（v2）为迭代 ${ITER} 选题。**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 PRD 写到 ${PRD_PATH}），绝不要用裸相对路径（那会落到主干），更不要碰主干目录**。先读 ${WT_REL}/docs/evolution/BACKLOG.md、ROADMAP.md、metrics.md 与最近 3 个 ${WT_REL}/docs/evolution/iterations/ 目录，再读下方档案：\n\n${dossier}\n\n规则：\n① 档案 approved 的 issue：BACKLOG 已有「来源=issue#N」行的不重复建行，仅解除该行备注所载的转 ready 门槛；无行的建 ready 行（优先级 P0，来源=issue#N，备注「已获用户 issue 批复」）。优先选已获批的 ready 项为本轮项（返回 sourceIssue）；所选项即使来源列非 issue#N、但系某获批 issue 解阻的（备注含「issue#N 获批/解阻」字样），同样返回 sourceIssue=N，且该 issue 名下还有未竟姊妹子项时返回 itemContinues=true（迭代 done 只发进度回执、全部子项终轮才不设）；reconstitutional=true 仅当所选项触 UI/需重录 golden（ui-proposal 或触UI=是），纯后端/等价重组织的批复项一律 reconstitutional=false（批复只解除 POLICY 需批准面，不构成修宪轮，禁止 gate:update 与 golden 重录）。\n② 档案中 user-request issue 且 BACKLOG 无「issue#N」来源行的：建 proposed 行（P1，来源=issue#N，大小按内容估）；其中触 UI 的不建行，返回 uiIssueNumbers 交脚本转待批准。选题时若选了来源为 issue#N 的项，同样返回 sourceIssue。\n③ 档案 rejected 的 issue：BACKLOG 对应行（若有）状态改 skipped、备注「用户 issue 驳回」。\n④ 常规选题：最高优先 ready 项（优先 S/M；类型 doc 本轮跳过——攒治理日批量处理，ready 全为 doc 时视同枯竭）；枯竭时仅可依侦察档案补题，每个新项必须挂可验证证据指针（文件:行 / 探针输出 / issue 链接），无证据不得立项；仍无候选则返回 outcome=noop（此时不写任何文件、不改 STATE）。\n⑤ 选题后：PRD 写入 ${PRD_PATH}（必含触UI 分类结论与 Given/When/Then 验收标准；S 项免 SPEC 时还须内嵌受影响文件清单与验收口径并返回 skipSpec=true）；把 ${STATE_PATH} 的 phase 改 PLAN、item 填所选 ID、started/updated 填当前时间。批次/分期编排未到终轮时返回 itemContinues=true 且 STATE.item 保持该 ID 跨迭代续填（终轮才置 done，来源 issue 才关单）。\n⑥ BACKLOG 常规项发现触 UI：状态改 pending-approval、备注「转 issue 待批准」，返回 outcome=ui_quarantined 与 uiReason（动机/影响面一句话）。`,
-);
+/* 选题占位互斥（v3 并行必需）：各路持有 BACKLOG 的独立副本，PM 可能选中同一项 →
+   两路做同一件事，最终在产品代码上冲突。迭代号分配防「撞号」，本项占位防「撞项」。
+   机制：PM 选题前先查已占项并排除；选题后原子占位（mkdir 即互斥），
+   已被别的路占住则要求 PM 重选（≤2 次）。 */
+const claimedOut = await runTool(["claimed-items"], 30_000);
+const claimedItems = parseJson<string[]>(claimedOut.stdout, []);
+const claimedNote =
+  claimedItems.length > 0
+    ? `\n\n【并行占用提示】以下 BACKLOG 项已被其他并行工作流占位，**本轮严禁选择**：${claimedItems.join("、")}`
+    : "";
+
+let plan: PlanResult;
+let planRetried = 0;
+for (;;) {
+  plan = await pm.ask<PlanResult>(
+  `按 WORKFLOW.md §4 的 PLAN 契约（v2）为迭代 ${ITER} 选题。**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 PRD 写到 ${PRD_PATH}），绝不要用裸相对路径（那会落到主干），更不要碰主干目录**。先读 ${WT_REL}/docs/evolution/BACKLOG.md、ROADMAP.md、metrics.md 与最近 3 个 ${WT_REL}/docs/evolution/iterations/ 目录，再读下方档案：\n\n${dossier}${claimedNote}\n\n规则：\n① 档案 approved 的 issue：BACKLOG 已有「来源=issue#N」行的不重复建行，仅解除该行备注所载的转 ready 门槛；无行的建 ready 行（优先级 P0，来源=issue#N，备注「已获用户 issue 批复」）。优先选已获批的 ready 项为本轮项（返回 sourceIssue）；所选项即使来源列非 issue#N、但系某获批 issue 解阻的（备注含「issue#N 获批/解阻」字样），同样返回 sourceIssue=N，且该 issue 名下还有未竟姊妹子项时返回 itemContinues=true（迭代 done 只发进度回执、全部子项终轮才不设）；reconstitutional=true 仅当所选项触 UI/需重录 golden（ui-proposal 或触UI=是），纯后端/等价重组织的批复项一律 reconstitutional=false（批复只解除 POLICY 需批准面，不构成修宪轮，禁止 gate:update 与 golden 重录）。\n② 档案中 user-request issue 且 BACKLOG 无「issue#N」来源行的：建 proposed 行（P1，来源=issue#N，大小按内容估）；其中触 UI 的不建行，返回 uiIssueNumbers 交脚本转待批准。选题时若选了来源为 issue#N 的项，同样返回 sourceIssue。\n③ 档案 rejected 的 issue：BACKLOG 对应行（若有）状态改 skipped、备注「用户 issue 驳回」。\n④ 常规选题：最高优先 ready 项（优先 S/M；类型 doc 本轮跳过——攒治理日批量处理，ready 全为 doc 时视同枯竭）；枯竭时仅可依侦察档案补题，每个新项必须挂可验证证据指针（文件:行 / 探针输出 / issue 链接），无证据不得立项；仍无候选则返回 outcome=noop（此时不写任何文件、不改 STATE）。\n⑤ 选题后：PRD 写入 ${PRD_PATH}（必含触UI 分类结论与 Given/When/Then 验收标准；S 项免 SPEC 时还须内嵌受影响文件清单与验收口径并返回 skipSpec=true）；把 ${STATE_PATH} 的 phase 改 PLAN、item 填所选 ID、started/updated 填当前时间。批次/分期编排未到终轮时返回 itemContinues=true 且 STATE.item 保持该 ID 跨迭代续填（终轮才置 done，来源 issue 才关单）。\n⑥ BACKLOG 常规项发现触 UI：状态改 pending-approval、备注「转 issue 待批准」，返回 outcome=ui_quarantined 与 uiReason（动机/影响面一句话）。`,
+  );
+  if (plan.outcome !== "selected") break;
+  const claimOut = await runTool(["claim-item", plan.itemId], 30_000);
+  if (claimOut.exitCode === 0) {
+    log(`已占位 BACKLOG 项 ${plan.itemId}（并行互斥）`);
+    break;
+  }
+  /* 撞项：该项已被另一路占位 → 要求 PM 重选 */
+  planRetried += 1;
+  if (planRetried > 2) {
+    await runTool(["release-item", plan.itemId], 30_000);
+    break;
+  }
+  log(`选题 ${plan.itemId} 已被并行工作流占位，要求产品经理重选（第 ${planRetried} 次）`);
+  await pm.ask(
+    `你上一轮选中的 ${plan.itemId} 已被另一并行工作流占位，本轮不能做它。请重新按规则④选下一个可做的 ready 项（跳过 ${plan.itemId}），并按原契约把 PRD 写入 ${PRD_PATH}、更新 ${STATE_PATH}。若已无可选候选，返回 outcome=noop。`,
+  );
+}
 report({ iteration: ITER, stage: "PLAN", item: plan.itemId, outcome: plan.outcome });
 log(`选题完成：${plan.outcome} · ${plan.itemId} ${plan.title}`);
 
@@ -651,6 +682,8 @@ if (lockOut.exitCode !== 0) {
   await arbiterBlocked.ask(
     `合并锁获取超时（另一路工作流正在合并主干）。请把 docs/evolution/STATE.md 的 phase 改为 idle、last_result 写「迭代 ${ITER} 成果已留在分支 ${BRANCH}，因主干合并锁占用未并入」、updated 填当前时间；不要改其他字段。`,
   );
+  /* 有意保留选题占位：本轮成果仍在分支待合并，该项仍在进行中——释放会让另一路
+     选中同一项、两边都改同一处代码。占位随分支合并后由下一轮释放。 */
   return {
     conclusion: `迭代 ${ITER} 实现与验收已完成（分支 ${BRANCH}），但主干合并锁被其他工作流占用，未能并入主干；成果保留在分支与工作树中，待下一轮合并。`,
     findings: [],
@@ -695,8 +728,9 @@ report({
 await runTool(["unlock", MERGE_LOCK], 30_000);
 
 if (!merge.merged) {
-  phase("合并受阻收尾（成果保留在分支）");
-  await notewriter.ask(
+phase("合并受阻收尾（成果保留在分支）");
+/* 同上：成果保留在分支待用户裁决，选题占位有意保留（该项仍在进行中） */
+await notewriter.ask(
     `迭代 ${ITER} 成果未并入主干（${merge.blockedReason ?? "合并受阻"}）。请把 docs/evolution/STATE.md 的 phase 改为 idle、iteration 保持 ${ITER}、item 填 ${plan.itemId}、last_result 写「迭代 ${ITER} 成果留在分支 ${BRANCH}（${merge.blockedReason ?? "合并受阻"}），未并入主干」、updated 填当前时间；不要改其他字段。`,
   );
   const sweep = await git.status();
@@ -809,6 +843,10 @@ if (postLock.exitCode === 0) {
 
 /* 工作树清理：分支已并入主干，移除工作树与分支 */
 await runTool(["remove", MAIN, WT, BRANCH], 120_000);
+/* 释放选题占位：本轮已收尾，该项可被后续迭代再选（撞项互斥的持有期 = 迭代在途期） */
+if (plan.outcome === "selected") {
+  await runTool(["release-item", plan.itemId], 30_000);
+}
 
 await artifact.markdown(
   "iteration-report",

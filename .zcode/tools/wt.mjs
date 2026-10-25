@@ -34,6 +34,9 @@ import path from 'node:path';
 
 const [, , mode, ...rest] = process.argv;
 
+/* 锁根目录：与工作树同级（.zcode/locks/），跨工作流共享的本机状态 */
+const WT_PARENT_LOCKS = '.zcode/locks';
+
 const fail = (msg, code = 1) => {
   console.error(msg);
   process.exit(code);
@@ -311,6 +314,41 @@ else if (mode === 'evidence') {
     stdio: 'inherit', shell: false, windowsHide: true, env: process.env,
   });
   process.exit(res.status === null ? 1 : res.status);
+}
+
+/* ---------------- claim-item / claimed-items：选题占位互斥 ----------------
+   并行工作流各自持有 BACKLOG 的独立副本，PM 可能选中同一项 → 两路做同一件事，
+   最终在产品代码上冲突。迭代号分配防的是「撞号」，选题占位防的是「撞项」：
+   原子 mkdir 即互斥，谁先建目录谁占住该项。 */
+else if (mode === 'claim-item') {
+  const [itemId] = rest;
+  if (!itemId) fail('claim-item 需要 <itemId>');
+  const dir = path.join(WT_PARENT_LOCKS, 'items', itemId);
+  mkdirSync(path.dirname(dir), { recursive: true });
+  try {
+    mkdirSync(dir);            /* 原子：已存在则 EEXIST */
+    writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ itemId, at: new Date().toISOString(), pid: process.pid }));
+    console.log(`claimed ${itemId}`);
+    process.exit(0);
+  } catch (err) {
+    if (err.code !== 'EEXIST') fail(`claim-item 失败：${err.message}`);
+    console.error(`claimed-busy ${itemId}`);
+    process.exit(3);
+  }
+} else if (mode === 'release-item') {
+  const [itemId] = rest;
+  if (!itemId) fail('release-item 需要 <itemId>');
+  const dir = path.join(WT_PARENT_LOCKS, 'items', itemId);
+  try {
+    rmSync(dir, { recursive: true, force: true });
+    console.log(`released ${itemId}`);
+  } catch (err) {
+    console.error(`release 失败：${err.message}`);
+  }
+} else if (mode === 'claimed-items') {
+  const base = path.join(WT_PARENT_LOCKS, 'items');
+  const ids = existsSync(base) ? readdirSync(base) : [];
+  console.log(JSON.stringify(ids));
 }
 
 /* ---------------- lock / unlock：合并排他锁 ---------------- */
