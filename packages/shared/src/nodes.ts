@@ -1,8 +1,8 @@
 /* ================================================================
  *  nodes.ts — 节点注册表聚合层（单一事实源）
  *  内容自 index.html 的 DEFS 逐字移植（2026-10 定稿，宪法保护对象）。
- *  · 迭代 0021~0022 / BK-0021（NDP 目录制迁移）终态：16 目录全量
- *    （trigger/userinput/llm/retrieval/http/code/condition/delay +
+ *  · 迭代 0021~0022 / BK-0021（NDP 目录制迁移）终态：17 目录全量
+ *    （trigger/userinput/llm/agent/retrieval/http/code/condition/delay +
  *    prompt/websearch/notify/loop/merge/reply/setvar/approval）为
  *    经 schema 加载校验 + 反向合成的 NDP 纯数据模块，聚合层零内联
  *    定义。内容零漂移由 test/nodes.baseline.json 常驻 Buffer 级比对
@@ -19,6 +19,7 @@ import { NodeDefSchema, type NodeDefJson, type ParamJson } from './nodes.schema.
 import triggerDef from './nodes/trigger/node.js';
 import userinputDef from './nodes/userinput/node.js';
 import llmDef from './nodes/llm/node.js';
+import agentDef from './nodes/agent/node.js';
 import retrievalDef from './nodes/retrieval/node.js';
 import httpDef from './nodes/http/node.js';
 import codeDef from './nodes/code/node.js';
@@ -114,6 +115,7 @@ export const NODES: Record<string, NodeDef> = {
   trigger: synthesize(loadJsonDef(triggerDef)),
   userinput: synthesize(loadJsonDef(userinputDef)),
   llm: synthesize(loadJsonDef(llmDef)),
+  agent: synthesize(loadJsonDef(agentDef)),
   prompt: synthesize(loadJsonDef(promptDef)),
   retrieval: synthesize(loadJsonDef(retrievalDef)),
   websearch: synthesize(loadJsonDef(websearchDef)),

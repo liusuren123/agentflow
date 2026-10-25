@@ -1,10 +1,10 @@
 /* ================================================================
  *  param-handler-guard.test.mjs — 参数键名 ↔ handler 引用一致性守卫
  *  （迭代 0021 / BK-0021 批次 1，迁移 SPEC §6 / NDP §4.2 必踩点 2）
- *  静态提取 apps/server/src/{handlers,llm}.ts 与 engine.ts 的 p.<key>：
+ *  静态提取 apps/server/src/{handlers,llm,agent}.ts 与 engine.ts 的 p.<key>：
  *  handlers.ts 按最近前导 `async <name>(` 方法项归属（无名箭头不匹配，
- *  闭包内 p. 归宿主 handler）；llm.ts 全文件归 llm；engine.ts 仅含
- *  `n.type === 'condition'` 守卫的行归 condition。
+ *  闭包内 p. 归宿主 handler）；llm.ts / agent.ts 全文件各归 llm / agent；
+ *  engine.ts 仅含 `n.type === 'condition'` 守卫的行归 condition。
  *  正向：提取键 ∈ NODES[owner].params[].k（改名即红）；反向：有而无引用
  *  的键集合恰等于僵尸清单（NDP §6.4）。不硬编码行数/处数/键数。
  *  跨包读源先例：contract.test.mjs:66。
@@ -60,6 +60,17 @@ function extractLlm() {
   return { refs, unattributed };
 }
 
+/* agent.ts：全文件归 agent（agentHandler 即 agent 节点实现；extractLlm 同型） */
+function extractAgent() {
+  const refs = new Map();
+  const unattributed = [];
+  for (const raw of readLines('agent.ts')) {
+    const keys = pKeysOf(raw);
+    if (keys.length) addRefs(refs, 'agent', keys);
+  }
+  return { refs, unattributed };
+}
+
 /* engine.ts：仅含 `n.type === 'condition'` 守卫的行归 condition（唯一 p. 引用 = engine.ts:128） */
 function extractEngine() {
   const refs = new Map();
@@ -83,7 +94,7 @@ test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反�
   /* 汇总三源提取结果；无法归属的引用 = 红（不静默，SPEC §9） */
   const refs = new Map();
   const unattributed = [];
-  for (const { refs: r, unattributed: u } of [extractHandlers(), extractLlm(), extractEngine()]) {
+  for (const { refs: r, unattributed: u } of [extractHandlers(), extractLlm(), extractAgent(), extractEngine()]) {
     for (const [owner, keys] of r) {
       if (!refs.has(owner)) refs.set(owner, new Set());
       for (const k of keys) refs.get(owner).add(k);
@@ -119,9 +130,9 @@ test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反�
     '僵尸参数清单漂移——提示同步 NDP §6.4 与本清单（新僵尸出现或旧僵尸被接通）',
   );
 
-  /* 两数分开（AC3）：33 已定义 / 28 已实现 = 总数 − 僵尸数（由清单推导，不硬编码） */
+  /* 两数分开（AC3）：36 已定义 / 31 已实现 = 总数 − 僵尸数（由清单推导，不硬编码） */
   const total = Object.values(NODES).reduce((n, d) => n + d.params.length, 0);
-  assert.equal(total, 33, '已定义参数总数应为 33（结构信号，非质量信号）');
+  assert.equal(total, 36, '已定义参数总数应为 36（结构信号，非质量信号）');
   const zombieCount = EXPECTED_ZOMBIES.reduce((n, [, ks]) => n + ks.length, 0);
   const refCount = [...refs.values()].reduce((n, s) => n + s.size, 0);
   assert.equal(

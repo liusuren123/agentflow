@@ -13,6 +13,7 @@ import { NODE_NAMES, paramDefaultsOf } from '@agentflow/shared';
 import { isAbort, preview } from './util.js';
 import { BASIC_HANDLERS } from './handlers.js';
 import { llmHandler } from './llm.js';
+import { agentHandler } from './agent.js';
 import type { ApprovalWaiters, HandlerArgs, NodeResult, RunCtx, Scope, WFEdge, WFNode } from './types.js';
 
 /* ---------------- 节点元信息（来自 @agentflow/shared 单一事实源） ----------------
@@ -26,6 +27,7 @@ const paramsDefaults = (type: string): Record<string, unknown> => paramDefaultsO
 export const HANDLERS: Record<string, (ctx: RunCtx, args: HandlerArgs) => Promise<NodeResult>> = {
   ...BASIC_HANDLERS,
   llm: llmHandler,
+  agent: agentHandler,
 };
 
 /* ---------------- 主入口 ---------------- */

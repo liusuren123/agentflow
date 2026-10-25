@@ -173,6 +173,18 @@ const logInv = page => page.evaluate(() => ({
     .map(l => (getComputedStyle(l).display === 'none' ? '-' : '+') + l.className.replace('logline ', '')),
 }));
 
+/* ---------- s8 智能体节点场景基建（ADR-0013 §6 · 迭代 0031 / BK-0033 修宪轮） ---------- */
+/* 触发形态 = localStorage 预置含 agent 节点的最小工作流（LS_KEY='agentflow.v2'，
+   app.js loadLocal 消费）：seed 在 localStorage.clear 之后、reload 之前写入 → boot 走
+   loadLocal 分支（fresh=false，无 fitView/欢迎日志）。离线静态态（无路由拦截，probe
+   失败静默 → model combo 保持 DEFS 6 项）；runs/settings 缺省 = boot 默认（确定性）。
+   采集面 = chat 类目色标题栏 + sparkles 图标 + 2 入 2 出端口 + model/sys/maxSteps
+   widget 行 + 一条连线；不变量 = 公共六键（无 per-scenario 增量）。 */
+const AGENT_WF_SEED = JSON.stringify({ tabs: [{ name: '智能体示例', nodes: [
+  { id: 1, type: 'trigger', x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'agent',   x: 410, y: 250, title: '通用智能体' },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -184,6 +196,8 @@ const SCENARIOS = [
     steps: [clickRail('history')],  ready: runReady, inv: runInv },
   { id: 's6-log-panel',       steps: [], after: logPanelAfter(null),   inv: logInv },
   { id: 's7-log-filter-warn', steps: [], after: logPanelAfter('warn'), inv: logInv },
+  { id: 's8-agent-node', steps: [],
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), AGENT_WF_SEED) },
 ];
 
 const runScenario = async (browser, sc) => {
@@ -194,6 +208,8 @@ const runScenario = async (browser, sc) => {
   for (const r of sc.routes || []) await page.route(r.pattern, r.handler);
   await page.goto(`http://127.0.0.1:${PORT}/`, { waitUntil: 'domcontentloaded' });
   await page.evaluate(() => localStorage.clear());
+  /* s8 seed 钩子（迭代 0031）：clear 之后、reload 之前预置工作流（s0~s7 无 seed 字段=零行为变化） */
+  if (sc.seed) await sc.seed(page);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(1000);

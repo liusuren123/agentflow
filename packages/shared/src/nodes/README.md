@@ -2,7 +2,7 @@
 
 # 节点总索引（NDP v0.2）
 
-16 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。
+17 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。
 生成器：仓库根执行 `npm run build:shared && node tools/gen-node-readmes.mjs`（幂等；**生成物勿手改**——人工文案持有于生成器 MANUAL_NOTES）。
 
 | type | 目录 | 名称 | 一句话用途 |
@@ -10,6 +10,7 @@
 | `trigger` | `nodes/trigger/` | 触发器 | 工作流执行入口，支持手动 / 定时 / Webhook 触发。 |
 | `userinput` | `nodes/userinput/` | 用户输入 | 采集用户提供的输入变量。 |
 | `llm` | `nodes/llm/` | LLM 对话 | 调用大语言模型生成回复，可注入提示词与上下文。 |
+| `agent` | `nodes/agent/` | 通用智能体 | goal 模式智能体：自主工具循环 + 持久会话，可点开进入流式会话面板。 |
 | `prompt` | `nodes/prompt/` | 提示词模板 | 使用 {{变量}} 组装提示词文本。 |
 | `retrieval` | `nodes/retrieval/` | 知识库检索 | 从知识库中检索相关片段（RAG）。 |
 | `websearch` | `nodes/websearch/` | 网页搜索 | 调用搜索引擎查询互联网信息。 |

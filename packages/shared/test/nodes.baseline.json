@@ -150,6 +150,68 @@
     ],
     "kw": "llm gpt 大模型 对话 chat glm 生成"
   },
+  "agent": {
+    "name": "通用智能体",
+    "cat": "chat",
+    "icon": "sparkles",
+    "caps": [
+      "mcp",
+      "skill"
+    ],
+    "desc": "goal 模式智能体：自主工具循环 + 持久会话，可点开进入流式会话面板。",
+    "inputs": [
+      {
+        "n": "目标",
+        "t": "text"
+      },
+      {
+        "n": "上下文",
+        "t": "any"
+      }
+    ],
+    "outputs": [
+      {
+        "n": "结果",
+        "t": "text"
+      },
+      {
+        "n": "会话引用",
+        "t": "object"
+      }
+    ],
+    "params": [
+      {
+        "k": "model",
+        "l": "模型",
+        "t": "combo",
+        "o": [
+          "GLM-4.7",
+          "GLM-4.7-Air",
+          "GLM-4.6-Flash",
+          "DeepSeek-V4",
+          "GPT-5",
+          "Claude Sonnet 4.5"
+        ],
+        "d": "GLM-4.7"
+      },
+      {
+        "k": "sys",
+        "l": "系统提示词",
+        "t": "textarea",
+        "d": "你是通用智能体，围绕用户目标自主推进，工具调用前评估必要性。"
+      },
+      {
+        "k": "maxSteps",
+        "l": "最大步数",
+        "t": "number",
+        "d": 32,
+        "min": 1,
+        "max": 256,
+        "step": 1
+      }
+    ],
+    "kw": "agent 智能体 goal 会话 自主 loop 预算"
+  },
   "prompt": {
     "name": "提示词模板",
     "cat": "chat",

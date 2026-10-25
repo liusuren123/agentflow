@@ -13,6 +13,9 @@
  * V 组（迭代 0016 / BK-0017）：智能体互审协议——mock 端点按请求体 stream 标志
  * 路由裁决三态+1（非流式=裁决子任务，SPEC §4.6）；V01-V03/V07/V08 mock 实例、
  * V04/V05 主实例、V06 minimal 实例；审计核对 = auditsOf 只读直查共享 SQLite（SPEC §5.1）。
+ * A 组（迭代 0031 / BK-0033）：通用智能体节点——mock 实例 A01-A05（「智能体」前缀
+ * 关键词路由与互审正交）：会话绑定与出参锚 / sqlite 真工具两步循环 / 预算上限 /
+ * 停止透传 / 契约零新增（SPEC §7；残留纪律沿 G 组：按自建 title 定位存在性）。
  * Z 组（迭代 0019 / BK-0011）：悬挂 run 启动扫尾——独立实例 WFAPPR 挂起 run（事件为门）
  * → SIGKILL 崩溃语义击杀（不经优雅停机）→ 同端口重启（扫尾在 listen 前，health 200
  * 即扫尾完成时序门）→ 经 API 断言 status 收敛 stopped、ended_ms/done/total 原值、
@@ -102,6 +105,36 @@ function startMockModel() {
         if (body?.stream !== true) {
           const lastUser = [...(body?.messages ?? [])].reverse().find((m) => m?.role === 'user');
           const c = String(lastUser?.content ?? '');
+          /* A 组路由（迭代 0031 / BK-0033 · SPEC §7）：「智能体」前缀关键词与互审路由正交；
+           * 工具轮次以 messages 是否含 role:'tool' 区分（agent 预算循环续接后带 tool 结果）。
+           * tool_call 形状 = OpenAI 标准 chat.completion（A02 首跑若红以 mock 实收为准修形状，不改被测代码）。 */
+          const hasToolMsg = (body?.messages ?? []).some((m) => m?.role === 'tool');
+          const agentToolCallMsg = { role: 'assistant', content: null, tool_calls: [
+            { id: 'call_a', type: 'function', function: {
+              name: 'sqlite_execute',
+              arguments: '{"sql":"CREATE TABLE IF NOT EXISTS agent_smoke(k TEXT);INSERT INTO agent_smoke VALUES(1)"}',
+            } },
+          ] };
+          const agentJson = (message, finish) => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              id: 'chatcmpl-agent', object: 'chat.completion', created: 1700000000, model: 'mock-model',
+              choices: [{ index: 0, message, finish_reason: finish }],
+              usage: { prompt_tokens: 9, completion_tokens: 9, total_tokens: 18 },
+            }));
+          };
+          if (c.includes('智能体工具轮')) {          /* 步1 → tool_call；步2（已有 tool 消息）→ 终文本 */
+            agentJson(hasToolMsg ? { role: 'assistant', content: '智能体工具轮完成' } : agentToolCallMsg,
+              hasToolMsg ? 'stop' : 'tool_calls');
+            return;
+          }
+          if (c.includes('智能体预算穷尽')) {        /* 恒返 tool_call（永不终文本）→ 预算必然穷尽 */
+            agentJson(agentToolCallMsg, 'tool_calls');
+            return;
+          }
+          if (c.includes('智能体慢轮')) {            /* 应答前留 4s 中止窗口（A04 stop 竞速） */
+            await sleep(4000);                       /* 中止后写失败容忍（与流式支同语义） */
+          }
           let content = '{"verdict":"allow","reason":"mock 允许：符合规范"}';
           if (c.includes('互审驳回')) content = '{"verdict":"deny","reason":"mock 拒绝：内容不合规"}';
           else if (c.includes('互审坏输出')) content = '抱歉，我认为这个请求无法用 JSON 回答。';
@@ -851,6 +884,155 @@ async function main() {
     C.ok(bad === null && parsed === all.length && sharedDirty === '',
       'V09', `V01-V04、V06 捕获的全部事件（${all.length} 条，含互审 log/approval:done/approval:required）逐条通过 RunEventSchema 校验；git status --porcelain -- packages/shared 为空（DEFS 零漂移）`,
       { expected: `${all.length}/${all.length} 通过 + shared 干净`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}；shared=${sharedDirty === '' ? '干净' : sharedDirty}`, ctx: '@agentflow/shared validateEvent + git status（均仅作校验器，被测系统只经 HTTP 触达）' });
+  }
+
+  /* A 组：通用智能体节点（A01-A05 · 迭代 0031 / BK-0033 · SPEC §7）——mock 实例。
+   * 会话绑定（title/model/sys=节点标题/参数）/ 预算循环 / 停止透传 / 契约零新增；
+   * 残留纪律沿 G 组：会话无删除端点，按自建 title 定位存在性断言（?limit=100 全量窗口）。 */
+  const AGENT_ALLOW = '{"verdict":"allow","reason":"mock 允许：符合规范"}';
+  const aRun = async (wf) => {
+    const sse = await openSse(mockSrv.base, wf);
+    const runId = (await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId;
+    CLEAN.runIds.push(runId);
+    return { sse, runId };
+  };
+  const aSessionByTitle = async (title) => {
+    const r = await api(mockSrv.base, 'GET', '/api/v1/sessions?limit=100');
+    return (r.json?.sessions ?? []).find((s) => s?.title === title) ?? null;
+  };
+  const aMsgsOf = async (sid) => sid ? (await api(mockSrv.base, 'GET', `/api/v1/sessions/${sid}`)).json?.messages ?? [] : [];
+  let aCapA01 = [], aCapA03 = [], aCapA04 = [];
+  { /* A01 · 会话绑定 + 出参锚：trigger→agent→reply（reply 取 out-session 端口）；
+       session 行 {title,model,sys}=节点标题/参数，messages 恰 2 条（user=in-goal 全文 + assistant=终文本） */
+    const wfA01 = {
+      name: 'smoke-agent-direct',
+      nodes: [
+        { id: 1, type: 'trigger', x: 40, y: 100, title: '手动触发' },
+        { id: 2, type: 'agent', x: 320, y: 100, title: '测试智能体', params: { model: 'MockChat', sys: '你是测试智能体', maxSteps: 4 } },
+        { id: 3, type: 'reply', x: 600, y: 100, title: '输出' },
+      ],
+      edges: [
+        { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+        { id: 2, fn: 2, fp: 1, tn: 3, tp: 0 },
+      ],
+      inputs: { question: '智能体直答' },
+    };
+    const { sse } = await aRun(wfA01);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    aCapA01 = sse.events;
+    const agentDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    const replyDone = sse.events.find((e) => e.type === 'node:done' && e.id === 3);
+    const sess = await aSessionByTitle('测试智能体');
+    const msgs = await aMsgsOf(sess?.id);
+    C.ok(done.ok === true
+      && String(agentDone?.out ?? '').includes('mock 允许：符合规范')
+      && String(replyDone?.inputs?.[0]?.val ?? '').includes('"sessionId"')
+      && !!sess && sess.model === 'MockChat' && sess.sys === '你是测试智能体'
+      && msgs.length === 2 && msgs[0]?.role === 'user' && msgs[0]?.text === '智能体直答'
+      && msgs[1]?.role === 'assistant' && msgs[1]?.text === AGENT_ALLOW,
+      'A01', 'trigger→agent→reply：run:done{ok:true}；agent node:done.out 含 mock 终文本；reply node:done inputs[0].val 含 "sessionId"（out-session 出参锚）；GET sessions 按 title=测试智能体 → {model:"MockChat",sys:"你是测试智能体"} 且 messages 恰 2 条（user=智能体直答 / assistant=终文本）',
+      { expected: 'run 完成 + sessionId 出参锚 + 会话 2 条落库', actual: JSON.stringify({ done: { ok: done.ok }, agentOut: agentDone?.out, replyVal: replyDone?.inputs?.[0]?.val, sess: sess ? { model: sess.model, sys: sess.sys } : null, msgs: msgs.map((m) => `${m.seq}:${m.role}`) }).slice(0, 300), ctx: 'mock 实例 POST /api/v1/run（agent params 显式，reply 接 fp:1）' });
+  }
+  { /* A02 · sqlite 真工具两步循环：步1 tool_call（safe 名 sqlite_execute → 内置 impl 真执行沙箱 SQL）
+       → 步2 终文本；mock 非流式请求增量恰 2（步数=2 后模型终答） */
+    const wfA02 = {
+      name: 'smoke-agent-tool-loop',
+      nodes: [
+        { id: 1, type: 'agent', x: 100, y: 100, title: '工具轮智能体',
+          params: { model: 'MockChat', sys: '你是测试智能体', maxSteps: 8 }, mcp: { sqlite: ['execute'] } },
+      ],
+      edges: [],
+      inputs: { question: '智能体工具轮' },
+    };
+    const reqBefore = mockModel.requests.length;
+    const { sse } = await aRun(wfA02);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const logs = sse.events.filter((e) => e.type === 'log').map((e) => String(e.msg ?? ''));
+    const agentDone = sse.events.find((e) => e.type === 'node:done' && e.id === 1);
+    const sess = await aSessionByTitle('工具轮智能体');
+    const msgs = await aMsgsOf(sess?.id);
+    C.ok(done.ok === true && mockModel.requests.length - reqBefore === 2
+      && logs.some((m) => m.includes('🔧 工具调用 sqlite.execute')) && logs.some((m) => m.includes('🤖'))
+      && String(agentDone?.out ?? '').includes('智能体工具轮完成') && typeof agentDone?.tokens === 'number'
+      && msgs.length === 2 && msgs[0]?.role === 'user' && msgs[1]?.role === 'assistant' && msgs[1]?.text === '智能体工具轮完成',
+      'A02', '单 agent（mcp sqlite.execute）+ 恒返 tool_call 两步 mock：请求增量恰 2；log 含「🔧 工具调用 sqlite.execute」与「🤖」工具请求行；node:done.out 含「智能体工具轮完成」且 tokens 为 number；会话 messages 恰 2 条（assistant=终文本）；run:done{ok:true}',
+      { expected: '两步循环 + 工具 log + 终文本落库', actual: JSON.stringify({ done: { ok: done.ok }, reqs: mockModel.requests.length - reqBefore, toolLog: logs.some((m) => m.includes('🔧 工具调用 sqlite.execute')), robotLog: logs.some((m) => m.includes('🤖')), out: agentDone?.out, tokens: agentDone?.tokens, msgs: msgs.map((m) => `${m.seq}:${m.role}`) }).slice(0, 300), ctx: 'mock 实例 POST /api/v1/run（tool_call 形状见 SPEC §7 风险表）' });
+  }
+  { /* A03 · 预算上限：恒返 tool_call + maxSteps=2 → 恰 2 步自然收束（绝不超）；
+       out=「（已达最大步数 2）」；assistant 空文本不落库（messages 恰 1 条 user） */
+    const wfA03 = {
+      name: 'smoke-agent-budget',
+      nodes: [
+        { id: 1, type: 'agent', x: 100, y: 100, title: '预算智能体',
+          params: { model: 'MockChat', sys: '你是测试智能体', maxSteps: 2 }, mcp: { sqlite: ['execute'] } },
+      ],
+      edges: [],
+      inputs: { question: '智能体预算穷尽' },
+    };
+    const reqBefore = mockModel.requests.length;
+    const { sse } = await aRun(wfA03);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    aCapA03 = sse.events;
+    const agentDone = sse.events.find((e) => e.type === 'node:done' && e.id === 1);
+    const okLog = sse.events.find((e) => e.type === 'log' && String(e.msg ?? '').startsWith('✓'));
+    const sess = await aSessionByTitle('预算智能体');
+    const msgs = await aMsgsOf(sess?.id);
+    C.ok(done.ok === true && mockModel.requests.length - reqBefore === 2
+      && agentDone?.out === '（已达最大步数 2）'
+      && String(okLog?.msg ?? '').includes('2/2 步')
+      && msgs.length === 1 && msgs[0]?.role === 'user' && msgs[0]?.text === '智能体预算穷尽',
+      'A03', 'maxSteps=2 + 恒返 tool_call：mock 请求增量恰 2（=maxSteps，绝不超）；node:done.out=「（已达最大步数 2）」（预算耗尽=正常收束 run:done{ok:true}）；✓ log 含「2/2 步」；messages 恰 1 条 user（assistant 空文本不落库）',
+      { expected: '恰 2 步收束 + 预算耗尽 out + 1 条落库', actual: JSON.stringify({ done: { ok: done.ok }, reqs: mockModel.requests.length - reqBefore, out: agentDone?.out, okLog: okLog?.msg, msgs: msgs.map((m) => `${m.seq}:${m.role}`) }).slice(0, 300), ctx: 'mock 实例 POST /api/v1/run（maxSteps=2）' });
+  }
+  { /* A04 · 停止透传：慢轮 4s 应答窗内 stop → run:done{ok:false,stopped:true}；
+       node:error{id:2,message:'已中止'} 出现且 agent 无 node:done；assistant 零落库；服务健康无孤儿 */
+    const wfA04 = {
+      name: 'smoke-agent-stop',
+      nodes: [
+        { id: 1, type: 'trigger', x: 40, y: 100, title: '手动触发' },
+        { id: 2, type: 'agent', x: 320, y: 100, title: '慢轮智能体', params: { model: 'MockChat', sys: '你是测试智能体', maxSteps: 4 } },
+      ],
+      edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
+      inputs: { question: '智能体慢轮' },
+    };
+    const { sse, runId } = await aRun(wfA04);
+    let started = null;
+    try {
+      started = await sse.waitFor((e) => e.type === 'node:start' && e.id === 2, 15000);
+    } catch (e) {
+      C.fail('A04', 'waitFor node:start(id=2)（事件门，stop 前置）',
+        { expected: 'node:start id=2', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（mock 实例，慢轮）' });
+      throw new SmokeFailError('A04');
+    }
+    const stop = await api(mockSrv.base, 'POST', `/api/v1/run/${runId}/stop`, {});
+    const done = await sse.waitFor((e) => e.type === 'run:done', 20000);
+    await sse.waitEnd(10000);
+    aCapA04 = sse.events;
+    const agentErr = sse.events.find((e) => e.type === 'node:error' && e.id === 2);
+    const agentDoneCount = sse.events.filter((e) => e.type === 'node:done' && e.id === 2).length;
+    const sess = await aSessionByTitle('慢轮智能体');
+    const msgs = await aMsgsOf(sess?.id);
+    const listAfter = await api(mockSrv.base, 'GET', '/api/v1/sessions?limit=100');
+    C.ok(started?.id === 2 && stop.status === 200
+      && done.ok === false && done.stopped === true
+      && agentErr?.message === '已中止' && agentDoneCount === 0
+      && msgs.length === 1 && msgs[0]?.role === 'user' && msgs[0]?.text === '智能体慢轮'
+      && listAfter.status === 200,
+      'A04', 'node:start(2) 后 POST /run/:id/stop → 200 且 run:done{ok:false,stopped:true}；node:error{id:2,message:"已中止"} 出现且 agent 无 node:done；messages 恰 1 条 user（assistant 零落库）；随后 GET sessions 200（服务健康无孤儿）',
+      { expected: '停止透传 + 已中止 + 零 assistant 落库', actual: JSON.stringify({ started: started?.id, stop: stop.status, done: { ok: done.ok, stopped: done.stopped }, err: agentErr?.message, agentDoneCount, msgs: msgs.map((m) => `${m.seq}:${m.role}`), list: listAfter.status }).slice(0, 300), ctx: `runId=${runId}（mock 实例，4s 应答窗内停止）` });
+  }
+  { /* A05 · 契约零新增：A01/A03/A04 捕获事件逐条 RunEventSchema 校验（agent 仅取用既有 15 种，events.ts 零 diff 联证） */
+    const all = [...aCapA01, ...aCapA03, ...aCapA04];
+    let parsed = 0, bad = null;
+    for (const ev of all) {
+      try { validateEvent(ev); parsed += 1; } catch (e) { bad = { type: ev?.type, err: String(e?.message ?? e) }; break; }
+    }
+    C.ok(bad === null && parsed === all.length,
+      'A05', `A01/A03/A04 捕获的全部事件（${all.length} 条，含 node:delta/node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）`,
+      { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例
