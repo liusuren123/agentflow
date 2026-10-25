@@ -778,9 +778,15 @@ await notewriter.ask(
 }
 
 phase("主干复测与证据核验");
-/* 合并仲裁员已实跑复测；脚本独立复核证据文件是否落盘（防止口头声称通过） */
-const evOut = await runTool(["read", wtPath(`${EVIDENCE_DIR}/manifest.json`)], 30_000);
-const evidenceOk = evOut.exitCode === 0 && evOut.stdout.includes("scenes");
+/* 合并仲裁员已实跑复测；脚本独立复核证据文件是否落盘（防止口头声称通过）。
+   证据由仲裁员在【主干】产出（相对主干路径），故自检以主干为准；
+   工作树路径仅作兜底——2026-10-25 迭代 0033 实发：此处曾用工作树前缀读取，
+   路径错配导致 evidenceOk=false，把一次完全成功的迭代误判为 failed。 */
+const evTrunk = await runTool(["read", `${EVIDENCE_DIR}/manifest.json`], 30_000);
+const evWt = await runTool(["read", wtPath(`${EVIDENCE_DIR}/manifest.json`)], 30_000);
+const evidenceOk =
+  (evTrunk.exitCode === 0 && evTrunk.stdout.includes("scenes")) ||
+  (evWt.exitCode === 0 && evWt.stdout.includes("scenes"));
 const retest = merge.retest ?? { build: false, gate: false, test: false, smoke: false };
 const retestOk = retest.build && retest.gate && retest.test && retest.smoke;
 /* 终态三要素：工作树内门禁与验收 + 主干复测四项 + 证据落盘 */
