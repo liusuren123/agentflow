@@ -432,7 +432,7 @@ if (plan.outcome !== "selected") {
       notCovered: ["主干复测未执行（合并未发生）"],
     };
   }
-  const minorArbiter = agent("合并仲裁员", {
+  const minorArbiter = agent("合并仲裁员·机制件轮", {
     system:
       "你是 AgentFlow 进化工作流的合并仲裁员。先读 .zcode/agents/merge-arbiter.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md、docs/evolution/POLICY.md。本轮是纯机制件变更（无产品代码），合并冲突仅限 docs/evolution/ 下的状态文件，按你的职责定义分类解决即可；产品代码冲突如出现则如实报告不得自行择一。复测必须实跑并留证，禁止伪造通过。",
   });
