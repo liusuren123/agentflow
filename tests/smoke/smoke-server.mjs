@@ -28,6 +28,7 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import Database from 'better-sqlite3';
 import { validateEvent } from '@agentflow/shared';
 import {
@@ -583,6 +584,20 @@ async function main() {
     C.ok(done.ok === true && errCount === 0 && out.startsWith('执行成功') && !logs.some((m) => m.includes(CODE_NOTE)),
       'K03', 'code 节点 lang=Python 不带 code：run:done {ok:true}、无 node:error、out「执行成功」（默认样例按 Python 原样执行）、log 无兜底告知',
       { expected: 'run 完成 + out=执行成功… + log 无告知子串', actual: JSON.stringify({ ok: done.ok, errCount, out, logs: logs.slice(0, 3) }).slice(0, 260), ctx: 'POST /api/v1/run（单 code 节点，params 仅 lang:Python；依赖本机 python 运行时）' });
+  }
+  { /* K04 · REQ-0046-02 源锁：app.js JS 等价样例字面量 ↔ handlers.ts 兜底字面量
+       逐字一致（防两处漂移；沿 M08-M11 源锁先例 mcp-stubs.mjs:205-217，锁语义
+       字面量而非全文件哈希；校验器用途，被测系统仍只经 HTTP 触达——V09 git 检查同类） */
+    const lockRe = /['"](\/\/ 处理输入后返回[^'"]*)['"]/g;
+    const srcOf = (f) => { try { return readFileSync(path.join(REPO_ROOT, f), 'utf8'); } catch { return null; } };
+    const webSrc = srcOf('apps/web/src/legacy/app.js');
+    const srvSrc = srcOf('apps/server/src/handlers.ts');
+    const w = webSrc ? [...webSrc.matchAll(lockRe)] : [];
+    const s = srvSrc ? [...srvSrc.matchAll(lockRe)] : [];
+    C.ok(webSrc !== null && srvSrc !== null && w.length === 1 && s.length === 1
+        && w[0][1] === s[0][1],
+      'K04', '源锁 JS 等价样例：app.js 与 handlers.ts 各恰 1 处「// 处理输入后返回」字符串字面量，且逐字一致（含 \\n 转义形态）',
+      { expected: '两文件各 1 处且捕获组相等', actual: `app.js ${w.length} 处 / handlers.ts ${s.length} 处${w.length===1&&s.length===1 ? (w[0][1]===s[0][1] ? ' · 一致' : ' · 不一致：' + JSON.stringify([w[0][1], s[0][1]])) : ''}`, ctx: 'readFileSync 源文本（apps/web/src/legacy/app.js + apps/server/src/handlers.ts）' });
   }
 
   /* G 组：持久会话与流式会话 API（G01-G10；迭代 0015 / BK-0016 · SPEC §6）

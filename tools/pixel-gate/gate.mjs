@@ -234,6 +234,42 @@ const TERMVIEW_WF_SEED = JSON.stringify({ tabs: [{ name: '终端只读流示例'
   { id: 2, type: 'termview', x: 410, y: 250, title: '终端只读流' },
 ], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
 
+/* ---------- s12 审批人拾取器场景基建（BK-0046 / ADR-0017 · 迭代 0038 修宪轮） ----------
+   采集面 = #props approval 参数行（role 输入框 + .role-pick 入口按钮）+ #ctxmenu
+   打开态（7 项：kefu 8 节点排除自身；LLM 项 id=4 带 mk「LLM」，非 LLM 项 .off 置灰）。
+   菜单位置由 .role-pick getBoundingClientRect 派生，视口 1600x900 固定 → 确定性。 */
+const pickOpen = page => page.evaluate(() => {
+  document.querySelector('#props .role-pick').click();   /* 程序化 click：仅派发 click（无 mousedown），既有菜单外关闭监听不触发 */
+});
+const pickReady = page => page.waitForFunction(
+  () => document.getElementById('ctxmenu').classList.contains('show'),
+  undefined, { timeout: 10000, polling: 100 });
+const pickInv = page => page.evaluate(() => ({
+  menuOpen: document.getElementById('ctxmenu').classList.contains('show'),
+  menuItems: [...document.querySelectorAll('#ctxmenu .mi')].map(el => el.className.replace('mi','').trim() + '|' + el.textContent.trim()),
+}));
+
+/* ---------- s13 code lang 联动场景基建（BUG-0012 前端半面 / ADR-0017 · 迭代 0038） ----------
+   采集面 = #props code 参数行（lang=JavaScript + code=JS 等价样例）+ 节点体 widget
+   （同值）+ 一条连线。联动 toast 由 normalize 清空（gate.mjs:49），不进快照。 */
+const CODE_WF_SEED = JSON.stringify({ tabs: [{ name: '代码语言联动示例', nodes: [
+  { id: 1, type: 'trigger', x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'code',    x: 410, y: 250, title: '代码执行' },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+const codeLangJs = page => page.evaluate(() => {
+  const sel = document.querySelector('#props select[data-k="lang"]');
+  sel.value = 'JavaScript';
+  sel.dispatchEvent(new Event('change', { bubbles: true }));
+});
+const codeSwapped = page => page.waitForFunction(
+  () => (document.querySelector('#props textarea[data-k="code"]') || {}).value?.startsWith('// 处理输入后返回'),
+  undefined, { timeout: 10000, polling: 100 });
+const codeInv = page => page.evaluate(() => ({
+  propsLang: document.querySelector('#props select[data-k="lang"]')?.value,
+  propsCode: document.querySelector('#props textarea[data-k="code"]')?.value,
+  nodeCode: document.querySelector('.node[data-id="2"] textarea[data-k="code"]')?.value,
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -254,6 +290,10 @@ const SCENARIOS = [
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), WEBSHOW_WF_SEED) },
   { id: 's11-termview-node', steps: [],
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERMVIEW_WF_SEED) },
+  { id: 's12-approval-role-picker',
+    steps: [selectNode('.node[data-id="7"]'), pickOpen], ready: pickReady, inv: pickInv },
+  { id: 's13-code-lang-sync', seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), CODE_WF_SEED),
+    steps: [selectNode('.node[data-id="2"]'), codeLangJs], ready: codeSwapped, inv: codeInv },
 ];
 
 const runScenario = async (browser, sc) => {
