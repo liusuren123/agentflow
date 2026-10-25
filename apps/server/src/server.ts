@@ -10,6 +10,8 @@
  *  · GET  /api/v1/runs?limit=  · GET /api/v1/runs/:id → 运行历史 + 事件回放
  *  · DELETE /api/v1/workflows/:id · DELETE /api/v1/runs/:id → 删除（ADR-0007，
  *    run 级联清 run_events；活动 run 以内存注册表判 409）
+ *  · GET  /api/v1/capabilities → 能力清单（builtin MCP × TOOL_SPECS 派生 +
+ *    外部注册条目 + skills 常量；只读进程内状态，迭代 0039 / BK-0049）
  *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
  *  （workflows/runs 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
  *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
@@ -38,6 +40,7 @@ import {
   sessionsCreateHandler, sessionsListHandler, sessionDetailHandler, sessionChatHandler, sessionStopHandler,
   abortActiveSessions, activeSessionCount,
 } from './sessions.js';
+import { capabilitiesHandler } from './capabilities.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -217,6 +220,8 @@ app.get('/api/v1/sessions', sessionsListHandler);
 app.get('/api/v1/sessions/:id', sessionDetailHandler);
 app.post('/api/v1/sessions/:id/chat', sessionChatHandler);
 app.post('/api/v1/sessions/:id/stop', sessionStopHandler);
+/* 迭代 0039 / BK-0049 能力清单端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
+app.get('/api/v1/capabilities', capabilitiesHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{

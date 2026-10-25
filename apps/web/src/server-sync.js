@@ -40,6 +40,33 @@ export const stopSessionOnServer = id => apiJson('/sessions/' + encodeURICompone
 export const fetchRunList = (limit = 50) => apiJson('/runs?limit=' + limit).then(j => Array.isArray(j.runs) ? j.runs : []);
 export const fetchRunDetail = id => apiJson('/runs/' + encodeURIComponent(id));
 
+/* 能力清单（BK-0049 / ADR-0018）：GET /api/v1/capabilities → 归一化 {servers,skills}
+ * 数据层三件套：fetch（apiJson 8s 超时同口径）→ SVR.caps 缓存 → onCapsArrive 回调。
+ * capShapeOf 纯数据变换（零 DOM）：形态非法抛错 → refreshCaps 捕获 → 前端回退集
+ * 保持（app.js 持有回退字面量，ADR-0018 §6 等价迁移口径）。 */
+function capShapeOf(j){
+  const bad = () => { throw new Error('capabilities 形态非法'); };
+  if(!j || typeof j !== 'object') bad();
+  const builtin = j.mcp && j.mcp.builtin, external = j.mcp && j.mcp.external, skills = j.skills;
+  if(!Array.isArray(builtin) || !Array.isArray(external) || !Array.isArray(skills)) bad();
+  for(const sv of builtin){
+    if(typeof sv.id !== 'string' || typeof sv.name !== 'string' || typeof sv.desc !== 'string'
+       || !Array.isArray(sv.tools)) bad();
+    for(const t of sv.tools) if(typeof t.n !== 'string' || typeof t.d !== 'string') bad();
+  }
+  for(const e of external) if(typeof e.serverId !== 'string' || typeof e.kind !== 'string') bad();
+  for(const sk of skills) if(typeof sk.id !== 'string' || typeof sk.name !== 'string' || typeof sk.desc !== 'string') bad();
+  /* external → 服务级行（v1 无 tools 细目，ADR-0018 §2.3；desc 固定文案无时间戳，确定性） */
+  return {
+    servers: [
+      ...builtin.map(sv => ({ id: sv.id, name: sv.name, desc: sv.desc, tools: sv.tools.map(t => ({ n: t.n, d: t.d })) })),
+      ...external.map(e => ({ id: e.serverId, name: e.serverId, desc: '外部注册（' + e.kind + '）', tools: [] })),
+    ],
+    skills: skills.map(sk => ({ id: sk.id, name: sk.name, desc: sk.desc })),
+  };
+}
+export const fetchCapabilities = () => apiJson('/capabilities').then(capShapeOf);
+
 /* ---------- 服务端缓存（内存态 —— ADR 4.4；null = 尚未成功拉取过） ---------- */
 export const SVR = {
   wf: null,            // WorkflowSummary[] | null：{id,name,updated_at}
@@ -50,13 +77,16 @@ export const SVR = {
   openRunId: null,     // 历史面板当前展开回放的 runId（同面板同时只展开一个）
   sessions: null,      // SessionRow[] | null：{id,title,model,sys,created_at,updated_at}（BK-0034）
   sessionsErr: false,  // 最近一次会话列表拉取失败 → 恢复列表错误空态
+  caps: null,          // {servers,skills} | null：能力清单（BK-0049 / ADR-0018；null=未成功拉取过，前端保持回退集）
+  capsErr: false,      // 最近一次能力清单拉取失败（静默降级，无 toast/日志行）
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
-let wfArrive = null, runsArrive = null, sessionsArrive = null;
+let wfArrive = null, runsArrive = null, sessionsArrive = null, capsArrive = null;
 export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
 export function onSessionsArrive(fn){ sessionsArrive = fn; }
+export function onCapsArrive(fn){ capsArrive = fn; }
 
 export async function refreshWorkflows(){
   try{ SVR.wf = await fetchWorkflowList(); SVR.wfErr = false; }
@@ -72,6 +102,13 @@ export async function refreshSessions(){
   try{ SVR.sessions = await fetchSessionList(20); SVR.sessionsErr = false; }
   catch(_){ SVR.sessionsErr = true; }
   sessionsArrive && sessionsArrive();
+}
+/* 能力清单刷新：fire-and-forget（app.js init 调用）；失败静默——SVR.caps 保持
+ * null，到达回调据此 no-op，前端回退集不动（ADR-0018 §6）。 */
+export async function refreshCaps(){
+  try{ SVR.caps = await fetchCapabilities(); SVR.capsErr = false; }
+  catch(_){ SVR.capsErr = true; }
+  capsArrive && capsArrive();
 }
 
 /* 展开回放：成功/失败都写入缓存（null=获取失败），由回调重绘分组容器 */
