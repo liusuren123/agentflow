@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0042      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0043      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-25 18:40  # 本次迭代开始时间
-updated: 2026-10-26 04:51  # 最近更新时间
+updated: 2026-10-26 05:50  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0042 空转收尾（WORKFLOW §4）：侦察无带证据候选可立项，ready 队列仅 BK-0040 一项且其成果在 feat/0036-iter 分支待合并（等合并仲裁、不重做），本轮零提交零迭代目录零 metrics 行
+last_result: 迭代 0043 空转收尾（WORKFLOW §4）：侦察无带证据候选可立项，ready 队列仅 BK-0040 一项且其成果在 feat/0036-iter 分支（0a92918）待合并仲裁不重做，本轮零提交零迭代目录零 metrics 行
 ```
