@@ -2,7 +2,7 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→H→W→N→S→R→D→E→K→G→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→H→W→N→CAP→S→R→D→E→K→G→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
  * G 组（迭代 0015 / BK-0016）：三实例矩阵——主实例 G01-G04（CRUD/404/limit
@@ -24,6 +24,11 @@
  * → SIGKILL 崩溃语义击杀（不经优雅停机）→ 同端口重启（扫尾在 listen 前，health 200
  * 即扫尾完成时序门）→ 经 API 断言 status 收敛 stopped、ended_ms/done/total 原值、
  * events 恰 N 条（零伪造终结事件）→ DELETE 自清理；断言全程走 /api/v1（lib.mjs 边界）。
+ * CAP 组（迭代 0039 / BK-0049）：能力清单端点——CAP01-CAP04 主实例（无 MCP env，
+ * 零模型依赖零出站）：builtin/skills 与迁移字面量全字段 deepEqual（双源收口 +
+ * 迁移保真双锁）+ 契约面（顶层键/两次调用确定性/POST 404 只读证明）；CAP05 第二
+ * 实例（MCP_HTTP_SERVERS 注册外部条目 + 内置 id 冲突条，URL 指向 discard 端口 9）
+ * 断言冲突拒条不污染 builtin、端点调用零出站进程不崩（SPEC §7）。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -85,6 +90,37 @@ const wfShow = (defv, url) => ({
   edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
 });
 
+/* CAP 组期望字面量（迭代 0039 / BK-0049 · SPEC §4.1/§7）：builtin 工具名/描述自
+ * TOOL_SPECS（tools.ts:145-158）逐条誊取、服务级描述与 skills 五条自 app.js:105-123
+ * 誊取——迁移保真（id/工具名与前端回退集逐字一致）+ 双源收口（描述 = 后端派生值）
+ * 的双锁锚点；与 tools/pixel-gate/gate.mjs CAP_FIXTURE 同源同文。 */
+const CAP_EXPECTED_BUILTIN = [
+  { id: 'filesystem', name: 'filesystem', desc: '本地文件读写',
+    tools: [ { n: 'read_file', d: '读取沙箱目录内的文本文件' },
+             { n: 'write_file', d: '将文本写入沙箱目录内的文件' },
+             { n: 'list_directory', d: '列出沙箱目录的内容' } ] },
+  { id: 'fetch', name: 'fetch', desc: '网页抓取',
+    tools: [ { n: 'fetch', d: '抓取一个 http(s) URL，返回正文摘录' },
+             { n: 'download', d: '下载 URL 资源保存到沙箱目录' } ] },
+  { id: 'sqlite', name: 'sqlite', desc: '数据库查询',
+    tools: [ { n: 'query', d: '在沙箱数据库执行 SELECT 查询并返回行集（上限 100 行；仅限沙箱数据库，不能访问其他数据库文件）' },
+             { n: 'execute', d: '在沙箱数据库执行写入或结构 SQL（CREATE/INSERT/UPDATE/DELETE 等，多语句以 ; 分隔；仅限沙箱数据库）' } ] },
+  { id: 'browser', name: 'browser', desc: '浏览器自动化',
+    tools: [ { n: 'navigate', d: '（未实现）打开页面' },
+             { n: 'click', d: '（未实现）点击元素' },
+             { n: 'screenshot', d: '（未实现）截屏' } ] },
+  { id: 'web-search', name: 'web-search', desc: '联网搜索',
+    tools: [ { n: 'search', d: '联网搜索，返回标题/链接/摘要' },
+             { n: 'news', d: '检索某话题的最新新闻' } ] },
+];
+const CAP_EXPECTED_SKILLS = [
+  { id: 'ppt-builder',  name: 'PPT 生成器',  desc: '根据大纲生成演示文稿' },
+  { id: 'doc-writer',   name: '文档撰写',    desc: '长文写作与润色' },
+  { id: 'data-analyst', name: '数据分析',    desc: '表格解读与图表建议' },
+  { id: 'coder',        name: '编程助手',    desc: '代码生成与审查' },
+  { id: 'translator',   name: '多语言翻译',  desc: '中英日韩互译' },
+];
+
 const C = new Checker();
 const CLEAN = { runIds: [], wfIds: [] };
 let srv = null;
@@ -92,6 +128,7 @@ let mockModel = null;   /* G 组：进程内 mock 模型端点（迭代 0015） 
 let mockSrv = null;     /* G 组：AI_BASE_URL 指向 mock 的第二实例 */
 let minimalSrv = null;  /* G 组：全密钥空串压制的第三实例（降级路径确定性） */
 let zSrv = null;        /* Z 组：启动扫尾专用实例（迭代 0019 / BK-0011，SIGKILL 后同端口重启） */
+let capSrv = null;      /* CAP 组：能力清单第二实例（迭代 0039 / BK-0049，env 注册外部 MCP 条目） */
 let cleanupPromise = null;
 
 /* ---------- G 组基础设施（迭代 0015 / BK-0016 · SPEC §3.4-2/3） ---------- */
@@ -321,8 +358,8 @@ async function doCleanup() {
   exited = await Promise.race([srv.exitPromise.then(() => true), sleep(1000).then(() => false)]);
   C.check(exited, 'C04', 'server 子进程已终止（kill → 3s → SIGKILL 兜底）',   /* C04 */
     { expected: 'exit 事件到达', actual: exited ? '已终止' : '未观察到退出' });
-  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组实例同批（迭代 0019） */
-  for (const inst of [mockSrv, minimalSrv, zSrv]) {
+  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组/CAP 组实例同批（迭代 0019/0039） */
+  for (const inst of [mockSrv, minimalSrv, zSrv, capSrv]) {
     if (!inst) continue;
     try { inst.child.kill(); } catch { /* 已退出 */ }
     let ex = await Promise.race([inst.exitPromise.then(() => true), sleep(3000).then(() => false)]);
@@ -404,6 +441,55 @@ async function main() {
     const r = await api(srv.base, 'GET', `/api/v1/runs?limit=${lim}`);
     C.ok(r.status === 400 && r.json?.error === 'limit 必须是 1-100 的整数', id, `GET /runs?limit=${lim} → 400`,
       { expected: '400 limit 必须是 1-100 的整数', actual: `${r.status} ${r.text.slice(0, 80)}`, ctx: ctxOf(r) });
+  }
+
+  /* CAP 组：能力清单端点（CAP01-CAP05 · 迭代 0039 / BK-0049 · SPEC §7）——纯 HTTP
+   * 断言不掺流式时序；CAP01-CAP04 主实例（无 MCP env，零模型依赖零出站），
+   * CAP05 第二实例（env 注册外部条目 + 内置 id 冲突条；注册 URL 指向 discard
+   * 端口 9，端点零出站不拨打，SPEC §4.3）。 */
+  { /* CAP01 · builtin 五条全字段 deepEqual（id/工具名迁移保真 + 描述收口双锁） */
+    const cap1 = await api(srv.base, 'GET', '/api/v1/capabilities');
+    C.ok(cap1.status === 200 && deepEqual(cap1.json?.mcp?.builtin, CAP_EXPECTED_BUILTIN),
+      'CAP01', 'GET /capabilities → 200；mcp.builtin 与迁移期望字面量全字段 deepEqual（id/name/desc/tools 的 n/d 逐字——无 env 时行为 = 现前端回退集等价，双源收口）',
+      { expected: 'builtin 五条 deepEqual', actual: cap1.status === 200 ? JSON.stringify(cap1.json?.mcp?.builtin).slice(0, 220) : `${cap1.status} ${cap1.text.slice(0, 80)}`, ctx: ctxOf(cap1) });
+  }
+  { /* CAP02 · skills 五条逐字迁移保真 + 无 env 时 external 恰 [] */
+    const cap2 = await api(srv.base, 'GET', '/api/v1/capabilities');
+    C.ok(cap2.status === 200 && deepEqual(cap2.json?.skills, CAP_EXPECTED_SKILLS)
+      && deepEqual(cap2.json?.mcp?.external, []),
+      'CAP02', 'GET /capabilities：skills 与 app.js:117-123 迁移字面量全字段 deepEqual；无 MCP env 时 mcp.external deepEqual []',
+      { expected: 'skills 五条 deepEqual + external []', actual: JSON.stringify({ skills: cap2.json?.skills?.map((s) => s.id), external: cap2.json?.mcp?.external }), ctx: ctxOf(cap2) });
+  }
+  { /* CAP03 · 契约面：顶层键恰 ['mcp','skills'] + 两次调用 deepEqual（无状态确定性） */
+    const cap3a = await api(srv.base, 'GET', '/api/v1/capabilities');
+    const cap3b = await api(srv.base, 'GET', '/api/v1/capabilities');
+    C.ok(cap3a.status === 200 && deepEqual(Object.keys(cap3a.json ?? {}), ['mcp', 'skills'])
+      && deepEqual(cap3a.json, cap3b.json),
+      'CAP03', '响应顶层键恰 [\'mcp\',\'skills\']（无多余键，契约面锁定）；两次调用响应 deepEqual（只读派生无状态，确定性）',
+      { expected: "keys=['mcp','skills'] + 两次 deepEqual", actual: `keys=${JSON.stringify(Object.keys(cap3a.json ?? {}))} twiceEqual=${deepEqual(cap3a.json, cap3b.json)}`, ctx: ctxOf(cap3a) });
+  }
+  { /* CAP04 · 只读面证明：POST 未注册 → 404（沿 Express 未注册方法路径 404 语义） */
+    const cap4 = await api(srv.base, 'POST', '/api/v1/capabilities');
+    C.eq(cap4.status, 404, 'CAP04', 'POST /api/v1/capabilities → 404（仅 GET 注册，清单端点只读）', ctxOf(cap4));
+  }
+  try {
+    capSrv = await startServer(await getFreePort(), {
+      env: { MCP_HTTP_SERVERS: 'caps-ext=http://127.0.0.1:9,filesystem=http://127.0.0.1:9' },
+    });
+  } catch (e) {
+    C.fail('CAP05', 'CAP 第二实例启动（MCP_HTTP_SERVERS 外部条目 + 冲突条注入）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+    throw new SmokeFailError('CAP05');
+  }
+  { /* CAP05 · 外部条目出现 + 冲突拒条不污染 builtin；端点调用零出站、进程不崩 */
+    const cap5 = await api(capSrv.base, 'GET', '/api/v1/capabilities');
+    const health5 = await api(capSrv.base, 'GET', '/api/v1/health');
+    C.ok(cap5.status === 200
+      && deepEqual(cap5.json?.mcp?.external, [{ serverId: 'caps-ext', kind: 'http' }])
+      && deepEqual(cap5.json?.mcp?.builtin, CAP_EXPECTED_BUILTIN)
+      && deepEqual(cap5.json?.skills, CAP_EXPECTED_SKILLS)
+      && health5.status === 200,
+      'CAP05', 'env MCP_HTTP_SERVERS=caps-ext(合法)+filesystem(内置 id 冲突)：mcp.external 恰 [{serverId:"caps-ext",kind:"http"}]（冲突条被拒，复用 registry 拒条）；builtin 五条不受污染仍 deepEqual 期望；skills 仍五条；随后 health 200（注册 URL 指向 discard 端口 9 不可达也不影响——端点不做发现零出站，进程不崩）',
+      { expected: 'external 恰 caps-ext + builtin/skills 不污染 + health 200', actual: JSON.stringify({ external: cap5.json?.mcp?.external, builtinIds: cap5.json?.mcp?.builtin?.map((s) => s.id), skillsN: cap5.json?.skills?.length, health: health5.status }), ctx: ctxOf(cap5) });
   }
 
   /* S 组：SSE 全事件链（S01-S05；WFMIN：userinput→prompt，无 LLM/出站/审批） */

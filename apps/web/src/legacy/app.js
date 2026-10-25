@@ -4,7 +4,8 @@ import { NODES } from '@agentflow/shared';
 import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveWorkflowToServer,
          deleteWorkflowFromServer, deleteRunFromServer,
          onWorkflowsArrive, onRunsArrive, fmtTs, replayLines, runCardMeta } from '../server-sync.js';
-import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refreshSessions } from '../server-sync.js';
+import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refreshSessions,
+         refreshCaps, onCapsArrive } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -101,8 +102,9 @@ const ICON_PATHS = {
 };
 const I = name => '<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">'+(ICON_PATHS[name]||'')+'</svg>';
 
-/* ---------- 能力注册表：MCP 服务器 / Skill（原型模拟数据） ---------- */
-const MCP_SERVERS = [
+/* ---------- 能力注册表：MCP 服务器 / Skill —— 离线回退集（在线时经
+ * /api/v1/capabilities 刷新为后端供数，ADR-0018 / BK-0049；字面量逐字保留） ---------- */
+let MCP_SERVERS = [
   { id:'filesystem', name:'filesystem', desc:'本地文件读写',
     tools:[{n:'read_file',d:'读取文件'},{n:'write_file',d:'写入文件'},{n:'list_directory',d:'列出目录'}] },
   { id:'fetch', name:'fetch', desc:'网页抓取',
@@ -114,7 +116,7 @@ const MCP_SERVERS = [
   { id:'web-search', name:'web-search', desc:'联网搜索',
     tools:[{n:'search',d:'搜索'},{n:'news',d:'新闻检索'}] },
 ];
-const SKILL_LIST = [
+let SKILL_LIST = [
   { id:'ppt-builder', name:'PPT 生成器', desc:'根据大纲生成演示文稿' },
   { id:'doc-writer', name:'文档撰写', desc:'长文写作与润色' },
   { id:'data-analyst', name:'数据分析', desc:'表格解读与图表建议' },
@@ -636,6 +638,23 @@ $('#side-body').addEventListener('click', e=>{
 /* 服务端列表 fetch 完成后的分组重绘回调注册（ADR 4.6；回调内部容器缺失时 no-op） */
 onWorkflowsArrive(paintServerWfGroup);
 onRunsArrive(paintServerRuns);
+/* 能力清单到达（BK-0049 / ADR-0018）：回退集 → 后端供数；失败（SVR.caps=null）
+   静默保持回退集。重渲染面 = ① caps 节点徽章（rerenderNode 自带 measurePorts+
+   updateEdgesOf，AGENTS portCache 陷阱内建解）；② 属性面板（选中恰 1 个 caps
+   节点时，scrollTop 保持沿 #props change 处理器先例）。 */
+onCapsArrive(()=>{
+  if(!SVR.caps) return;
+  MCP_SERVERS = SVR.caps.servers;
+  SKILL_LIST  = SVR.caps.skills;
+  state.nodes.forEach(n=>{ if((defOf(n).caps||[]).length) rerenderNode(n); });
+  if(sel.nodes.size===1){
+    const n = nodeById([...sel.nodes][0]);
+    if(n && (defOf(n).caps||[]).length){
+      const st = $('#props').scrollTop;
+      renderProps(); $('#props').scrollTop = st;
+    }
+  }
+});
 
 /* ----- 设置侧栏 ----- */
 function renderSideSettings(body){
@@ -2621,6 +2640,7 @@ viewport.addEventListener('mousemove', e=>{
   applyView();
   renderAll();
   ENGINE.probe();   /* 异步探测后端；成功后追加连接日志并刷新模型下拉 */
+  refreshCaps();    /* 能力清单：fire-and-forget，失败静默保持回退集（ADR-0018 §6） */
   if(fresh){ try{ fitView(); renderAll(); }catch(e){ console.error(e); } }
   if(fresh) addLog('欢迎使用 AgentFlow · 点击画布顶部「▶ 运行」开始执行','sys');
 })();

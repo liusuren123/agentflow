@@ -248,6 +248,61 @@ const jcReady = page => page.waitForFunction(
      && document.querySelectorAll('.node-jtree .jc-row').length >= 4,
   undefined, { timeout: 10000, polling: 100 });
 
+/* ---------- s13 能力配置面板在线态场景基建（ADR-0018 · 迭代 0039 / BK-0049 修宪轮） ----------
+   触发形态 = localStorage 预置 trigger→llm 最小工作流（llm 带 caps [mcp,skill]，
+   预选 web-search:['search'] + skills:['doc-writer'] → 画布徽章与面板选中态均在采集面）；
+   在线态 = CAP_ROUTES 路由 fixture（health + capabilities）供数；fixture external
+   含 1 条 caps-ext → .cap-server 计数 6 ≠ 回退集 5，即供数链到达的确定性判据
+   （同 s4 wfReady 以 data-wf-id 判到达的口径）；徽章分母 6 同理入 .node-caps。
+   注：capsHtml 冻结面里 data-sid 在 .cap-server 容器内的 input 上（app.js capsHtml），
+   计数/取 sid 均经既有 DOM 路径，模板零改动。 */
+const CAP_FIXTURE = { mcp: { builtin: [
+  { id: 'filesystem', name: 'filesystem', desc: '本地文件读写',
+    tools: [ { n: 'read_file', d: '读取沙箱目录内的文本文件' },
+             { n: 'write_file', d: '将文本写入沙箱目录内的文件' },
+             { n: 'list_directory', d: '列出沙箱目录的内容' } ] },
+  { id: 'fetch', name: 'fetch', desc: '网页抓取',
+    tools: [ { n: 'fetch', d: '抓取一个 http(s) URL，返回正文摘录' },
+             { n: 'download', d: '下载 URL 资源保存到沙箱目录' } ] },
+  { id: 'sqlite', name: 'sqlite', desc: '数据库查询',
+    tools: [ { n: 'query', d: '在沙箱数据库执行 SELECT 查询并返回行集（上限 100 行；仅限沙箱数据库，不能访问其他数据库文件）' },
+             { n: 'execute', d: '在沙箱数据库执行写入或结构 SQL（CREATE/INSERT/UPDATE/DELETE 等，多语句以 ; 分隔；仅限沙箱数据库）' } ] },
+  { id: 'browser', name: 'browser', desc: '浏览器自动化',
+    tools: [ { n: 'navigate', d: '（未实现）打开页面' },
+             { n: 'click', d: '（未实现）点击元素' },
+             { n: 'screenshot', d: '（未实现）截屏' } ] },
+  { id: 'web-search', name: 'web-search', desc: '联网搜索',
+    tools: [ { n: 'search', d: '联网搜索，返回标题/链接/摘要' },
+             { n: 'news', d: '检索某话题的最新新闻' } ] },
+], external: [ { serverId: 'caps-ext', kind: 'http' } ] }, skills: [
+  { id: 'ppt-builder',  name: 'PPT 生成器',  desc: '根据大纲生成演示文稿' },
+  { id: 'doc-writer',   name: '文档撰写',    desc: '长文写作与润色' },
+  { id: 'data-analyst', name: '数据分析',    desc: '表格解读与图表建议' },
+  { id: 'coder',        name: '编程助手',    desc: '代码生成与审查' },
+  { id: 'translator',   name: '多语言翻译',  desc: '中英日韩互译' },
+] };
+const CAP_ROUTES = [
+  { pattern: '**/api/health',           handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/capabilities',  handler: route => route.fulfill({ json: CAP_FIXTURE }) },
+];
+const CAPS_WF_SEED = JSON.stringify({ tabs: [{ name: '能力配置示例', nodes: [
+  { id: 1, type: 'trigger', x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'llm',     x: 410, y: 250, title: 'LLM 节点',
+    mcp: { 'web-search': ['search'] }, skills: ['doc-writer'] },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+const capsReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#props .cap-server').length === 6
+     && !!document.querySelector('#props .cap-server input[data-sid="caps-ext"]'),
+  undefined, { timeout: 10000, polling: 100 });
+const capsInv = page => page.evaluate(() => ({
+  capServers: [...document.querySelectorAll('#props .cap-server')].map(s =>
+    (s.querySelector('input[data-sid]')?.dataset.sid ?? '?') + (s.classList.contains('on') ? '*' : '')),
+  capSkills: [...document.querySelectorAll('#props .cap-skill')].map(s =>
+    (s.querySelector('input[data-sid]')?.dataset.sid ?? '?') + (s.classList.contains('on') ? '*' : '')),
+  capsSum: document.querySelector('#props .caps-sum')?.textContent ?? null,
+  nodeCaps: document.querySelector('.node[data-id="2"] .node-caps')?.textContent ?? null,
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -270,6 +325,9 @@ const SCENARIOS = [
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERMVIEW_WF_SEED) },
   { id: 's12-jsoncanvas-node', steps: [jcRunClick], ready: jcReady,
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), JSONCANVAS_WF_SEED) },
+  { id: 's13-caps-panel', routes: CAP_ROUTES,
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), CAPS_WF_SEED),
+    steps: [selectNode('.node[data-id="2"]')], ready: capsReady, inv: capsInv },
 ];
 
 const runScenario = async (browser, sc) => {
