@@ -33,6 +33,7 @@
   "--widget-line": "#606060",
   "--cat-input": "#4f8cff",
   "--cat-chat": "#a06bff",
+  "--cat-agent": "#14b8a6",
   "--cat-knowledge": "#22c55e",
   "--cat-tools": "#f59e0b",
   "--cat-logic": "#22d3ee",

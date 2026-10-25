@@ -7,7 +7,7 @@ import type { NodeDefJson } from '../../nodes.schema.js';
 export default {
   protocol: 1,
   type: 'agent',
-  identity: { name: '通用智能体', category: 'chat', icon: 'sparkles',
+  identity: { name: '通用智能体', category: 'agent', icon: 'sparkles',
     keywords: 'agent 智能体 goal 会话 自主 loop 预算',
     description: 'goal 模式智能体：自主工具循环 + 持久会话，可点开进入流式会话面板。' },
   ports: {

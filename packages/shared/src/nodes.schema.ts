@@ -12,7 +12,7 @@ import { z } from 'zod';
 /* ---------------- 枚举冻结（NDP §5.1 端口五种 / §6.1 widget 五种 / §4.1 分类） ---------------- */
 const PORT_TYPES = ['any', 'text', 'list', 'object', 'number'] as const;
 const WIDGETS = ['text', 'textarea', 'number', 'combo', 'toggle'] as const;
-const CATEGORIES = ['input', 'chat', 'knowledge', 'tools', 'logic', 'output', 'human'] as const;
+const CATEGORIES = ['input', 'chat', 'agent', 'knowledge', 'tools', 'logic', 'output', 'human'] as const;
 
 /* ---------------- 端口（NDP §5.3 稳定 id：字符集 ^[a-z][a-z0-9-]{2,31}$，总长 3-32） ---------------- */
 const PortIdSchema = z.string().regex(

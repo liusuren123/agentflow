@@ -118,7 +118,7 @@ export default {
 | `protocol` | — | int | 协议 major 版本，当前 1；**可省略**（schema 兜底为 1） |
 | `type` | ✓ | string | 节点类型键（=目录名，现行 DEFS 对象键） |
 | `identity.name` | ✓ | string | 显示名（现 `name`） |
-| `identity.category` | ✓ | string | 分类（现 `cat`）：input/chat/knowledge/tools/logic/output/human |
+| `identity.category` | ✓ | string | 分类（现 `cat`）：input/chat/agent/knowledge/tools/logic/output/human |
 | `identity.icon` | ✓ | string | 图标键（现 `icon`，lucide 名） |
 | `identity.keywords` | ✓ | string | 搜索关键词（现 `kw`，空格分隔） |
 | `identity.description` | ✓ | string | 一句话描述（现 `desc`） |

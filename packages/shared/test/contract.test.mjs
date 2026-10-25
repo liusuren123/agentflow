@@ -11,7 +11,7 @@ test('节点注册表完整：19 种节点，字段齐全', () => {
   assert.equal(Object.keys(NODES).length, 19);
   for (const [type, def] of Object.entries(NODES)) {
     assert.ok(def.name, `${type} 缺 name`);
-    assert.ok(['input', 'chat', 'knowledge', 'tools', 'logic', 'output', 'human'].includes(def.cat), `${type} cat 非法`);
+    assert.ok(['input', 'chat', 'agent', 'knowledge', 'tools', 'logic', 'output', 'human'].includes(def.cat), `${type} cat 非法`);
     assert.ok(def.icon, `${type} 缺 icon`);
     assert.ok(Array.isArray(def.inputs) && Array.isArray(def.outputs), `${type} 缺端口数组`);
     assert.ok(Array.isArray(def.params), `${type} 缺参数数组`);
