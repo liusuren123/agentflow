@@ -1,0 +1,22 @@
+
+> agentflow@1.0.0 gate
+> node tools/pixel-gate/gate.mjs
+
+✓ s0-initial       pass · diffPx=0
+✓ s1-select-node   pass · diffPx=0
+✓ s2-settings      pass · diffPx=0
+✓ s3-library       pass · diffPx=0
+✓ s4-workflows-online pass · diffPx=0
+✓ s5-history-online pass · diffPx=0
+✓ s6-log-panel     pass · diffPx=0
+✓ s7-log-filter-warn pass · diffPx=0
+✓ s8-agent-node    pass · diffPx=0
+✓ s9-goal-panel-online pass · diffPx=0
+✓ s10-webshow-node pass · diffPx=0
+✓ s11-termview-node pass · diffPx=0
+✓ s12-jsoncanvas-node pass · diffPx=0
+✓ s13-approval-role-picker pass · diffPx=0
+✓ s14-code-lang-sync pass · diffPx=0
+✓ s15-caps-panel   pass · diffPx=0
+
+宪法门禁：通过 ✓
