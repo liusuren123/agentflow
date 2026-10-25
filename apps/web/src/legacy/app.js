@@ -1882,6 +1882,7 @@ const RUN_META = {
   setvar:    {dur:250,  out:n=>`${paramsOf(n).name||'answer'} 已写入变量`},
   webshow:   {dur:500,  out:n=>{ const u=String(paramsOf(n).url||''); return WS_HTTP_S.test(u)?'已呈现网页 · '+u:'未呈现 · 无有效网址（占位降级）'; }},
   approval:  {dur:1300, out:()=>'审批通过 · 值班经理 (模拟)'},
+  termview:  {dur:700,  out:()=>'[agentflow] stream ready\n▍ 等宽只读流演示 · 逐行追加\n▍ 本文本为离线模拟文案'},
 };
 function topoOrder(){
   const indeg = {}; state.nodes.forEach(n=>indeg[n.id]=0);
@@ -1936,6 +1937,57 @@ function flashEdges(ids){
     setTimeout(()=>rec.g.classList.remove('flowing'), 850);
   });
 }
+/* ===== termview（BK-0037）：等宽只读流呈现区（ADR-0015 §4.2） =====
+ * 惰性挂载：首个 node:delta/node:error 才创建（s0~s9 静态态零波及的前提）；
+ * 只读——纯 div + textContent，无 input/stdin/写入面（PTY 切割护栏）。 */
+const termEl = id => {
+  const el = nodeEl(id); if(!el) return null;
+  let t = el.querySelector('.node-term');
+  if(!t){
+    t = document.createElement('div'); t.className = 'node-term';
+    el.insertBefore(t, el.querySelector('.node-out'));   /* .node-out(:775) 恒存在 */
+    measurePorts(); updateEdgesOf([id]);                 /* 高度变化 → portCache 刷新（已知陷阱条款） */
+  }
+  return t;
+};
+const termConsume = ev => {
+  /* delta 按边转发（迭代 0034 修复轮 · BUG-001）：node:delta 的 ev.id = 发射节点（上游
+   * llm/agent，llm.ts 纯流式分支 acc 累积语义）；termview handler 自身无 delta 通道
+   * （仅 emit('output')）——呈现目标 = state.edges 中 ev.id 的下游 type==='termview'
+   * 且未旁路节点（发射节点自身即 termview 时并入，模拟执行路径直喂即此形态）。零引擎改动。 */
+  if(ev.type==='node:delta'){
+    const targets = new Set();
+    const src = nodeById(ev.id);
+    if(src && src.type==='termview' && !src.bypass) targets.add(ev.id);
+    state.edges.forEach(e=>{
+      if(e.fn!==ev.id) return;
+      const d = nodeById(e.tn);
+      if(d && d.type==='termview' && !d.bypass) targets.add(e.tn);
+    });
+    targets.forEach(tid=>{
+      const t = termEl(tid); if(!t) return;
+      const m = nodeById(tid);
+      const N = Math.max(1, Number(paramsOf(m).lines)||200);
+      const kept = String(ev.text||'').split('\n').slice(-N).join('\n');   /* 超限裁旧 */
+      t.textContent = kept + '▌';
+      if(paramsOf(m).autoscroll !== false) t.scrollTop = t.scrollHeight;   /* 自动滚动 */
+      measurePorts(); updateEdgesOf([tid]);
+    });
+    return;
+  }
+  const n = nodeById(ev.id); if(!n || n.type!=='termview') return;
+  if(ev.type==='node:done'){
+    const box = nodeEl(ev.id)?.querySelector('.node-term'); if(!box) return;
+    if(box.textContent.endsWith('▌')) box.textContent = box.textContent.slice(0,-1);  /* 定稿去光标 */
+  }else if(ev.type==='node:error'){
+    const t = termEl(ev.id); if(!t) return;
+    const err = document.createElement('div'); err.className = 'node-term-err';
+    err.textContent = '✗ ' + String(ev.message||'').slice(0,200);
+    t.appendChild(err);
+    if(paramsOf(n).autoscroll !== false) t.scrollTop = t.scrollHeight;
+    measurePorts(); updateEdgesOf([ev.id]);
+  }
+};
 
 async function runWorkflow(){
   if(running) return;
@@ -2035,6 +2087,7 @@ async function runSimulated(){
     el.classList.remove('st-running');
     if(stopFlag){ el.classList.add('st-error'); setNodeOut(id,'已中止'); measurePorts(); updateEdgesOf([id]); continue; }
     el.classList.add('st-done');
+    if(n.type==='termview'){ termConsume({id,type:'node:delta',text:outText}); termConsume({id,type:'node:done'}); }
     setNodeOut(id, outText);
     measurePorts(); updateEdgesOf([id]);
     flashEdges(state.edges.filter(e=>e.fn===id&&(isCond(n.type)?e.fp===branch[id]:true)).map(e=>e.id));
@@ -2164,6 +2217,9 @@ async function runReal(){
   };
 
   const onEvent = ev=>{
+    /* termview 消费钩子（BK-0037）：delta/done/error 三事件旁路进呈现区；
+       既有 case 语义零触碰——.node-out 摘要行为保持原样（容器纪律） */
+    if(ev.type==='node:delta'||ev.type==='node:done'||ev.type==='node:error') termConsume(ev);
     switch(ev.type){
       case 'run:accepted': ENGINE.runId = ev.runId; break;
       case 'run:start':

@@ -2,7 +2,7 @@
 
 # 节点总索引（NDP v0.2）
 
-18 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。
+19 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。
 生成器：仓库根执行 `npm run build:shared && node tools/gen-node-readmes.mjs`（幂等；**生成物勿手改**——人工文案持有于生成器 MANUAL_NOTES）。
 
 | type | 目录 | 名称 | 一句话用途 |
@@ -22,6 +22,7 @@
 | `delay` | `nodes/delay/` | 延时等待 | 等待指定时间后继续执行。 |
 | `merge` | `nodes/merge/` | 合并 | 汇聚多路输入为一路。 |
 | `reply` | `nodes/reply/` | 直接回复 | 将内容直接输出给用户（终点节点）。 |
+| `termview` | `nodes/termview/` | 终端只读流 | 将上游文本流以等宽终端样式只读呈现（终点节点） |
 | `setvar` | `nodes/setvar/` | 变量赋值 | 将值写入工作流全局变量。 |
 | `webshow` | `nodes/webshow/` | 网页展示 | 将上游网址以内嵌安全视图呈现（终点节点）。 |
 | `approval` | `nodes/approval/` | 人工审批 | 流程转人工审核，通过后继续执行。 |

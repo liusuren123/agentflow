@@ -60,10 +60,10 @@ const portRows = def => [
   ...def.ports.outputs.map((pt, i) => [String(i + 1), 'out', `\`${pt.id}\``, pt.label, pt.type]),
 ];
 
-test('表格回比：18 类型 README 端口/参数表 ⇄ dist node.js 源数据', async () => {
+test('表格回比：19 类型 README 端口/参数表 ⇄ dist node.js 源数据', async () => {
   const dirs = readdirSync(NODES_DIR, { withFileTypes: true })
     .filter(e => e.isDirectory()).map(e => e.name).sort();
-  assert.deepEqual(dirs, [...TYPES].sort(), 'src/nodes 目录集应恰为 18 类型（无缺无孤）');
+  assert.deepEqual(dirs, [...TYPES].sort(), 'src/nodes 目录集应恰为 19 类型（无缺无孤）');
   assert.deepEqual(readdirSync(NODES_DIR).filter(f => f.endsWith('.md')), ['README.md'],
     'src/nodes 根层只应有总索引 README.md（孤儿 md 即红）');
   for (const type of TYPES) {
@@ -77,7 +77,7 @@ test('表格回比：18 类型 README 端口/参数表 ⇄ dist node.js 源数�
   }
 });
 
-test('总索引 README：恰 18 行且序 = Object.keys(NODES)', () => {
+test('总索引 README：恰 19 行且序 = Object.keys(NODES)', () => {
   const lines = readFileSync(join(NODES_DIR, 'README.md'), 'utf8').replace(/\r\n/g, '\n').split('\n');
   const rows = tableRowsOf(lines, '# 节点总索引（NDP v0.2）');
   assert.deepEqual(rows, TYPES.map(t => [`\`${t}\``, `\`nodes/${t}/\``, NODES[t].name, NODES[t].desc]),

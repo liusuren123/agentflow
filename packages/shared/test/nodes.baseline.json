@@ -607,6 +607,37 @@
     ],
     "kw": "reply output answer 输出 回复 结果 终点"
   },
+  "termview": {
+    "name": "终端只读流",
+    "cat": "output",
+    "icon": "code",
+    "desc": "将上游文本流以等宽终端样式只读呈现（终点节点）",
+    "inputs": [
+      {
+        "n": "数据流",
+        "t": "any"
+      }
+    ],
+    "outputs": [],
+    "params": [
+      {
+        "k": "lines",
+        "l": "缓冲行数",
+        "t": "number",
+        "d": 200,
+        "min": 20,
+        "max": 2000,
+        "step": 20
+      },
+      {
+        "k": "autoscroll",
+        "l": "自动滚动",
+        "t": "toggle",
+        "d": true
+      }
+    ],
+    "kw": "termview 终端 只读 流式 呈现 输出"
+  },
   "setvar": {
     "name": "变量赋值",
     "cat": "output",

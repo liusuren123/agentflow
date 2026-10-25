@@ -1053,6 +1053,12 @@ async function main() {
    * 全部走主实例（与 G/V/A 组的 mockSrv 差异点）；SSE 消费沿 aRun 同型。 */
   const oRun = async (wf) => {
     const sse = await openSse(srv.base, wf);
+  /* T 组：终端只读流节点（T01-T03 · 迭代 0034 / BK-0037 · SPEC §9 AC3）——mock 实例。
+   * 呈现承载 = reply 同构 sink：全文汇入 / out 摘要 / 空输入如实降级；
+   * 零出站佐证 = T01/T02 全链路 mock 模型请求数零增量（termview 链路无任何模型调用）。 */
+  const tReqBefore = mockModel.requests.length;
+  const tRun = async (wf) => {
+    const sse = await openSse(mockSrv.base, wf);
     const runId = (await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId;
     CLEAN.runIds.push(runId);
     return { sse, runId };
@@ -1175,6 +1181,54 @@ async function main() {
     C.ok(bad === null && parsed === all.length,
       'O05', `O01/O03/O04 捕获的全部事件（${all.length} 条，含 node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）`,
       { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
+  { /* T01 · userinput→prompt→termview 全文汇入：out 摘要「已呈现流 · N 字」+ output 事件全文 + run:done.outputs 含全文 */
+    const full = '终端流固定文本：冒烟测试问题';
+    const wfT01 = {
+      name: 'smoke-termview-fulltext',
+      nodes: [
+        { id: 1, type: 'userinput', x: 40, y: 100, params: { var: 'question', defv: '冒烟测试问题' } },
+        { id: 2, type: 'prompt', x: 320, y: 100, params: { tpl: '终端流固定文本：{{question}}' } },
+        { id: 3, type: 'termview', x: 600, y: 100, title: '终端只读流' },
+      ],
+      edges: [
+        { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+        { id: 2, fn: 2, fp: 0, tn: 3, tp: 0 },
+      ],
+      inputs: { question: '冒烟测试问题' },
+    };
+    const { sse } = await tRun(wfT01);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const tvDone = sse.events.find((e) => e.type === 'node:done' && e.id === 3);
+    const outs = sse.events.filter((e) => e.type === 'output');
+    C.ok(done.ok === true
+      && tvDone?.out === `已呈现流 · ${full.length} 字`
+      && outs.length === 1 && outs[0]?.text === full
+      && Array.isArray(done.outputs) && done.outputs.includes(full),
+      'T01', 'userinput→prompt→termview：termview node:done.out === 「已呈现流 · 14 字」（N=渲染文本实长）；output 事件恰 1 条且 text=全文；run:done.outputs 含全文（ctx.outputs 汇入）',
+      { expected: '全文汇入 + 摘要字数一致 + outputs 落 run 产物', actual: JSON.stringify({ tvOut: tvDone?.out, outputs: outs.map((o) => o.text), runOutputs: done.outputs }).slice(0, 300), ctx: 'mock 实例 POST /api/v1/run（termview 零参数）' });
+  }
+  { /* T02 · trigger→termview 空输入如实降级：__trigger 对象经 toStr → ''，out=「已呈现流 · 0 字」不伪造内容 */
+    const wfT02 = {
+      name: 'smoke-termview-empty',
+      nodes: [
+        { id: 1, type: 'trigger', x: 40, y: 100, title: '手动触发' },
+        { id: 2, type: 'termview', x: 320, y: 100, title: '终端只读流' },
+      ],
+      edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
+    };
+    const { sse } = await tRun(wfT02);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const tvDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    C.ok(done.ok === true && tvDone?.out === '已呈现流 · 0 字',
+      'T02', 'trigger→termview 直连（__trigger 对象输入）：node:done.out === 「已呈现流 · 0 字」（toStr 对 __trigger 返回空串，如实降级不伪造）',
+      { expected: '0 字降级摘要', actual: JSON.stringify({ tvOut: tvDone?.out, ok: done.ok }), ctx: 'mock 实例 POST /api/v1/run' });
+  }
+  { /* T03 · 零出站佐证：T01/T02 全链路 mock 模型请求数零增量（呈现承载 = 纯数据变换 + 事件转发） */
+    C.ok(mockModel.requests.length === tReqBefore,
+      'T03', 'T01/T02 两次 termview 全链路 run 的 mock 模型请求数零增量（零出站零进程零新依赖的运行时佐证）',
+      { expected: '请求增量 0', actual: String(mockModel.requests.length - tReqBefore), ctx: 'mockModel.requests 计数（T01 前采样 vs T02 后）' });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例

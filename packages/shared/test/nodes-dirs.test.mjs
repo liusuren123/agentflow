@@ -2,7 +2,7 @@
  *  nodes-dirs.test.mjs — 目录制加载机制测试（迭代 0021~0022 / BK-0021）
  *  D===R：nodes.ts 源文本 import 集 ≡ src/nodes/ 目录集（无漏 import /
  *  无孤儿目录）；D ⊆ keys(NODES)；终态断言（批次 2 收尾口径，迁移
- *  SPEC §3.2）：D.size===18 且内联残留=0——目录全量迁移后聚合层
+ *  SPEC §3.2）：D.size===19 且内联残留=0——目录全量迁移后聚合层
  *  不得残留任何内联定义；
  *  引用边界（NDP §2.5）：apps 源不得直引 nodes/<type>/node 定义模块。
  *  读源先例：contract.test.mjs:66-68。
@@ -28,7 +28,7 @@ test('D===R：nodes.ts 静态 import 集与 nodes/ 目录集一致，且 D ⊆ k
   for (const d of D) assert.ok(keys.includes(d), `目录「${d}」不是注册表键（D ⊆ keys(NODES) 破坏）`);
 
   /* 终态计数断言（SPEC §6.1）：显式计数防「迁移中态」被误判绿 */
-  assert.equal(D.size, 18, '目录制终态：nodes.ts 应静态 import 全部 18 目录（当前不足即迁移未收口）');
+  assert.equal(D.size, 19, '目录制终态：nodes.ts 应静态 import 全部 19 目录（当前不足即迁移未收口）');
 
   /* 终态断言（迁移 SPEC §3.2 收尾口径）：内联残留 = 0；
      keys(NODES) 为声明序 → 残留序同声明序，deepEqual 精确断言 */
