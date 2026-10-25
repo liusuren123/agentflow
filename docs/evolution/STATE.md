@@ -8,7 +8,7 @@ iteration: 0041      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-25 18:40  # 本次迭代开始时间
-updated: 2026-10-26 03:20  # 最近更新时间
+updated: 2026-10-26 03:23  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0040 / BK-0052 CLOSE=failed（脚本机械判：merge 仲裁员返回缺 retest 字段→evolution-iteration.dwf.ts:793 回退默认 build/gate/test/smoke=false×4——主干复测实跑四项全绿 exit 0：build ✓·gate 16 场景 diffPx=0（首跑 s3 本机抖动双留档）·test 30/30·smoke 133/0 含 W08/W09 新护栏双过，证据 docs/evolution/iterations/0040/evidence/，0033 同型先例待复核更正）；产品提交 145fe46（sendFile {root} 相对形态，+25/−4 恰白名单 2 文件）已并入 e9f0fce 零冲突；feat/0036-iter（BK-0040）仍在途待合并
+last_result: 迭代 0040 / BK-0052 CLOSE=done（03:23 账本更正：原判 failed 系脚本机械判——merge 仲裁员返回缺 retest 字段致 evolution-iteration.dwf.ts:793 回退默认 false×4，协调者复核亲读四日志后按 0033 同径更正，metrics 追加 0040 更正行双层记录）；实况=产品提交 145fe46（sendFile {root} 相对形态修复 Windows 静态托管 404，+25/−4）已并入 e9f0fce 零冲突，主干复测四项全绿 exit 0：build ✓ · gate 16 场景 diffPx=0（首跑 s3 本机抖动双留档）· test 30/30 · smoke 133/0 含 W08/W09 首获机器护栏，证据 docs/evolution/iterations/0040/evidence/；另：feat/0036-iter（BK-0040）成果仍在分支待合并
 ```
