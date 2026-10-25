@@ -52,14 +52,18 @@ const runsById: Record<string, RunCtx> = Object.create(null);
 
 /* ---------- 静态托管（React 构建产物，同源访问） ----------
  * 前端已迁移至 apps/web（宪法门禁保证与 2026-10 定稿 UI 像素级一致）；
- * 首次启动前需在仓库根执行 npm run build:web。 */
-const WEB_INDEX = path.join(ROOT, 'apps', 'web', 'dist', 'index.html');
+ * 首次启动前需在仓库根执行 npm run build:web。
+ * sendFile 实参用「相对路径 + {root}」而非绝对路径（迭代 0040 / BK-0052）：
+ * send 库对 Windows 绝对路径（盘符冒号）解析抛 NotFoundError → 本机 404；
+ * 相对形态跨平台等价，托管终点仍为同一 apps/web/dist/index.html。 */
+const WEB_DIR = path.join(ROOT, 'apps', 'web', 'dist');
+const WEB_INDEX = path.join(WEB_DIR, 'index.html');
 if (!existsSync(WEB_INDEX)) {
   logger.fatal({ webIndex: WEB_INDEX }, '缺少前端构建产物：请先在仓库根执行  npm run build:web');
   process.exit(1);
 }
-app.get('/', (_q, res)=>res.sendFile(WEB_INDEX));
-app.get('/index.html', (_q, res)=>res.sendFile(WEB_INDEX));
+app.get('/', (_q, res)=>res.sendFile('index.html', { root: WEB_DIR }));
+app.get('/index.html', (_q, res)=>res.sendFile('index.html', { root: WEB_DIR }));
 
 /* ---------- SQLite 持久化（ADR-0005：data/agentflow.db，WAL） ---------- */
 initStore();
