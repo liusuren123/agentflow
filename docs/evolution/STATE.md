@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0033      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0034      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-25 18:40  # 本次迭代开始时间
-updated: 2026-10-25 20:10  # 最近更新时间
+updated: 2026-10-25 21:18  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0032 / BK-0034 CLOSE=done（goal 模式会话面板 UI，BK-9002 链终轮——协调者手动全流程：agent 节点主体双击入口（排除 .ntitle/.wdg/.port）+ 动态单例面板（会话流/输入区/停止/恢复列表）+ server-sync 四函数数据面 + SSE 恰 7 事件消费 + gate s9 golden-created；产品提交 49d54de +370/−3 恰白名单 7 文件、前端三文件纯插入、Skeleton/sessions.ts/shared/lock 零 diff；gate 10 场景 diffPx=0（s0~s8 零波及实测）、契约 30/30、smoke 104/0（零 shared 触及无 V09 假红）、canvas 15/0、五点位浏览器 E2E mock 后端全 PASS（真模型流式未跑如实标注）；BUILD 期两起环境/笔误闭环修复（入口守卫 defOf(n).type→n.type、node_modules/.bin 被裸 npx tsc 清空经 npm install 恢复）；issue#2 链终关单）——docs/evolution/iterations/0032/REPORT.md
+last_result: 迭代 0033 / BK-0036 CLOSE=failed（终态为脚本侧证据落盘自检误判、非产品失败：evolution-iteration.dwf.ts:782 以工作树前缀 wtPath 读 evidence/manifest.json 而工作树内无此路径 → evidenceOk=false → :788 在 VERIFY PASS+复测全绿下机械判 failed；证据实际按 MERGE 契约落盘主干 docs/evolution/iterations/0033/evidence/，本会话亲核在库——4 日志 BUILD/GATE/TEST/SMOKE_EXIT=0 + 4 确定性截图 + manifest 含 scenes；产品实况=REPORT PASS 零 BUG、repair_round=0，产品提交 bf25202 +417/−35 恰 SPEC §2 白名单、合并 2b76116 零冲突，webshow 修宪轮批次 1 全量入干）——主干复测 build=true gate=true test=true smoke=true（gate 11 场景全 pass diffPx=0 含 s10-webshow-node golden-created、npm test 30/30、smoke 113/0 含 O01~O05 套内全绿）；证据 docs/evolution/iterations/0033/evidence/（MERGE.md §3~§4）；失败要点与翻回 ready 重试路径见 BACKLOG BK-0036 行备注
 ```
