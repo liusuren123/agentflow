@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0031      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0032      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
-started: 2026-10-25 13:54  # 本次迭代开始时间
-updated: 2026-10-25 14:24  # 最近更新时间
+started: 2026-10-25 14:36  # 本次迭代开始时间
+updated: 2026-10-25 18:30  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0030 BK-0039 终态 done：ADR-0016 草案落盘 docs/adr/0016-workbench-right-panel-git-diff-tree.md（右栏容器三选一推荐 B 独立容器切换·#props 零触碰 + E1 git/E2 diff/E3 tree 只读端点契约与 git 白名单纪律 + §3.0 项目根零 env 模块级常量锚定（PRD cwd 案经 npm exec -w 实测否决）+ safePath 同构 + 0040→0041→0042 分批修宪编排 + golden 双通道预案，286 行 ≤400）+ BK-0040/0041/0042 定界回写 VERBATIM ×3，产品提交 c6a6b89 +286/−0 恰 1 路径，纯文档轮零代码/零依赖/零 UI/零 golden，VERIFY PASS 零 BUG（7/7 AC，smoke:server 95/0 + test:canvas 15/0 亲跑），证据 iterations/0030/REPORT.md；BK-0040/0041/0042 晋升条件就此满足（由心跳 PLAN 轮晋升，0040 容器先行；下轮选题预期按 ROADMAP:189-190 进 BK-9002 链实现段 BK-0033，BK-0036~0038 已 ready 亦可取）；issue#4 仅进度回执不关单（关单留 BK-0042 链终轮）
+last_result: 迭代 0031 / BK-0033 CLOSE=done（首个 UI 功能修宪轮：通用智能体节点 agent NDP + 注册表入列 + agent.ts handler 会话/预算承载 + 节点库呈现——BUILD 主体由工作流子智能体在 provider 双中断前完成，用户指示停工作流后协调者手动接管：核实实现与 SPEC 逐项一致零补写、产品提交 081b32d 恰白名单 20 行 +569/−37、gate 9 场景 diffPx=0（s8 golden-created + s3 重录恰一次）、契约 30/30、smoke 提交后 104/0（A01-A05 全绿，提交前 V09 时点性假红为先例形态）、canvas 15/0、前端三文件/llm.ts/events.ts/lock 零 diff；AC6-④ 真模型 E2E 未跑如实标注；issue#2 进度回执不关单留 BK-0034 链终）——docs/evolution/iterations/0031/REPORT.md
 ```
