@@ -18,6 +18,11 @@ data/
 
 # 本地工具产物
 tests/golden/diff/
-.zcode/
+.zcode/*
+# 进化机制的可复用项目资产入库（其余 .zcode/ 内容为本机私有：hooks、config.json、
+# plans、skills、locks、workflow-drafts、worktree 等继续忽略）
+!.zcode/workflows/
+!.zcode/tools/
+!.zcode/agents/
 **/dist/
 node_modules/
