@@ -1,0 +1,28 @@
+> agentflow@1.0.0 gate
+> node tools/pixel-gate/gate.mjs
+
+✓ s0-initial       pass · diffPx=0
+✓ s1-select-node   pass · diffPx=0
+✓ s2-settings      pass · diffPx=0
+✓ s3-library       pass · diffPx=0
+✓ s4-workflows-online pass · diffPx=0
+✓ s5-history-online pass · diffPx=0
+✓ s6-log-panel     pass · diffPx=0
+✓ s7-log-filter-warn pass · diffPx=0
+✓ s8-agent-node    pass · diffPx=0
+✓ s9-goal-panel-online pass · diffPx=0
+✓ s10-webshow-node pass · diffPx=0
+✓ s11-termview-node pass · diffPx=0
+✓ s12-jsoncanvas-node pass · diffPx=0
+✗ s13-approval-role-picker FAIL · diffPx=0 · DOM不变量变化
+✗ s14-code-lang-sync FAIL · diffPx=0 · DOM不变量变化
+
+宪法门禁：2 个场景违宪 ✗（差异详见 tests/golden/diff/）
+GATE_EXIT=1
+
+# [merge-arbiter 注] 合并提交 7d8df55 后的首次主干 gate（如实留档，同 0037 gate-first-run.log 先例）。
+# 两个新场景像素 diffPx=0、仅 DOM 不变量不一致；逐字 diff 证实差异面恰 1 行：
+# cssVars 表缺 "--cat-agent": "#14b8a6"（分支基点早于迭代 0037，基线停留 7 类目变量表；
+# 与 0037×0035 合流时 s12 收口提交 40f9d06 完全同款）。
+# 处置：基线 JSON 一行同步（PNG 不动、未跑 gate:update、像素零变化），收口提交 17d2128；
+# 复跑 15 场景全 pass（见 gate.log）。
