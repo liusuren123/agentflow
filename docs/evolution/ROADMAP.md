@@ -63,10 +63,14 @@ handler、变量/表达式、检索与工具链增强。所有出站走 guard、
 保护对象——T3 一切演进只改后端实现（handler/engine/tools），不改 DEFS 呈现性字段；
 需要新节点或新参数即触 UI，只能走待批准区。**
 
-现状基线（2026-10-23 治理日更新）：16 种 handler 全部实装（`apps/server/src/handlers.ts` +
-`llm.ts`）；MCP 工具 filesystem/fetch/web-search 真实实现，sqlite/browser 如实降级
-（迭代 0009 stub 工厂显式化，BK-0005）；websearch eng 参数严格路由已生效（迭代 0005，
-BK-0007：博查→BOCHA_API_KEY、SearXNG→SEARXNG_URL、Bing/Google 未接入如实 warn 后回退链）。
+现状基线（2026-10-25 治理日更新）：16 种 handler 全部实装（`apps/server/src/handlers.ts` +
+`llm.ts`）；MCP 工具 filesystem/fetch/web-search/sqlite 真实实现（sqlite 迭代 0026 真接入
+BK-0008：DB 锚定 sandbox/mcp-sqlite.db + SQL 黑名单 + mcp-stubs M12-M17 断言），browser
+维持 stub 如实降级（ADR-0011 评估终态）；**真 MCP client 已落地（ADR-0012 实施链
+BK-0028~0030，2026-10-25）**：stdio / Streamable HTTP 双传输统一 McpConnection、env
+白名单注册表（MCP_HTTP_SERVERS/MCP_STDIO_SERVERS）+ 工具发现缓存 + 会话注入 +
+guard mcpFetch 出站收口；websearch eng 参数严格路由已生效（迭代 0005，BK-0007：
+博查→BOCHA_API_KEY、SearXNG→SEARXNG_URL、Bing/Google 未接入如实 warn 后回退链）。
 
 - 里程碑 M1 · websearch 引擎参数生效化
   - 状态：**已完成（迭代 0005，BK-0007 关账）**
@@ -75,11 +79,16 @@ BK-0007：博查→BOCHA_API_KEY、SearXNG→SEARXNG_URL、Bing/Google 未接入
     定向 E2E 13/0 + 反演红绿双向），证据 `iterations/0005/REPORT.md`；博查正路径无密钥
     未实测（PRD 标可选），留部署后点位
 - 里程碑 M2 · sqlite MCP 工具沙箱接入
-  - 状态：**进行中（BK-0008 于 2026-10-23 治理日晋升 ready，待心跳选题）**——前置
-    BK-0002/0005 均 done；better-sqlite3 既有依赖（根 package.json allowScripts +
-    store.ts 在用）、DB 锚定 `apps/server/sandbox/` 专用文件、无新增依赖/env/出站类别，
-    POLICY 自主区；实现轮须同步更新 tests/smoke M07 断言口径（sqlite 由 stub 转 real）
-  - 验收：工具返回不再含 not implemented；sandbox 外路径被拒；gate 全绿
+  - 状态：**已完成（迭代 0026 重试轮，2026-10-25，BK-0008 关账）**——sqlite
+    query/execute 真实现落地：DB 锚定 sandbox/mcp-sqlite.db（由 SANDBOX 常量派生，
+    与主库 data/agentflow.db 物理隔离）、ATTACH/DETACH/PRAGMA/load_extension 黑名单
+    拒绝（错误消息含「沙箱」）、行集/单元格限幅；TOOL_SPECS 摘标记三处同步
+    （mcp-stubs M12-M17 断言守护）；产品提交 a66c0e9，VERIFY PASS 零 BUG
+    （smoke:server 95/0，证据 iterations/0026/REPORT.md）。首轮尝试（迭代 0020）
+    因 Mimosa 编辑钩子对 db.exec 形态启发式误报 blocked（环境级非需求失败），用户
+    「两个门都降 warn」决策后重试成功（背景链见 BACKLOG BK-0008 行）
+  - 验收：工具返回不再含 not implemented（sqlite 半面达成；browser 半面归
+    ADR-0011 维持 stub 终态）；sandbox 外路径被拒；gate 全绿——三项达成
 - 里程碑 M3 · browser MCP 工具可行性评估（仅 ADR 草案，不实现）
   - 状态：**已完成（2026-10-24 治理日批处理消化，BK-0009）**——评估性 ADR
     docs/adr/0011-browser-mcp-feasibility.md 落盘：结论为维持 stub 如实降级
@@ -128,52 +137,79 @@ README 与 `docs/ai-sdk-7-功能汇总.md` 随实现同步。
   agent loop、BK-0016 持久会话与流式会话 API、BK-0017 智能体互审协议。
   验收：外部 MCP server 工具可发现可调用（guard 约束内）；LLM 节点具备停止条件与
   预算控制；会话可列出/恢复/续聊/停止（/api/v1 端点）；approval 审批人为节点引用时
-  结构化裁决回填 + 审计留痕。状态：**部分完成（2/4，2026-10-24 治理日回写）**——
+  结构化裁决回填 + 审计留痕。状态：**部分完成（3/4，2026-10-25 治理日回写）**——
   BK-0016 已落地（迭代 0015，提交 7239afb：sessions/messages 表 + 五端点 + 停止信号
   + SSE 会话流，验收点「会话可列出/恢复/续聊/停止」达成，证据 iterations/0015/REPORT.md）；
   BK-0017 已落地（迭代 0016，提交 a9ac875：node:id 审批人引用 + 受控 LLM 裁决 +
   approval_audits 审计，验收点「结构化裁决回填 + 审计留痕」达成，证据
-  iterations/0016/REPORT.md）；BK-0013 已于 2026-10-24 治理日拆分为 BK-0027
-  （SPEC 先行，ready）+ BK-0028~0030（三 M 级子项，待批准承载）；BK-0015 维持
-  proposed（承载方案待 SPEC，建议与 BK-9002 拆分 SPEC 联合评估，避免双 SPEC
-  重复设计 agent loop 预算承载）。
+  iterations/0016/REPORT.md）；**BK-0013 经 ADR-0012 拆分链全部落地（2026-10-25）**：
+  BK-0027 SPEC 先行（迭代 0017）+ BK-0028 传输层（迭代 0023，b560334）+ BK-0029
+  注册与工具发现（迭代 0024，82f5b56）+ BK-0030 会话注入与 guard 收口（迭代 0025，
+  dded158），验收点「外部 MCP server 工具可发现可调用（guard 约束内）」全链达成
+  （issue#10 随终子项关单）；BK-0015 维持 proposed（承载方案待 SPEC，建议与
+  BK-9002 拆分 SPEC（BK-0032）联合评估，避免双 SPEC 重复设计 agent loop 预算承载）。
 - 里程碑 M2 · 环境感知与数据真实化（全部触UI=否）：BK-0014 扩展发现器、BK-0018
   记忆工具组、BK-0019 KB 管理管道、BK-0020 on-error 策略。
   验收：项目与 ~/.agents 扩展可发现并注册（白名单+审计）；跨 run 记忆可读写；
   retrieval 命中真实入库文档；节点失败可按策略降级。状态：未开始（proposed，四项
   实现轮均含需批准面，节奏见 BACKLOG 各自备注）。
-- 里程碑 M3 · 智能体工作台 UI（全部触UI=是；issues #2~#5 用户已于 2026-10-23 批复
-  进入修宪通道、#6 待批复）：通用智能体节点 + goal 模式会话面板（#2）→ 呈现三件套
-  节点（#3）→ git/diff/目录树右栏（#4）→ PTY 交互终端（#5，安全世界设计先行）→
-  参数扩展杂项（#6，BUG-0012 前端联动修复与离线模拟器同款错配修复已追评并入）。
-  **协议前置：BK-0021（NDP 节点定义目录制迁移，规范 v0.2）——新节点一律按 NDP
-  定义后进注册表，先迁移后扩展，不得跳过。前置解阻链（2026-10-24 治理日）：
-  BK-0031（迁移前等价基线快照 + 实施轮 SPEC + needs-approval issue，ready）→
-  用户批准 issue → BK-0021 实施轮修宪。**状态：**未开始（批复已到位 4/5；全线
-  等 BK-0021 前置与 L 项拆分）**。BK-9004（#4）前置 BK-0016 已满足且不涉新节点
-  定义，为修宪链最短可动路径（拆分排序待下个治理日）；BK-9003/9005 受 BK-0021
-  前置约束；BK-9002 前置 BK-0021 + 自身拆分。
+- 里程碑 M3 · 智能体工作台 UI（全部触UI=是；issues #2~#5 用户于 2026-10-23 批复、
+  #6 于 2026-10-24 批复——五项修宪授权齐备）：通用智能体节点 + goal 模式会话面板
+  （#2）→ 呈现三件套节点（#3）→ git/diff/目录树右栏（#4）→ PTY 交互终端（#5，
+  安全世界设计先行）→ 参数扩展杂项（#6，BUG-0012 前端联动修复已追评并入）。
+  **协议前置已满足（2026-10-25 回写）**：BK-0021 NDP 目录制迁移 done——批次 1
+  （迭代 0021，e880511）+ 批次 2 终轮（迭代 0022，c17866f），16 目录终态、内联
+  残留=0、等价性 sha256 08ba1229…f275 全程守护；先行项 BK-0031 done（迭代 0018）。
+  「先迁移后扩展」兑现：新节点/新参数一律按 NDP 定义（src/nodes/&lt;type&gt;/node.ts）
+  后进注册表。**L 项拆分已落地（2026-10-25 治理日）**：BK-9002~9006 → BK-0032~0050
+  （19 子项；SPEC 先行者 4 项 ready，实现块 15 项 proposed 随链晋升；父行 skipped
+  留指向，批复承继 issue#2~#6，关单留各链终轮）。状态：**实施段开启（批复 5/5 +
+  前置解阻 + 拆分完成；SPEC 四连先行——建议序 BK-0032 → BK-0043 → BK-0035 →
+  BK-0039，随后按各链推进，完整序列见底部待办节）**。
 
 ---
 
-## 待办（治理周维护）· 2026-10-24 更新（W43 第三次治理）
+## 待办（治理周维护）· 2026-10-25 更新（W43 第四次治理 · 周日治理日）
 
-- **ready 队列（治理日后）**：非 doc 4 项——BK-0027（P1/M，BK-0013 拆分 SPEC 先行，
-  本日新增）、BK-0031（P1/S，BK-0021 基线快照+SPEC+issue 先行，本日新增）、
-  BK-0011（P2/S）、BK-0008（P2/M）；doc 项 0（BK-0009/BK-0024 本日批处理消化）。
-  触 UI 修宪 ready 4 项（BK-9002~9005）均 L 级、被前置/拆分约束（见解阻链）。
-- **修宪轮解阻链（PLAN 选题指导）**：#2~#5 已批但均 L 级——BK-9003/9005 前置
-  BK-0021（NDP）；BK-9002 前置 BK-0021 且自身待拆分；BK-9004 无 NDP 前置（非新
-  节点，仅面板 UI），拆分后即为最短修宪路径。前置期间心跳按 ②BACKLOG ready 序
-  选题（BK-0027 → BK-0031 → BK-0011 → BK-0008）；任一 needs-approval 获批
-  （#6 / BK-0021 实施轮 issue / BK-0013 依赖 issue）则该链优先于常规选题。
-- **待批准 issues 现状（gh 亲核 2026-10-24）**：#1/#7/#8 已关（用户 10-23 批复，
-  随迭代 0013/0011/0012 回执关单）；#2~#5 open 且已批复（BK-9002~9005 主池
-  ready，等解阻）；#6 open 未批复（BK-9006，不催办、不代批）；#9 open
-  （AGENTS.md 三处漂移用户已亲改在库，提交 21d94a3，待用户自行确认关单）。
-- **doc 批处理消化（本日）**：BK-0009 → ADR-0011 评估草案（browser MCP，结论
-  维持 stub 默认终态）；BK-0024 → README 漂移同步（eng 路由/SearXNG 行 +
-  命令表 test:canvas + 迭代 0012 后新漂移 smoke:shutdown 一并清账）。
-- 历史注记：T1 主题闭环（0001/0008）；T2-M1/M2/M3、T3-M1、T4-M1/M2 已关账；
-  BK-0001 终局处置见 BACKLOG 备注。迭代 0010 于 10-22 中断后未续跑，0011 起
-  按新序号重启（0010 无 metrics 行）。
+- **L 项拆分落地（本日核心）**：BK-9002~9006 五项 L 级修宪项全部拆分为 M/S 子项
+  （BK-0032~0050，19 项；拆分明细与四要素见 BACKLOG 各行备注），父行按 BK-0013
+  先例置 skipped 留指向；批复承继——issues #2~#6 用户批复全部在案，子项修宪轮
+  直接沿用（ADR 引用对应 issue 批复），关单留各链终轮子项 CLOSE（沿 issue#10/11
+  终轮先例，中间子项不回执）。
+- **ready 队列（治理日后）**：非 doc 4 项——BK-0032（P0/M，BK-9002 SPEC 先行）、
+  BK-0043（P0/M，BK-9005 安全方案 SPEC 先行）、BK-0035（P0/S，BK-9003 SPEC 先行）、
+  BK-0039（P0/S，BK-9004 SPEC 先行）；doc 1 项——BK-0051（README 漂移，proposed，
+  心跳不选，下个治理日批处理消化）。实现块 15 项均 proposed，晋升条件见各行备注
+  （一般为对应 SPEC 轮 CLOSE 后由 PLAN 轮/补题轮晋升）。
+- **新实施序列（修宪链，PLAN 选题指导；本序列为 PLAN 指导、先例在案，优先于主池
+  表序）**：
+  1. **SPEC 四连先行**：BK-0032 → BK-0043 → BK-0035 → BK-0039（0043 提前系因
+     BK-9005 链含外部依赖审批门控，其 SPEC 与依赖 needs-approval issue 尽早开
+     出，等待期可与后续 SPEC 并行）；
+  2. **BK-9002 链（差异化主轴，优先）**：BK-0033 agent 节点 → BK-0034 goal 会话
+     面板（链终轮回执 #2）；BK-0050 节点库智能体类目随 0033 落地后可插入；
+  3. **BK-9003 链**：BK-0036 网页展示 → BK-0037 终端只读流 → BK-0038 JSON 画布
+     （一节点一修宪迭代，0038 链终轮回执 #3）；
+  4. **BK-9004 链**：BK-0040 右栏容器+git → BK-0041 diff 审查 → BK-0042 目录树
+     （0042 链终轮回执 #4）；
+  5. **BK-9005 链**：BK-0043 SPEC 定新依赖（node-pty 类）/出站类别 → 开
+     needs-approval issue（沿 #10 先例）→ 获批后 BK-0044 PTY 后端 → BK-0045
+     终端节点 UI（链终轮回执 #5）；
+  6. **BK-9006 杂项（短修宪，可穿插）**：BK-0046 审批人选择器（后端 BK-0017
+     done，无硬前置）与 BK-0049 MCP·skills 清单动态化（注册表 BK-0029 done，
+     无硬前置）可随时穿插晋升；BK-0047 kb 动态化待 BK-0019、BK-0048 on-error
+     参数待 BK-0020（T5-M2 后端语义项，仍 proposed）。
+- **T5-M2 后端语义项联动**：BK-0019/BK-0020 仍 proposed——BK-0047/0048 的实施
+  顺序约束 = 后端语义先行（或同迭代后端承载段先行）；NDP 前置已满足（BK-0021
+  done，「先迁移后扩展」兑现）。
+- **待批准 issues 现状（2026-10-25 心跳档案在案，PM 未亲跑 gh）**：#1/#7/#8/
+  #10/#11 已关（#10 随 BK-0030 终轮、#11 随 BK-0021 终轮回执关单）；#2~#6 open
+  且均已批复（修宪授权由子项链承继消费，终轮关单）；#9 open（user-request 通知，
+  用户已亲改旧三处在库，待自行确认关单）。**现无待批复项**；下一个预期新批项 =
+  BK-0043 SPEC 产出的 PTY 依赖/出站清单（若需）。
+- **doc 批处理消化（本日）**：iterations/0019/PRD.md 行号笔误修正（BUG-0001
+  处置项，见周报 §7.4）；BK-0051 立项（README 漂移，消化留下个治理日）。
+- 历史注记：T1 主题闭环（0001/0008）；T2-M1/M2/M3、T3-M1/M2/M3、T4-M1/M2 已
+  关账；T5-M1 3/4（余 BK-0015，与 BK-0032 SPEC 联合评估）；迭代 0010 于 10-22
+  中断后未续跑（无 metrics 行）；迭代 0020 blocked（环境级）经 0026 重试关账；
+  迭代 0027 心跳空转（ready 池仅剩 L 级项待治理日拆分——本日拆分即其解）。

@@ -95,7 +95,7 @@ S 尺寸一轮可完。
    （`ROADMAP.md:166-169`）。本轮无新批复 → 链继续生效。
 7. **冒烟基座可行性（Z 组设计依据）**：lib.mjs 边界规则——触达被测系统仅
    /api/v1 HTTP 契约与构建产物存在性两条通道、**不直接读写 data/agentflow.db**
-   （`lib.mjs:12-13`）；`startServer` 返回 `{child, base, log, exitPromise, …}`
+   （`lib.mjs:6-7`，2026-10-25 治理日批处理修正——原稿笔误 12-13，见 REPORT BUG-0001）；`startServer` 返回 `{child, base, log, exitPromise, …}`
    （`lib.mjs:71-107`），`process.execPath + shell:false` 使 `child.kill()`
    Windows 下直达 node 进程（TerminateProcess，`lib.mjs:63` 注释）——显式
    `kill('SIGKILL')` 双平台一致模拟崩溃、不经优雅停机；ringLog(200) 环形缓冲
@@ -166,7 +166,7 @@ S 尺寸一轮可完。
   一行：固定子串「启动扫尾」+ 数量 + ids（超长截断），count=0 时不打。净增
   ≤ 8 行。
 - **REQ-0011-03 · 冒烟 Z 组（tests/smoke/smoke-server.mjs 追加，断言经 API——
-  lib.mjs:12-13 边界规则，不直接读 DB）**：
+  lib.mjs:6-7 边界规则，不直接读 DB）**：
   - Z01：复用 WFAPPR fixture 发起 run，waitFor `approval:required` 确认 run 处于
     挂起活动态（D 组同款门），记录 runId；击杀前 GET /api/v1/runs/:id 采样
     events 数组长度 N 与 status='running'。
@@ -303,7 +303,7 @@ AC6 回归面（脚本门禁口径）→ AC7 指针抽样 ≥5。
   initStore :145-225、终态写入 :288-300、ROOT :28-31、双实例注 :179-180）；
   `apps/server/src/server.ts` grep + 分段 read（:55-110 启动/runHandler、
   :150-200 路由与 DELETE、:215-247 shutdown）；`tests/smoke/lib.mjs`:1-130
-  read（边界 :12-13、startServer :71-107、kill 注 :63、SIGKILL 清理 :99）；
+  read（边界 :6-7、startServer :71-107、kill 注 :63、SIGKILL 清理 :99）；
   `tests/smoke/smoke-server.mjs` grep（WFAPPR :43、D 组 :418-436、R02
   :404-406、C 清理 :245-257）；`apps/web/src/legacy/app.js` grep（:581
   runCardMeta）；`apps/web/src/server-sync.js` grep（:106-107、:123-129 stopped
