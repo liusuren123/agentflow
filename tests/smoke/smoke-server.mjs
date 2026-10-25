@@ -1237,6 +1237,91 @@ async function main() {
       { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
   }
 
+  /* J 组：JSON 画布节点（J01-J04 · 迭代 0035 / BK-0038 · SPEC §9 AC3）——mock 实例。
+   * 呈现承载 = reply/webshow 同构 sink：对象/数组序列化汇入 / 字符串原样 /
+   * 空输入 0 项 / 非 JSON 原文降级；零出站佐证 = J01-J03 全链路 mock 模型请求数零增量。 */
+  const jReqBefore = mockModel.requests.length;
+  const jRun = async (wf) => {
+    const sse = await openSse(mockSrv.base, wf);
+    const runId = (await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId;
+    CLEAN.runIds.push(runId);
+    return { sse, runId };
+  };
+  { /* J01 · userinput→prompt(固定 JSON 字面量)→jsoncanvas：out 摘要「已呈现 JSON · 2 项」+ output 事件全文 + run:done.outputs 含全文 */
+    const json = '{"a":1,"b":2}';
+    const wfJ01 = {
+      name: 'smoke-jsoncanvas-object',
+      nodes: [
+        { id: 1, type: 'userinput', x: 40, y: 100, params: { var: 'question', defv: '冒烟测试问题' } },
+        { id: 2, type: 'prompt', x: 320, y: 100, params: { tpl: '{"a":1,"b":2}' } },
+        { id: 3, type: 'jsoncanvas', x: 600, y: 100, title: 'JSON 画布' },
+      ],
+      edges: [
+        { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+        { id: 2, fn: 2, fp: 0, tn: 3, tp: 0 },
+      ],
+      inputs: { question: '冒烟测试问题' },
+    };
+    const { sse } = await jRun(wfJ01);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const jcDone = sse.events.find((e) => e.type === 'node:done' && e.id === 3);
+    const outs = sse.events.filter((e) => e.type === 'output');
+    C.ok(done.ok === true
+      && jcDone?.out === '已呈现 JSON · 2 项'
+      && outs.length === 1 && outs[0]?.text === json
+      && Array.isArray(done.outputs) && done.outputs.includes(json),
+      'J01', 'userinput→prompt(固定 JSON)→jsoncanvas：jsoncanvas node:done.out === 「已呈现 JSON · 2 项」（顶层键数 N=2）；output 事件恰 1 条且 text=该 JSON（字符串原样通道）；run:done.outputs 含该 JSON（ctx.outputs 汇入）',
+      { expected: 'JSON 序列化汇入 + 摘要 2 项 + outputs 落 run 产物', actual: JSON.stringify({ jcOut: jcDone?.out, outputs: outs.map((o) => o.text), runOutputs: done.outputs }).slice(0, 300), ctx: 'mock 实例 POST /api/v1/run（jsoncanvas 零参数）' });
+  }
+  { /* J02 · trigger→jsoncanvas 空输入如实呈现：__trigger 哨兵 → 空串，out=「已呈现 JSON · 0 项」不伪造内容 */
+    const wfJ02 = {
+      name: 'smoke-jsoncanvas-empty',
+      nodes: [
+        { id: 1, type: 'trigger', x: 40, y: 100, title: '手动触发' },
+        { id: 2, type: 'jsoncanvas', x: 320, y: 100, title: 'JSON 画布' },
+      ],
+      edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
+    };
+    const { sse } = await jRun(wfJ02);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const jcDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    C.ok(done.ok === true && jcDone?.out === '已呈现 JSON · 0 项',
+      'J02', 'trigger→jsoncanvas 直连（__trigger 哨兵输入）：node:done.out === 「已呈现 JSON · 0 项」（空输入如实空呈现，不伪造内容）',
+      { expected: '0 项空呈现摘要', actual: JSON.stringify({ jcOut: jcDone?.out, ok: done.ok }), ctx: 'mock 实例 POST /api/v1/run' });
+  }
+  { /* J03 · 非 JSON 字符串原样透传：prompt tpl=hello → out「已呈现原文 · 5 字（非 JSON，前端原文降级）」+ output text=hello */
+    const wfJ03 = {
+      name: 'smoke-jsoncanvas-prose',
+      nodes: [
+        { id: 1, type: 'userinput', x: 40, y: 100, params: { var: 'question', defv: '冒烟测试问题' } },
+        { id: 2, type: 'prompt', x: 320, y: 100, params: { tpl: 'hello' } },
+        { id: 3, type: 'jsoncanvas', x: 600, y: 100, title: 'JSON 画布' },
+      ],
+      edges: [
+        { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+        { id: 2, fn: 2, fp: 0, tn: 3, tp: 0 },
+      ],
+      inputs: { question: '冒烟测试问题' },
+    };
+    const { sse } = await jRun(wfJ03);
+    const done = await sse.waitFor((e) => e.type === 'run:done', 30000);
+    await sse.waitEnd(10000);
+    const jcDone = sse.events.find((e) => e.type === 'node:done' && e.id === 3);
+    const outs = sse.events.filter((e) => e.type === 'output');
+    C.ok(done.ok === true
+      && jcDone?.out === '已呈现原文 · 5 字（非 JSON，前端原文降级）'
+      && outs.length === 1 && outs[0]?.text === 'hello',
+      'J03', 'prompt(tpl=hello)→jsoncanvas：非 JSON 字符串原样透传（output text=hello）；node:done.out === 「已呈现原文 · 5 字（非 JSON，前端原文降级）」（不谎称已呈现 JSON）',
+      { expected: '字符串原样 + 原文降级摘要', actual: JSON.stringify({ jcOut: jcDone?.out, outputs: outs.map((o) => o.text) }).slice(0, 300), ctx: 'mock 实例 POST /api/v1/run（字符串原样通道）' });
+  }
+  { /* J04 · 零出站佐证：J01-J03 全链路 mock 模型请求数零增量（呈现承载 = 纯数据变换 + 事件转发） */
+    C.ok(mockModel.requests.length === jReqBefore,
+      'J04', 'J01-J03 三次 jsoncanvas 全链路 run 的 mock 模型请求数零增量（零出站零进程零新依赖的运行时佐证）',
+      { expected: '请求增量 0', actual: String(mockModel.requests.length - jReqBefore), ctx: 'mockModel.requests 计数（J01 前采样 vs J03 后）' });
+  }
+
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例
    * 隔离（不杀主实例：C01/C03 清理与实例收尾依赖其存活）；被测进程经 store.ts ROOT 推导
    * 共享仓库根 data/agentflow.db（与 spawn cwd 无关），重启实例的启动扫尾即触达本组悬挂行。 */

@@ -1,8 +1,8 @@
 # ADR-0015 · 呈现三件套节点分批修宪方案草案（网页展示 / 终端只读流 / JSON 画布）
 
 - 状态：**已获用户 issue#3 批复（2026-10-23T15:49:32Z 承继）· BK-0036 实施轮已消费
-  （迭代 0033）· BK-0037 实施轮已消费（迭代 0034）· BK-0038 待实施（JSON 画布修宪轮
-  ——链终轮）——原文其余按草案态保留至链终；授权链 = issue#3 用户批复承继
+  （迭代 0033）· BK-0037 实施轮已消费（迭代 0034）· BK-0038 实施轮已消费（迭代 0035）
+  · 链闭合——原文其余按草案态保留；授权链 = issue#3 用户批复承继
   （2026-10-23T15:49:32Z，见 BACKLOG BK-9003 行）**
 - 日期：2026-10-25（BUILD 阶段产出，迭代 0029 / BK-0035，S 项 skipSpec——PRD §7 内嵌定界）
 - 关联：BACKLOG BK-0035（本 SPEC 先行轮，done 归档于迭代 0029 CLOSE）/ BK-0036 /
@@ -259,6 +259,15 @@ gate:update 重录**（迭代 0013 先例）。本 ADR 只列场景形态与波�
 ```text
 触UI=是——修宪轮（授权链 = issue#3 批复承继 2026-10-23T15:49:32Z + ADR-0015（§2.3 DEFS/§3 承载/§4.3 渲染/§5 编排/§6 golden 预案），定界字面一致——ADR-0015 §7 本行即权威字面量）：受影响文件=packages/shared/src/nodes/jsoncanvas/{node.ts,README.md} 新增（node.ts 按 ADR-0015 §2.3 草案定稿：type=jsoncanvas/类目 output/icon box-select（ICON_PATHS 既有键复用）/单入 in-data type any/输出空数组（sink 同构 reply）/params expand(number,default 2,min 0,max 6,step 1)+fmt(toggle,default true)/binding handler=jsoncanvas + capabilities.data=true；终稿代码块归实施 SPEC）+ nodes.ts 聚合层 +1 import +1 键 + nodes.baseline.json 重产（18→19 键，经批准通道）+ 守卫/契约测试联动（nodes-dirs D===19、defs-drift +1、readme-consistency、handlers-coverage 随 handler 键自动满足）+ 呈现承载（jsoncanvas handler 新键入 BASIC_HANDLERS，reply 同构 sink：输入 JSON 序列化 ctx.outputs 汇入 + out 摘要，非 JSON 输入 warn 如实降级原文呈现）+ 前端三文件（app.js 结构化树/折叠呈现（JSON.parse 失败如实降级原文，ADR-0015 §4.3）+ app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动）+ gate 场景增量（新场景 golden-created + s3-library 受波及修宪轮重录；场景编号按落盘时序，预期 s10+）；验收命令口径=npm run build + npm run gate（增量/重录后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言（序列化/降级路径）+ 手动 E2E（结构化数据呈现点位，实施 SPEC 定）；依赖关系=前置 BK-0035 done + BK-0036/0037 之后（链终收口）；实施序=BK-0036 → BK-0037 → BK-0038；晋升条件=BK-0035 CLOSE 后随链晋升；**本链终轮**——CLOSE 时回执 issue#3 关单（沿 issue#10/11 终轮先例，中间子项不回执）
 ```
+
+> 实施纪要（BK-0038 · 迭代 0035，链终轮）：上方代码块已由实施轮 SPEC 终稿消费
+> （`docs/evolution/iterations/0035/SPEC.md` §2，字面一致）；golden 新场景落盘
+> `s12-jsoncanvas-node`（golden-created 通道，模拟运行 + 树渲染终态采集形态，§6
+> 委托实施 SPEC 定）；s3-library 实测**零波及免重录**——节点库新增「JSON 画布」
+> 条目落位 1600×900 视口折叠线下且 #lib-list 无内部滚动，gate s3 diffPx=0、基线
+> 零变更；gate:update 实际 **0 次**（≤1 合规，三批链 0033/0034/0035 均未消费）；
+> 守卫联动计数 = 20 键 / 42 参数 / 僵尸 +2（param-handler-guard EXPECTED_ZOMBIES 增
+> jsoncanvas[expand,fmt]，服务端零参与前端呈现参数）。
 
 ### 7.1 BK-0036 实施纪要（迭代 0033 BUILD 轮增补，2026-10-25）
 

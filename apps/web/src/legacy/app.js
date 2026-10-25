@@ -1883,6 +1883,7 @@ const RUN_META = {
   webshow:   {dur:500,  out:n=>{ const u=String(paramsOf(n).url||''); return WS_HTTP_S.test(u)?'已呈现网页 · '+u:'未呈现 · 无有效网址（占位降级）'; }},
   approval:  {dur:1300, out:()=>'审批通过 · 值班经理 (模拟)'},
   termview:  {dur:700,  out:()=>'[agentflow] stream ready\n▍ 等宽只读流演示 · 逐行追加\n▍ 本文本为离线模拟文案'},
+  jsoncanvas: {dur:800,  out:()=>'{"工作流":"AgentFlow","版本":2,"特性":["结构化树","可折叠"],"配置":{"主题":"dark","展开层级":2}}'},
 };
 function topoOrder(){
   const indeg = {}; state.nodes.forEach(n=>indeg[n.id]=0);
@@ -1989,6 +1990,111 @@ const termConsume = ev => {
   }
 };
 
+/* ===== jsoncanvas（BK-0038）：结构化树呈现区（ADR-0015 §4.3 · 迭代 0035） =====
+ * 惰性挂载：首个携带数据的消费事件才创建（s0~s11 静态态零波及前提，沿 termEl 先例）；
+ * 只读——纯 div + textContent，无 input/写入面；上游 JSON 不可信，全部内容一律
+ * textContent 注入、零 innerHTML（XSS 结构性排除，webshow sandbox 同级安全必答项）。 */
+const jcFoldClick = ev => {
+  const f = ev.target.closest('.jc-fold'); if(!f) return;
+  const row = f.parentElement;
+  row.classList.toggle('jc-closed');
+  f.textContent = row.classList.contains('jc-closed') ? '▸' : '▾';
+};
+const jtreeEl = id => {
+  const el = nodeEl(id); if(!el) return null;
+  let t = el.querySelector('.node-jtree');
+  if(!t){
+    t = document.createElement('div'); t.className = 'node-jtree';
+    t.addEventListener('click', jcFoldClick);           /* 委托在容器：重渲染不丢监听 */
+    el.insertBefore(t, el.querySelector('.node-out'));  /* .node-out(:775) 恒存在 */
+    measurePorts(); updateEdgesOf([id]);                /* 高度变化 → portCache 刷新（已知陷阱条款） */
+  }
+  return t;
+};
+const jcBuild = (val, depth, expand, fmt) => {
+  const box = document.createElement('div'); box.className = 'jc-val';
+  if(val === null || typeof val !== 'object'){
+    const s = document.createElement('span'); s.className = 'jc-prim';
+    s.textContent = fmt ? String(val) : (JSON.stringify(val) ?? 'null');
+    box.appendChild(s); return box;
+  }
+  const kids = document.createElement('div'); kids.className = 'jc-kids';
+  const entries = Array.isArray(val) ? val.map((v,i)=>[i,v]) : Object.entries(val);
+  for(const [k,v] of entries){
+    const row = document.createElement('div'); row.className = 'jc-row';
+    const key = document.createElement('span'); key.className = 'jc-key';
+    key.textContent = Array.isArray(val) ? '['+k+']' : k+':';
+    row.appendChild(key);
+    if(v !== null && typeof v === 'object'){
+      const open = depth + 2 <= expand;                 /* 子层号 ≤ expand 才默认展开（expand=0 全折叠） */
+      if(!open) row.classList.add('jc-closed');
+      const fold = document.createElement('span'); fold.className = 'jc-fold';
+      fold.textContent = open ? '▾' : '▸';
+      row.appendChild(fold);
+      const n = Array.isArray(v) ? v.length : Object.keys(v).length;
+      const badge = document.createElement('span'); badge.className = 'jc-badge';
+      badge.textContent = Array.isArray(v) ? 'Array('+n+')' : '{'+n+'}';
+      row.appendChild(badge);
+      row.appendChild(jcBuild(v, depth + 1, expand, fmt));
+    } else {
+      const s = document.createElement('span'); s.className = 'jc-prim';
+      s.textContent = fmt ? (typeof v === 'string' ? '"'+v+'"' : String(v)) : JSON.stringify(v);
+      row.appendChild(s);
+    }
+    kids.appendChild(row);
+  }
+  box.appendChild(kids);
+  return box;
+};
+const jcRender = (id, text) => {
+  const n = nodeById(id); if(!n || n.bypass) return;
+  const t = jtreeEl(id); if(!t) return;
+  t.innerHTML = '';                                     /* 重渲染语义：最新文本为权威 */
+  let val;
+  try { val = JSON.parse(String(text ?? '')); }
+  catch {                                               /* parse 失败如实降级原文 + warn（不伪造树） */
+    const fb = document.createElement('div'); fb.className = 'node-jtree-fallback';
+    fb.textContent = String(text ?? '');
+    const w = document.createElement('div'); w.className = 'node-jtree-warn';
+    w.textContent = '注意：非 JSON 文本 · 已按原文降级呈现';
+    t.appendChild(fb); t.appendChild(w);
+    measurePorts(); updateEdgesOf([id]);
+    return;
+  }
+  const ex = Number(paramsOf(n).expand);
+  const expand = Number.isFinite(ex) ? Math.min(6, Math.max(0, Math.round(ex))) : 2;
+  if(paramsOf(n).fmt !== false){
+    t.appendChild(jcBuild(val, 0, expand, true));
+  } else {                                              /* fmt=false：紧凑原文（无缩进单段） */
+    const fb = document.createElement('div'); fb.className = 'node-jtree-fallback';
+    let compact = '';
+    try { compact = JSON.stringify(val) ?? String(val); } catch { compact = String(val); }
+    fb.textContent = compact;
+    t.appendChild(fb);
+  }
+  measurePorts(); updateEdgesOf([id]);
+};
+let jcPending = null;  /* output 事件归属 = 最近 node:start 的 jsoncanvas 节点
+  （events.ts:25 output 无 id；引擎顺序执行 engine.ts:136-142 保证唯一在途） */
+const jsonConsume = ev => {
+  if(ev.type === 'node:start'){
+    const n = nodeById(ev.id);
+    jcPending = (n && n.type === 'jsoncanvas') ? ev.id : null;
+    return;
+  }
+  if(ev.type === 'output'){
+    if(jcPending != null) jcRender(jcPending, ev.text);  /* 真实运行权威全文通道（§1 裁示） */
+    return;
+  }
+  /* node:done：本节点 done → 清归属 + 树空时以 out 兜底（模拟执行/降级路径）；
+     上游 done → 零操作（真实运行树数据源 = 本节点 handler 的 output 全文，非上游摘要） */
+  const n = nodeById(ev.id);
+  if(!n || n.type !== 'jsoncanvas') return;
+  jcPending = null;
+  const t = nodeEl(ev.id)?.querySelector('.node-jtree');
+  if(!t || !t.firstChild) jcRender(ev.id, ev.out);
+};
+
 async function runWorkflow(){
   if(running) return;
   if(!state.nodes.length){ toast('画布为空，请先添加节点','warn'); return; }
@@ -2088,6 +2194,7 @@ async function runSimulated(){
     if(stopFlag){ el.classList.add('st-error'); setNodeOut(id,'已中止'); measurePorts(); updateEdgesOf([id]); continue; }
     el.classList.add('st-done');
     if(n.type==='termview'){ termConsume({id,type:'node:delta',text:outText}); termConsume({id,type:'node:done'}); }
+    if(n.type==='jsoncanvas'){ jsonConsume({id, type:'node:done', out: outText}); }
     setNodeOut(id, outText);
     measurePorts(); updateEdgesOf([id]);
     flashEdges(state.edges.filter(e=>e.fn===id&&(isCond(n.type)?e.fp===branch[id]:true)).map(e=>e.id));
@@ -2220,6 +2327,9 @@ async function runReal(){
     /* termview 消费钩子（BK-0037）：delta/done/error 三事件旁路进呈现区；
        既有 case 语义零触碰——.node-out 摘要行为保持原样（容器纪律） */
     if(ev.type==='node:delta'||ev.type==='node:done'||ev.type==='node:error') termConsume(ev);
+    /* jsoncanvas 消费钩子（BK-0038）：start 归属 / output 全文 / done 兜底三旁路；
+       既有 case 语义零触碰——.node-out 摘要行为保持原样（容器纪律） */
+    if(ev.type==='node:start'||ev.type==='node:done'||ev.type==='output') jsonConsume(ev);
     switch(ev.type){
       case 'run:accepted': ENGINE.runId = ev.runId; break;
       case 'run:start':
