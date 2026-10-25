@@ -88,6 +88,7 @@ function extractEngine() {
 const EXPECTED_ZOMBIES = [
   ['trigger', ['mode', 'cron', 'path']],
   ['userinput', ['vtype', 'req']],
+  ['termview', ['lines', 'autoscroll']],
 ];
 
 test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反向僵尸清单精确断言）', () => {
@@ -130,9 +131,9 @@ test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反�
     '僵尸参数清单漂移——提示同步 NDP §6.4 与本清单（新僵尸出现或旧僵尸被接通）',
   );
 
-  /* 两数分开（AC3）：36 已定义 / 31 已实现 = 总数 − 僵尸数（由清单推导，不硬编码） */
+  /* 两数分开（AC3）：38 已定义 / 31 已实现 = 总数 − 僵尸数（由清单推导，不硬编码） */
   const total = Object.values(NODES).reduce((n, d) => n + d.params.length, 0);
-  assert.equal(total, 36, '已定义参数总数应为 36（结构信号，非质量信号）');
+  assert.equal(total, 38, '已定义参数总数应为 38（结构信号，非质量信号）');
   const zombieCount = EXPECTED_ZOMBIES.reduce((n, [, ks]) => n + ks.length, 0);
   const refCount = [...refs.values()].reduce((n, s) => n + s.size, 0);
   assert.equal(

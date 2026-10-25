@@ -1,9 +1,9 @@
 /* ================================================================
  *  nodes.ts — 节点注册表聚合层（单一事实源）
  *  内容自 index.html 的 DEFS 逐字移植（2026-10 定稿，宪法保护对象）。
- *  · 迭代 0021~0022 / BK-0021（NDP 目录制迁移）终态：17 目录全量
+ *  · 迭代 0021~0022 / BK-0021（NDP 目录制迁移）终态：18 目录全量
  *    （trigger/userinput/llm/agent/retrieval/http/code/condition/delay +
- *    prompt/websearch/notify/loop/merge/reply/setvar/approval）为
+ *    prompt/websearch/notify/loop/merge/reply/termview/setvar/approval）为
  *    经 schema 加载校验 + 反向合成的 NDP 纯数据模块，聚合层零内联
  *    定义。内容零漂移由 test/nodes.baseline.json 常驻 Buffer 级比对
  *    守护（docs/node-definition-protocol-migration-spec.md §2/§5.1）；
@@ -31,6 +31,7 @@ import notifyDef from './nodes/notify/node.js';
 import loopDef from './nodes/loop/node.js';
 import mergeDef from './nodes/merge/node.js';
 import replyDef from './nodes/reply/node.js';
+import termviewDef from './nodes/termview/node.js';
 import setvarDef from './nodes/setvar/node.js';
 import approvalDef from './nodes/approval/node.js';
 
@@ -127,6 +128,7 @@ export const NODES: Record<string, NodeDef> = {
   delay: synthesize(loadJsonDef(delayDef)),
   merge: synthesize(loadJsonDef(mergeDef)),
   reply: synthesize(loadJsonDef(replyDef)),
+  termview: synthesize(loadJsonDef(termviewDef)),
   setvar: synthesize(loadJsonDef(setvarDef)),
   approval: synthesize(loadJsonDef(approvalDef)),
 };

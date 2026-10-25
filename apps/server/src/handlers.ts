@@ -231,6 +231,13 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
     return { value: rendered, out: `已输出回复 · ${rendered.length} 字` };
   },
 
+  async termview(ctx, { input, emit }): Promise<NodeResult> {
+    const text = toStr(input);
+    ctx.outputs!.push(text);
+    emit('output', { text });
+    return { value: text, out: `已呈现流 · ${text.length} 字` };
+  },
+
   async setvar(_ctx, { p, input, vars }): Promise<NodeResult> {
     const name = p.name || 'answer';
     vars[name] = input ?? null;

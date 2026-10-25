@@ -216,6 +216,15 @@ const goalReady = page => page.waitForFunction(
   () => document.querySelectorAll('#goal-panel .gp-msg').length === 2,
   undefined, { timeout: 10000, polling: 100 });
 
+/* ---------- s10 终端只读流节点场景基建（ADR-0015 §6 · 迭代 0034 / BK-0037 修宪轮） ----------
+   采集面 = output 类目色标题栏 + code 图标（既有键复用）+ lines/autoscroll 两 widget 行
+   + in-stream 单入端口 + trigger→termview 一条连线；呈现区为惰性挂载（首个 delta 才创建）
+   → 静态态不出现 → 场景与 s8 同构确定。 */
+const TERMVIEW_WF_SEED = JSON.stringify({ tabs: [{ name: '终端只读流示例', nodes: [
+  { id: 1, type: 'trigger', x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'termview', x: 410, y: 250, title: '终端只读流' },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -232,6 +241,8 @@ const SCENARIOS = [
   { id: 's9-goal-panel-online', routes: SESSION_ROUTES,
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), AGENT_WF_SEED),
     steps: [goalOpen], ready: goalReady },
+  { id: 's10-termview-node', steps: [],
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERMVIEW_WF_SEED) },
 ];
 
 const runScenario = async (browser, sc) => {

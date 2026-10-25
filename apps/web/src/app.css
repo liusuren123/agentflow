@@ -584,3 +584,10 @@ body.running #float-bar{display:block}
   border-radius:6px;background:transparent;color:#c66;font-size:11px;cursor:pointer;display:none}
 #goal-panel.turning .gp-stop{display:block}
 #goal-panel.turning .gp-send{display:none}
+
+/* ================= 终端只读流（termview · ADR-0015 §4.2 · 迭代 0034） ================= */
+.node-term{display:block;margin:4px 8px 8px;padding:6px 8px;background:rgba(0,0,0,.45);border-left:2px solid #34d399;
+  font-family:var(--mono);font-size:11px;line-height:1.45;color:#9fe0c0;white-space:pre-wrap;word-break:break-all;
+  max-height:160px;overflow-y:auto;user-select:text}
+.node.collapsed .node-term{display:none}
+.node-term-err{color:var(--err)}

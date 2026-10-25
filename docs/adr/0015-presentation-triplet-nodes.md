@@ -1,7 +1,8 @@
 # ADR-0015 · 呈现三件套节点分批修宪方案草案（网页展示 / 终端只读流 / JSON 画布）
 
-- 状态：**草案 · 待实施轮消费（BK-0036 网页展示修宪轮 / BK-0037 终端只读流修宪轮 /
-  BK-0038 JSON 画布修宪轮——链终轮）；授权链 = issue#3 用户批复承继
+- 状态：**草案 · 已获用户 issue#3 批复（2026-10-23T15:49:32Z 承继）· BK-0037 实施轮
+  已消费（迭代 0034）· BK-0036 / BK-0038 待实施（网页展示修宪轮 / JSON 画布修宪轮
+  ——链终轮）——原文其余按草案态保留至链终；授权链 = issue#3 用户批复承继
   （2026-10-23T15:49:32Z，见 BACKLOG BK-9003 行）**
 - 日期：2026-10-25（BUILD 阶段产出，迭代 0029 / BK-0035，S 项 skipSpec——PRD §7 内嵌定界）
 - 关联：BACKLOG BK-0035（本 SPEC 先行轮，done 归档于迭代 0029 CLOSE）/ BK-0036 /
@@ -242,6 +243,14 @@ gate:update 重录**（迭代 0013 先例）。本 ADR 只列场景形态与波�
 ```text
 触UI=是——修宪轮（授权链 = issue#3 批复承继 2026-10-23T15:49:32Z + ADR-0015（§2.2 DEFS/§3 承载/§4.2 渲染与 SSE 流式消费/§4.4 PTY 边界切割/§5 编排/§6 golden 预案），定界字面一致——ADR-0015 §7 本行即权威字面量）：受影响文件=packages/shared/src/nodes/termview/{node.ts,README.md} 新增（node.ts 按 ADR-0015 §2.2 草案定稿：type=termview/类目 output/icon code（ICON_PATHS 既有键复用）/单入 in-stream type any/输出空数组（sink 同构 reply）/params lines(number,default 200,min 20,max 2000,step 20)+autoscroll(toggle,default true)/binding handler=termview + capabilities.data=true；终稿代码块归实施 SPEC）+ nodes.ts 聚合层 +1 import +1 键 + nodes.baseline.json 重产（17→18 键，经批准通道）+ 守卫/契约测试联动（nodes-dirs D===18、defs-drift +1、readme-consistency、handlers-coverage 随 handler 键自动满足）+ 呈现承载（termview handler 新键入 BASIC_HANDLERS，reply 同构 sink：上游全文 ctx.outputs 汇入 + out 摘要；流式增量由引擎既有 node:delta 通道承载零引擎改动）+ 前端三文件（app.js 等宽多行只读滚动呈现区（消费 node:delta/node:done，ADR-0015 §4.2）+ app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动）；PTY 边界切割（ADR-0015 §4.4 写死）=只读呈现、无用户输入面、零新依赖零进程零端点，严禁引入 node-pty/PTY 会话（BK-0045 专属面归 ADR-0014 附录 A）；SSE 消费护栏=既有 15 种事件内取用，确需新增事件类型即中止转 needs-approval（BK-0016 先例）；gate 场景增量（新场景 golden-created + s3-library 受波及修宪轮重录；场景编号按落盘时序，预期 s10+）；验收命令口径=npm run build + npm run gate（增量/重录后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言（全文汇入/摘要路径）+ 手动 E2E（流式呈现点位，实施 SPEC 定）；依赖关系=前置 BK-0035 done，建议随 BK-0036 后（复用其节点脚手架先例）；实施序=BK-0036 → BK-0037 → BK-0038；晋升条件=BK-0035 CLOSE 后随链晋升
 ```
+
+> 实施纪要（BK-0037 · 迭代 0034；修复轮按 VERIFY 实测校正 BUG-002）：上方代码块已由
+> 实施轮 SPEC 终稿消费（`docs/evolution/iterations/0034/SPEC.md` §2，字面一致）；golden
+> 新场景落盘 `s10-termview-node`（golden-created 通道）；s3-library 实测**零波及免重录**
+> ——节点库新增行（y≈1116–1177）落在 gate 视口 1600×900 之外且 #lib-list 无内部滚动，
+> 两轮 gate s3 diffPx=0、基线零变更，gate:update 实际 **0 次**（≤1 合规）；守卫联动
+> 计数 = 18 键 / 38 参数 / 僵尸 +2（param-handler-guard EXPECTED_ZOMBIES 增
+> termview[lines,autoscroll]，服务端零参与前端呈现参数）。
 
 ```text
 触UI=是——修宪轮（授权链 = issue#3 批复承继 2026-10-23T15:49:32Z + ADR-0015（§2.3 DEFS/§3 承载/§4.3 渲染/§5 编排/§6 golden 预案），定界字面一致——ADR-0015 §7 本行即权威字面量）：受影响文件=packages/shared/src/nodes/jsoncanvas/{node.ts,README.md} 新增（node.ts 按 ADR-0015 §2.3 草案定稿：type=jsoncanvas/类目 output/icon box-select（ICON_PATHS 既有键复用）/单入 in-data type any/输出空数组（sink 同构 reply）/params expand(number,default 2,min 0,max 6,step 1)+fmt(toggle,default true)/binding handler=jsoncanvas + capabilities.data=true；终稿代码块归实施 SPEC）+ nodes.ts 聚合层 +1 import +1 键 + nodes.baseline.json 重产（18→19 键，经批准通道）+ 守卫/契约测试联动（nodes-dirs D===19、defs-drift +1、readme-consistency、handlers-coverage 随 handler 键自动满足）+ 呈现承载（jsoncanvas handler 新键入 BASIC_HANDLERS，reply 同构 sink：输入 JSON 序列化 ctx.outputs 汇入 + out 摘要，非 JSON 输入 warn 如实降级原文呈现）+ 前端三文件（app.js 结构化树/折叠呈现（JSON.parse 失败如实降级原文，ADR-0015 §4.3）+ app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动）+ gate 场景增量（新场景 golden-created + s3-library 受波及修宪轮重录；场景编号按落盘时序，预期 s10+）；验收命令口径=npm run build + npm run gate（增量/重录后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言（序列化/降级路径）+ 手动 E2E（结构化数据呈现点位，实施 SPEC 定）；依赖关系=前置 BK-0035 done + BK-0036/0037 之后（链终收口）；实施序=BK-0036 → BK-0037 → BK-0038；晋升条件=BK-0035 CLOSE 后随链晋升；**本链终轮**——CLOSE 时回执 issue#3 关单（沿 issue#10/11 终轮先例，中间子项不回执）
