@@ -634,6 +634,34 @@
     ],
     "kw": "variable set assign 变量 赋值 保存"
   },
+  "webshow": {
+    "name": "网页展示",
+    "cat": "output",
+    "icon": "globe",
+    "desc": "将上游网址以内嵌安全视图呈现（终点节点）。",
+    "inputs": [
+      {
+        "n": "网址",
+        "t": "any"
+      }
+    ],
+    "outputs": [],
+    "params": [
+      {
+        "k": "url",
+        "l": "兜底网址",
+        "t": "text",
+        "d": ""
+      },
+      {
+        "k": "sandbox",
+        "l": "沙箱隔离",
+        "t": "toggle",
+        "d": true
+      }
+    ],
+    "kw": "webshow 网页 展示 预览 iframe 呈现"
+  },
   "approval": {
     "name": "人工审批",
     "cat": "human",

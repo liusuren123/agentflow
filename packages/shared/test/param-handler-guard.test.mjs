@@ -84,10 +84,14 @@ function extractEngine() {
   return { refs, unattributed };
 }
 
-/* ---- 期望僵尸清单（NDP §6.4：已声明未接入实现的 UI-only 参数）---- */
+/* ---- 期望僵尸清单（NDP §6.4：已声明未接入实现的 UI-only 参数）----
+ * webshow.sandbox（迭代 0033）：iframe sandbox 属性开关，消费面在前端
+ * （app.js setNodeWebshow 读 paramsOf(n).sandbox），服务端 handler 无语义——
+ * UI-only 僵尸，与 trigger.mode/cron/path 同类。 */
 const EXPECTED_ZOMBIES = [
   ['trigger', ['mode', 'cron', 'path']],
   ['userinput', ['vtype', 'req']],
+  ['webshow', ['sandbox']],
 ];
 
 test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反向僵尸清单精确断言）', () => {
@@ -130,9 +134,9 @@ test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反�
     '僵尸参数清单漂移——提示同步 NDP §6.4 与本清单（新僵尸出现或旧僵尸被接通）',
   );
 
-  /* 两数分开（AC3）：36 已定义 / 31 已实现 = 总数 − 僵尸数（由清单推导，不硬编码） */
+  /* 两数分开（AC3）：38 已定义 / 32 已实现 = 总数 − 僵尸数（由清单推导，不硬编码） */
   const total = Object.values(NODES).reduce((n, d) => n + d.params.length, 0);
-  assert.equal(total, 36, '已定义参数总数应为 36（结构信号，非质量信号）');
+  assert.equal(total, 38, '已定义参数总数应为 38（结构信号，非质量信号）');
   const zombieCount = EXPECTED_ZOMBIES.reduce((n, [, ks]) => n + ks.length, 0);
   const refCount = [...refs.values()].reduce((n, s) => n + s.size, 0);
   assert.equal(

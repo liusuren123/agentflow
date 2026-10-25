@@ -185,6 +185,15 @@ const AGENT_WF_SEED = JSON.stringify({ tabs: [{ name: '智能体示例', nodes: 
   { id: 2, type: 'agent',   x: 410, y: 250, title: '通用智能体' },
 ], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
 
+/* ---------- s10 网页展示节点场景基建（ADR-0015 §6 · 迭代 0033 / BK-0036 修宪轮） ----------
+   触发形态 = localStorage 预置含 webshow 节点的最小工作流（LS_KEY='agentflow.v2'，
+   app.js loadLocal 消费）；离线静态态（无路由拦截）；采集面 = output 类目色标题栏 +
+   globe 图标 + in-url 端口 + 兜底网址/沙箱隔离 widget 行 + 一条连线；不变量 = 公共六键。 */
+const WEBSHOW_WF_SEED = JSON.stringify({ tabs: [{ name: '网页展示示例', nodes: [
+  { id: 1, type: 'trigger', x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'webshow', x: 410, y: 250, title: '网页展示' },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+
 /* ---------- s9 goal 会话面板在线态场景基建（ADR-0013 §6 · 迭代 0032 / BK-0034） ----------
    面板打开路径（app.js openGoalPanel）：refreshSessions（GET list）→ 同名「通用智能体」
    恢复优先命中 → fetchSessionDetail（GET :id）→ 两条消息气泡回放；无 POST（新建/续聊/
@@ -232,6 +241,8 @@ const SCENARIOS = [
   { id: 's9-goal-panel-online', routes: SESSION_ROUTES,
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), AGENT_WF_SEED),
     steps: [goalOpen], ready: goalReady },
+  { id: 's10-webshow-node', steps: [],
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), WEBSHOW_WF_SEED) },
 ];
 
 const runScenario = async (browser, sc) => {

@@ -237,6 +237,25 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
     return { value: input ?? null, out: `${name} 已写入变量` };
   },
 
+  /* webshow（迭代 0033 / BK-0036 修宪轮）：呈现型 sink，reply 同构。
+     协议白名单 http(s)：与前端 app.js WS_HTTP_S 同字面量双保险（ADR-0015 §4.1，
+     两端各自独立校验）。零出站：不抓取、不代理、不转存——本节点仅校验并透传
+     网址字符串，内容获取归既有 http 节点（出站走 guard.ts 的现状不变）。 */
+  async webshow(ctx, { p, input, emit }): Promise<NodeResult> {
+    const cand = [strInput(input, ''), String(p.url ?? '')]   /* 输入端口值优先，静态兜底参数兜底 */
+      .map(s => s.trim())
+      .find(s => /^https?:\/\/\S+$/i.test(s));
+    if (!cand) {
+      /* 降级分支：warn + 占位，不伪造结果（outputs 不汇入、不 emit output 事件） */
+      emit('log', { lvl: 'warn',
+        msg: 'webshow：输入与静态兜底均无有效 http(s) 网址，已占位降级呈现（不伪造结果）' });
+      return { value: '', out: '未呈现 · 无有效网址（占位降级）' };
+    }
+    ctx.outputs!.push(cand);                                  /* reply 同构：run 产物汇入 */
+    emit('output', { text: cand });                           /* 既有事件类型，零新增 */
+    return { value: cand, out: `已呈现网页 · ${preview(cand, 80)}` };
+  },
+
   async approval(_ctx, { n, p, input, emit, approvalWaiters, byId, ctx: runCtx }): Promise<NodeResult> {
     const policy = p.to || '挂起';
     let ok = true, note = '';

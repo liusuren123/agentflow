@@ -259,6 +259,10 @@ input[type=number].num-dragging{cursor:ew-resize;user-select:none;color:#fff!imp
 .node-out{display:none;margin:4px 8px 8px;padding:6px 8px;background:rgba(0,0,0,.3);border-left:2px solid #34d399;
   font-size:11px;color:#9fe0c0;line-height:1.45;word-break:break-all;max-height:66px;overflow:hidden}
 .node.st-done .node-out{display:block}
+/* webshow 网页呈现（迭代 0033 / BK-0036 修宪轮：新增选择器纯插入，不改既有行） */
+.node-out.ws-on{max-height:220px}
+.node-out .ws-frame{display:block;width:100%;height:200px;border:1px solid var(--border2);border-radius:4px;background:#fff}
+.node-out .ws-placeholder{font-size:11px;color:var(--text3);padding:2px 0}
 
 /* 框选 */
 #boxsel{position:absolute;border:1px dashed var(--accent);background:var(--accent-soft);display:none;z-index:15;pointer-events:none}

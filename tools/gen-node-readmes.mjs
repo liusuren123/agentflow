@@ -55,6 +55,7 @@ const MANUAL_NOTES = {
   merge: '多入边取值语义=首条非 undefined（engine.ts:92-93 已知债务）；「任一到达」取首条非 null。',
   reply: '终点节点：emit(\'output\') + ctx.outputs 汇入运行产物（handlers.ts reply）。',
   setvar: '纯数据：将输入写入运行级变量表 vars[name]（handlers.ts setvar）。',
+  webshow: 'sink 呈现节点：http(s) 白名单校验透传 + 占位降级（不伪造结果）；服务端零出站——不抓取/不代理/不转存，抓取归 http 节点；iframe 沙箱呈现在前端（sandbox 默认最严）。',
   approval: '人工挂起 10 分钟超时自动通过；智能体互审 role=node:<id>（迭代 0016/BK-0017），裁决失败按超时策略降级、挂起策略回退人工；审计落 store。',
   agent: 'goal 模式智能体：maxSteps 步数预算工具循环（v1 无 token 硬顶）；每次执行绑定一个持久会话（out-session={sessionId}，goal 面板 BK-0034 消费）；模型未配置/异常如实失败不降级。',
 };
@@ -102,7 +103,7 @@ function nodeReadme(def) {
 function indexReadme(types, defs) {
   const L = ['<!-- 生成物：tools/gen-node-readmes.mjs 生成，勿手改；重跑命令见下 -->', '',
     '# 节点总索引（NDP v0.2）', '',
-    '17 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。',
+    '18 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。',
     '生成器：仓库根执行 `npm run build:shared && node tools/gen-node-readmes.mjs`（幂等；**生成物勿手改**——人工文案持有于生成器 MANUAL_NOTES）。', '',
     '| type | 目录 | 名称 | 一句话用途 |', '| --- | --- | --- | --- |'];
   for (const t of types) L.push(`| \`${t}\` | \`nodes/${t}/\` | ${defs[t].identity.name} | ${defs[t].identity.description} |`);
@@ -112,7 +113,7 @@ function indexReadme(types, defs) {
 /* ---------------- 主流程（读 dist → 生成 → 只写有变化文件） ---------------- */
 const { NODES } = await import(pathToFileURL(join(DIST, 'index.js')).href);
 const types = Object.keys(NODES); /* 声明序唯一来源 */
-if (types.length !== 17) throw new Error(`dist/index.js NODES 键数 ${types.length} ≠ 17（先 npm run build:shared？）`);
+if (types.length !== 18) throw new Error(`dist/index.js NODES 键数 ${types.length} ≠ 18（先 npm run build:shared？）`);
 const defs = {};
 for (const t of types) {
   defs[t] = (await import(pathToFileURL(join(DIST, 'nodes', t, 'node.js')).href)).default;
