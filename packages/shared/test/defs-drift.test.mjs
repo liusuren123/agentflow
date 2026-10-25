@@ -33,8 +33,9 @@ const EXPECTED_DEFAULTS = {
   approval:   { role: '值班经理', to: '挂起' },
 };
 
-test('DEFS 默认值 38/38 全量断言（字面量期望，防未经 ADR 的漂移）', () => {
+test('DEFS 默认值 42/42 全量断言（字面量期望，防未经 ADR 的漂移）', () => {
   /* ① 全表计数自检：期望表自身被误删行时必须红，防止「抽样假绿」 */
+  /* 计数护栏值变更（经批准的 DEFS 增删）时，测试名字面量须随改——BK-0053 */
   assert.equal(
     Object.values(EXPECTED_DEFAULTS).reduce((n, e) => n + Object.keys(e).length, 0),
     42,
