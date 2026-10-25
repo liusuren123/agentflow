@@ -1,0 +1,27 @@
+# 首跑输出重建留档（同 0037/0038 双留档先例）：首轮 npm run gate 实跑于合并提交 ce6cfe3 后，
+# exit 1；完整 stdout 本会话内捕获，因与复跑同路径 tee 被覆盖，此处按捕获原文重建。
+# 红因：s3-library diffPx=23（左侧竖向图标工具栏下缘零星散点，x≈20/y≈780-890，
+# DOM 不变量全过）——与 0037 归档「s3 本机采样抖动，以 CI 为权威」同形态；非合并回归。
+# 复跑两次均绿（gate.log 为最终权威留档，16 场景全 pass diffPx=0，exit 0）。
+> agentflow@1.0.0 gate
+> node tools/pixel-gate/gate.mjs
+
+✓ s0-initial       pass · diffPx=0
+✓ s1-select-node   pass · diffPx=0
+✓ s2-settings      pass · diffPx=0
+✗ s3-library       FAIL · diffPx=23
+✓ s4-workflows-online pass · diffPx=0
+✓ s5-history-online pass · diffPx=0
+✓ s6-log-panel     pass · diffPx=0
+✓ s7-log-filter-warn pass · diffPx=0
+✓ s8-agent-node    pass · diffPx=0
+✓ s9-goal-panel-online pass · diffPx=0
+✓ s10-webshow-node pass · diffPx=0
+✓ s11-termview-node pass · diffPx=0
+✓ s12-jsoncanvas-node pass · diffPx=0
+✓ s13-approval-role-picker pass · diffPx=0
+✓ s14-code-lang-sync pass · diffPx=0
+✓ s15-caps-panel   pass · diffPx=0
+
+宪法门禁：1 个场景违宪 ✗（差异详见 tests/golden/diff/）
+[exit code 1]
