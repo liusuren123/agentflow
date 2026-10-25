@@ -1,5 +1,5 @@
 /* ================================================================
- *  defs-drift.test.mjs — DEFS 默认值漂移防护（40/40 全量字面量断言）
+ *  defs-drift.test.mjs — DEFS 默认值漂移防护（42/42 全量字面量断言）
  *  期望值表源自 2026-10 定稿 DEFS（packages/shared/src/nodes.ts），宪法保护对象。
  *  本测试变红 = 出现未经 ADR 的契约变更——先走宪法第 3 条流程，再改本表。
  * ================================================================ */
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { NODES, paramDefaultsOf } from '../dist/index.js';
 
 /* 字面量期望表（SPEC §4.1 机器实测快照，BUILD 逐字抄录，禁手打重写防笔误）：
- * 19 种节点 × 40 参数 = nodes.ts 各 params[].d 的 2026-10 定稿值 */
+ * 20 种节点 × 42 参数 = nodes.ts 各 params[].d 的 2026-10 定稿值 */
 const EXPECTED_DEFAULTS = {
   trigger:    { mode: '手动触发', cron: '0 9 * * 1-5', path: '/api/run' },
   userinput:  { var: 'question', vtype: '文本', req: true, defv: '如何申请退货?' },
@@ -29,6 +29,7 @@ const EXPECTED_DEFAULTS = {
   setvar:     { name: 'answer' },
   webshow:    { url: '', sandbox: true },
   termview:   { lines: 200, autoscroll: true },
+  jsoncanvas: { expand: 2, fmt: true },
   approval:   { role: '值班经理', to: '挂起' },
 };
 
@@ -36,8 +37,8 @@ test('DEFS 默认值 38/38 全量断言（字面量期望，防未经 ADR 的漂
   /* ① 全表计数自检：期望表自身被误删行时必须红，防止「抽样假绿」 */
   assert.equal(
     Object.values(EXPECTED_DEFAULTS).reduce((n, e) => n + Object.keys(e).length, 0),
-    40,
-    '期望表参数总数应为 40——表自身被误改',
+    42,
+    '期望表参数总数应为 42——表自身被误改',
   );
 
   /* ② 节点键集对表：新增/删除节点必须红 */

@@ -234,6 +234,20 @@ const TERMVIEW_WF_SEED = JSON.stringify({ tabs: [{ name: '终端只读流示例'
   { id: 2, type: 'termview', x: 410, y: 250, title: '终端只读流' },
 ], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
 
+/* ---------- s12 JSON 画布节点场景基建（ADR-0015 §6 · 迭代 0035 / BK-0038 修宪轮） ----------
+   seed 同 s8/s10/s11 形态（localStorage 预置最小工作流）；steps 点击 #float-run 走
+   runSimulated（gate 静态托管 probe 失败 → 离线分支）；ready 等待运行退场且树渲染
+   达标（4 顶层行）——PRD REQ-0038-05「树渲染完成终态」的机器判据。 */
+const JSONCANVAS_WF_SEED = JSON.stringify({ tabs: [{ name: 'JSON 画布示例', nodes: [
+  { id: 1, type: 'trigger', x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'jsoncanvas', x: 410, y: 250, title: 'JSON 画布' },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+const jcRunClick = page => page.evaluate(() => document.getElementById('float-run').click());
+const jcReady = page => page.waitForFunction(
+  () => !document.body.classList.contains('running')
+     && document.querySelectorAll('.node-jtree .jc-row').length >= 4,
+  undefined, { timeout: 10000, polling: 100 });
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -254,6 +268,8 @@ const SCENARIOS = [
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), WEBSHOW_WF_SEED) },
   { id: 's11-termview-node', steps: [],
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERMVIEW_WF_SEED) },
+  { id: 's12-jsoncanvas-node', steps: [jcRunClick], ready: jcReady,
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), JSONCANVAS_WF_SEED) },
 ];
 
 const runScenario = async (browser, sc) => {

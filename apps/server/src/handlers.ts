@@ -263,6 +263,43 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
     return { value: cand, out: `已呈现网页 · ${preview(cand, 80)}` };
   },
 
+  /* jsoncanvas（迭代 0035 / BK-0038 修宪轮·链终轮）：呈现型 sink，reply/webshow 同构。
+     语义（ADR-0015 §3）：对象/数组直 JSON.stringify；字符串原样（是否 JSON 交前端
+     parse 裁定）；空输入与 __trigger 哨兵如实空呈现（toStr 同款语义，util.ts:26-34）；
+     序列化失败 warn + 原文降级（不伪造结果）。零出站零进程零文件零新依赖零新 env。 */
+  async jsoncanvas(ctx, { input, emit }): Promise<NodeResult> {
+    const raw: unknown = input;
+    let text = '', degraded = false;
+    if (raw == null || (typeof raw === 'object' && (raw as { __trigger?: unknown }).__trigger)) {
+      /* 空输入 / 触发哨兵 → 空串如实呈现（termview T02 空降级同款纪律） */
+    } else if (typeof raw === 'string') {
+      text = raw;                                          /* 字符串原样（ADR-0015 §3） */
+    } else {
+      try { text = JSON.stringify(raw) ?? ''; }            /* 对象/数组直序列化 */
+      catch { text = toStr(raw); degraded = true; }        /* 序列化失败：warn + 原文降级 */
+    }
+    let items = 0, parsed = false;
+    if (text !== '') {
+      try {
+        const v: unknown = JSON.parse(text);               /* 字符串输入本身是 JSON 亦按结构计数 */
+        parsed = true;
+        items = (v !== null && typeof v === 'object')
+          ? (Array.isArray(v) ? v.length : Object.keys(v as Record<string, unknown>).length)
+          : 1;
+      } catch { parsed = false; items = 1; }               /* 非 JSON 文本按原文一条计 */
+    }
+    ctx.outputs!.push(text);                               /* reply 同构：run 产物汇入 */
+    emit('output', { text });                              /* 既有事件类型，零新增 */
+    if (degraded) emit('log', { lvl: 'warn',
+      msg: 'jsoncanvas：输入无法序列化，已按原文降级呈现（不伪造结果）' });
+    const out = degraded
+      ? `已呈现原文（序列化失败降级） · ${text.length} 字`
+      : parsed ? `已呈现 JSON · ${items} 项`
+      : text === '' ? '已呈现 JSON · 0 项'
+      : `已呈现原文 · ${text.length} 字（非 JSON，前端原文降级）`;
+    return { value: text, out };
+  },
+
   async approval(_ctx, { n, p, input, emit, approvalWaiters, byId, ctx: runCtx }): Promise<NodeResult> {
     const policy = p.to || '挂起';
     let ok = true, note = '';

@@ -693,6 +693,37 @@
     ],
     "kw": "webshow 网页 展示 预览 iframe 呈现"
   },
+  "jsoncanvas": {
+    "name": "JSON 画布",
+    "cat": "output",
+    "icon": "box-select",
+    "desc": "将上游 JSON 数据以结构化树呈现（终点节点）",
+    "inputs": [
+      {
+        "n": "数据",
+        "t": "any"
+      }
+    ],
+    "outputs": [],
+    "params": [
+      {
+        "k": "expand",
+        "l": "展开层级",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 6,
+        "step": 1
+      },
+      {
+        "k": "fmt",
+        "l": "格式化缩进",
+        "t": "toggle",
+        "d": true
+      }
+    ],
+    "kw": "jsoncanvas json 画布 结构化 树 呈现"
+  },
   "approval": {
     "name": "人工审批",
     "cat": "human",

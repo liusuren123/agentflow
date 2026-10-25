@@ -1,0 +1,50 @@
+{
+ "view": "translate(60px, 40px) scale(1)",
+ "zoom": "100%",
+ "nodes": [
+  "1:149,407,300x133",
+  "2:519,327,300x323"
+ ],
+ "cssVars": {
+  "--bg": "#171718",
+  "--panel": "#141414",
+  "--panel2": "#1d1d20",
+  "--panel3": "#262729",
+  "--topbar": "#101018",
+  "--border": "#2b2b2d",
+  "--border2": "#3a3a3e",
+  "--text": "#e2e2e6",
+  "--text2": "#a8a8b0",
+  "--text3": "#6e6e76",
+  "--accent": "#0b8ce9",
+  "--accent-soft": "rgba(11,140,233,.14)",
+  "--ok": "#34d399",
+  "--warn": "#f59e0b",
+  "--err": "#f87171",
+  "--node-bg": "#353535",
+  "--node-border": "#252525",
+  "--node-line": "#2f2f2f",
+  "--widget-line": "#606060",
+  "--cat-input": "#4f8cff",
+  "--cat-chat": "#a06bff",
+  "--cat-knowledge": "#22c55e",
+  "--cat-tools": "#f59e0b",
+  "--cat-logic": "#22d3ee",
+  "--cat-output": "#f472b6",
+  "--cat-human": "#f87171",
+  "--rail-w": "48px",
+  "--sidebar-w": "312px",
+  "--props-w": "264px",
+  "--tabsbar-h": "37px",
+  "--font": "-apple-system,BlinkMacSystemFont,\"Segoe UI\",\"PingFang SC\",\"Hiragino Sans GB\",\"Microsoft YaHei\",sans-serif",
+  "--mono": "ui-monospace,\"Cascadia Code\",Consolas,\"Courier New\",monospace"
+ },
+ "counts": {
+  "nodes": 2,
+  "edges": 1,
+  "widgets": 3,
+  "ports": 2,
+  "tabs": 1
+ },
+ "bottomClosed": true
+}

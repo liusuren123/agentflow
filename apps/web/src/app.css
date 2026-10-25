@@ -595,3 +595,18 @@ body.running #float-bar{display:block}
   max-height:160px;overflow-y:auto;user-select:text}
 .node.collapsed .node-term{display:none}
 .node-term-err{color:var(--err)}
+
+/* ================= JSON 画布结构化树（jsoncanvas · ADR-0015 §4.3 · 迭代 0035） ================= */
+.node-jtree{display:block;margin:4px 8px 8px;padding:6px 8px;background:rgba(0,0,0,.45);border-left:2px solid #60a5fa;
+  font-family:var(--mono);font-size:11px;line-height:1.5;color:#c7d6ee;white-space:pre-wrap;word-break:break-all;
+  max-height:170px;overflow-y:auto;user-select:text}
+.node.collapsed .node-jtree{display:none}
+.node-jtree .jc-kids{padding-left:12px;border-left:1px dotted rgba(255,255,255,.10)}
+.node-jtree .jc-row{display:block}
+.node-jtree .jc-key{color:#93c5fd}
+.node-jtree .jc-prim{color:#e5edf8}
+.node-jtree .jc-fold{cursor:pointer;color:#7f9cc4;padding-right:4px;user-select:none}
+.node-jtree .jc-badge{color:var(--text3);font-size:9px;padding-left:4px}
+.node-jtree .jc-closed > .jc-val{display:none}
+.node-jtree-fallback{color:#e5edf8;white-space:pre-wrap}
+.node-jtree-warn{color:var(--warn);margin-top:4px;font-size:10px}
