@@ -5,6 +5,7 @@ import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveW
          deleteWorkflowFromServer, deleteRunFromServer,
          onWorkflowsArrive, onRunsArrive, fmtTs, replayLines, runCardMeta } from '../server-sync.js';
 import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refreshSessions } from '../server-sync.js';
+import { refreshWorkbenchGit } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -1611,6 +1612,7 @@ viewport.addEventListener('contextmenu', e=>{
       {sep:1},
       {ic:'box-select',t:'框选全部',mk:'Ctrl+A',f:selectAll},
       {ic:'maximize',t:'适应视图',mk:'Home',f:fitView},
+      {ic:'git-branch',t:'工作台 · 仓库信息',f:()=>wbOpen('git')},
       {sep:1},
       {ic:'trash',t:'清空当前画布',cls:'danger',f:()=>{ if(confirm('确定清空当前工作流的节点与连线？')){ pushUndo(); state.nodes=[];state.edges=[];clearSel();renderAll(); } }},
     ]);
@@ -2735,6 +2737,95 @@ async function goalToggleList(){
     });
   }
   else p.classList.remove('gp-mode-list');
+}
+
+/* ================================================================
+ *  工作台右栏（BK-0040 / 迭代 0036 修宪轮 · ADR-0016 §2 B 案）
+ *  懒创建：#wb-tabs/#workbench 首次打开时动态创建（goalEnsure 先例），
+ *  未打开前零新增可见 DOM（默认态像素 = 基线，s0~s11 零波及）；打开后
+ *  页签条常驻至页面重载。#props 面零触碰（B 案核心承诺）：视图切换只靠
+ *  #rightbar 类名（wb-page-git 时 #props display:none，renderProps 语义
+ *  不受影响）。数据面 = server-sync refreshWorkbenchGit（on-open fetch +
+ *  页内手动刷新，零轮询零 SSE，ADR-0016 §2.4）；本批仅 git 页落地，
+ *  diff/tree 为禁用占位（后续批次 BK-0041/BK-0042）。
+ * ================================================================ */
+const WB = { page:'props' };   /* 运行时页态（内存，不入 localStorage/undo，GOAL_BIND 先例） */
+
+function wbEnsure(){
+  if($('#wb-tabs')) return;
+  const bar = $('#rightbar');
+  const mk = (id, t, dis) =>
+    `<button class="wb-tab" data-wb="${id}" ${dis?'disabled title="后续批次提供"':''}>${t}</button>`;
+  const tabs = document.createElement('div');
+  tabs.id = 'wb-tabs';
+  tabs.innerHTML = mk('props','属性',false) + mk('git','仓库',false)
+                  + mk('diff','变更',true) + mk('tree','目录',true);
+  tabs.addEventListener('click', e=>{
+    const b = e.target.closest('.wb-tab'); if(!b || b.disabled) return;
+    wbSwitch(b.dataset.wb);
+  });
+  bar.prepend(tabs);
+  const wb = document.createElement('div');
+  wb.id = 'workbench';
+  wb.innerHTML = `
+    <div class="wb-topbar">
+      <span class="wb-title">仓库信息</span>
+      <button class="ibtn wb-refresh" title="刷新">${I('rotate')} 刷新</button>
+    </div>
+    <div class="wb-scroll"></div>`;
+  wb.querySelector('.wb-refresh').addEventListener('click', async ()=>{
+    await refreshWorkbenchGit(); wbRenderGit();
+  });
+  bar.appendChild(wb);
+}
+
+async function wbOpen(page){
+  wbEnsure();
+  $('#rightbar').classList.add('wb-on');
+  await wbSwitch(page || 'git');
+}
+
+async function wbSwitch(page){
+  const bar = $('#rightbar');
+  WB.page = page;
+  bar.classList.toggle('wb-page-git', page === 'git');
+  $$('#wb-tabs .wb-tab').forEach(b=>b.classList.toggle('on', b.dataset.wb === page));
+  if(page === 'git'){
+    await refreshWorkbenchGit();   /* on-open fetch：打开/切回 git 页即取（REQ-0040-05） */
+    wbRenderGit();
+  }
+}
+
+function wbRenderGit(){
+  const box = $('#workbench .wb-scroll'); if(!box) return;
+  if(SVR.wbGitErr || !SVR.wbGit){
+    box.innerHTML = `<div class="wb-empty">git 信息拉取失败 · 点击刷新重试</div>`;
+    return;
+  }
+  const d = SVR.wbGit;
+  const changes = Array.isArray(d.changes) ? d.changes : [];
+  const commits = Array.isArray(d.commits) ? d.commits : [];
+  const chgHtml = changes.length
+    ? changes.map(c=>{
+        const from = c.from ? `<span class="wb-path-o">${esc(String(c.from))} → </span>` : '';
+        return `<div class="wb-change"><span class="wb-st">${esc(String(c.status||''))}</span>`+
+               `<span class="wb-path">${from}${esc(String(c.path||''))}</span></div>`;
+      }).join('')
+    : `<div class="wb-empty">无变更文件（工作区干净）</div>`;
+  box.innerHTML = `
+    <div class="wb-summary">
+      <div class="wb-kv"><span>分支</span><b>${esc(String(d.branch||'-'))}</b></div>
+      <div class="wb-kv"><span>HEAD</span><b class="wb-sha">${esc(String(d.head||'-'))}</b></div>
+      <div class="wb-kv"><span>变更</span><b>${changes.length} 个文件</b></div>
+    </div>
+    <div class="wb-sec">最近提交</div>
+    ${commits.map(c=>`<div class="wb-commit">
+        <div class="wb-c1"><span class="wb-sha">${esc(String(c.short||''))}</span>`+
+          `<span class="wb-au">${esc(String(c.author||''))}</span><span class="wb-ts">${fmtTs(c.ts)}</span></div>
+        <div class="wb-c2">${esc(String(c.subject||''))}</div>
+      </div>`).join('') || `<div class="wb-empty">暂无提交记录</div>`}
+    <div class="wb-sec">变更文件</div>
+    ${chgHtml}`;
 }
 
 }

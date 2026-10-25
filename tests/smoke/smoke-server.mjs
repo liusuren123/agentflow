@@ -28,6 +28,8 @@
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import Database from 'better-sqlite3';
 import { validateEvent } from '@agentflow/shared';
 import {
@@ -1235,6 +1237,138 @@ async function main() {
     C.ok(bad === null && parsed === all.length,
       'O05', `O01/O03/O04 捕获的全部事件（${all.length} 条，含 node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）`,
       { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
+  }
+
+  /* B 组：workbench git 信息端点 E1（B01-B05 · 迭代 0036 / BK-0040 · SPEC §3.7）——
+   * B01-B03 主实例、B04 专用探针实例、B05 纯源扫描（MT12 先例）。B01/B04 合成
+   * PROJECT_ROOT 锚定精确性双向机器证明：B01 拦「锚少一级」（apps/server 无 .git →
+   * 404 → 红），B04 拦「误用 process.cwd()」（cwd=真仓库则 200 → 红，ADR-0016 §3.0
+   * 否决案）。已知限制如实标注：git 超时 / git 二进制缺失（ENOENT）不做 HTTP 级
+   * 测试（win32 无法可移植地伪造慢 git/缺二进制），由 B05 源扫描同构形态背书
+   * （setTimeout 5s + .kill()，code.ts:53 同款）。 */
+  { /* B01 · E1 正常契约（主实例，工作树即真 git 仓库）：键集恰四键 + 各字段形状 */
+    const b1 = await api(srv.base, 'GET', '/api/v1/workbench/git');
+    const keys = b1.json && typeof b1.json === 'object' && !Array.isArray(b1.json)
+      ? Object.keys(b1.json).sort().join(',') : '';
+    const changesOk = Array.isArray(b1.json?.changes) && b1.json.changes.every(c =>
+      typeof c?.status === 'string' && c.status.length === 2
+      && typeof c?.path === 'string' && c.path !== ''
+      && (c?.from === undefined || typeof c.from === 'string'));
+    const commitsOk = Array.isArray(b1.json?.commits) && b1.json.commits.length >= 1
+      && b1.json.commits.length <= 20
+      && b1.json.commits.every(c => /^[0-9a-f]{40}$/.test(String(c?.sha ?? ''))
+        && /^[0-9a-f]{7,40}$/.test(String(c?.short ?? ''))
+        && typeof c?.author === 'string' && c.author !== ''
+        && Number.isInteger(c?.ts) && c.ts > 0
+        && typeof c?.subject === 'string');
+    C.ok(b1.status === 200 && keys === 'branch,changes,commits,head'
+      && typeof b1.json?.branch === 'string' && b1.json.branch !== ''
+      && /^[0-9a-f]{7,40}$/.test(String(b1.json?.head ?? ''))
+      && changesOk && commitsOk,
+      'B01', 'GET /api/v1/workbench/git → 200；键集恰 {branch,head,changes,commits}；branch 非空；head 7-40 hex；changes 每项 {status:2字符,path,from?}；commits 1..20 条、每项 {sha:40hex,short:7-40hex,author:非空,ts:正整数毫秒,subject:string}',
+      { expected: '200 四键契约', actual: JSON.stringify({ status: b1.status, keys, branch: b1.json?.branch, head: b1.json?.head, nChanges: b1.json?.changes?.length, nCommits: b1.json?.commits?.length, changesOk, commitsOk }).slice(0, 260), ctx: ctxOf(b1) });
+  }
+  { /* B02 · limit 有效值：?limit=1 → 恰 1 条；?limit=3 → 1..3 条 */
+    const b2a = await api(srv.base, 'GET', '/api/v1/workbench/git?limit=1');
+    const b2b = await api(srv.base, 'GET', '/api/v1/workbench/git?limit=3');
+    C.ok(b2a.status === 200 && b2a.json?.commits?.length === 1
+      && b2b.status === 200 && Array.isArray(b2b.json?.commits)
+      && b2b.json.commits.length >= 1 && b2b.json.commits.length <= 3,
+      'B02', 'GET /workbench/git?limit=1 → commits.length===1；?limit=3 → commits 1..3 条',
+      { expected: 'limit1=1 且 limit3∈1..3', actual: `limit1=${b2a.json?.commits?.length} limit3=${b2b.json?.commits?.length}`, ctx: `${ctxOf(b2a)} | ${ctxOf(b2b)}` });
+  }
+  { /* B03 · limit 非法值：0 / 101 / abc → 各 400 {error:"limit 必须是 1-100 的整数"}（N02/G02 同型） */
+    const rs = [];
+    for (const u of ['/api/v1/workbench/git?limit=0', '/api/v1/workbench/git?limit=101', '/api/v1/workbench/git?limit=abc']) {
+      rs.push(await api(srv.base, 'GET', u));
+    }
+    C.ok(rs.every(r => r.status === 400 && r.json?.error === 'limit 必须是 1-100 的整数'),
+      'B03', 'limit=0 / limit=101 / limit=abc → 各 400 {error:"limit 必须是 1-100 的整数"}',
+      { expected: '3× 400 + error 字面量', actual: rs.map(r => `${r.status}:${r.json?.error ?? r.text.slice(0, 40)}`).join(' | '), ctx: rs.map(ctxOf).join(' | ') });
+  }
+  { /* B04 · 404 无仓库 + cwd 无关（专用探针实例，自建自清理）：mkdtemp 临时非 git 目录，
+       递归复制两 dist 目录（server.ts 启动校验需 index.html）+ node_modules junction 指向
+       本仓 node_modules（依赖全提升至根，@agentflow/* 指向工作树自身）；spawn cwd 刻意
+       = REPO_ROOT（真仓库）——若实现误用 process.cwd() 则 rev-parse 成功 → 200 → 红。 */
+    const bTmp = mkdtempSync(path.join(tmpdir(), 'af-wb-smoke-'));
+    let bChild = null;
+    let bExit = null;
+    try {
+      cpSync(path.join(REPO_ROOT, 'apps', 'server', 'dist'), path.join(bTmp, 'apps', 'server', 'dist'), { recursive: true });
+      /* package.json 必须随行：ESM 裸包解析以最近 package.json 为作用域基点，
+         缺失时模块上下文漂移到用户目录（实测 ERR_MODULE_NOT_FOUND 'express'） */
+      cpSync(path.join(REPO_ROOT, 'apps', 'server', 'package.json'), path.join(bTmp, 'apps', 'server', 'package.json'));
+      cpSync(path.join(REPO_ROOT, 'apps', 'web', 'dist'), path.join(bTmp, 'apps', 'web', 'dist'), { recursive: true });
+      /* 依赖仓定位：REPO_ROOT/node_modules 在工作树形态下是挂满悬挂 junction 的壳
+         （实测解析穿透到主仓 node_modules——工作树物理嵌套于主仓内，主实例同款
+         解析路径）；向上取第一个真含 express 的 node_modules。CI（主干 checkout）
+         首跳即命中 REPO_ROOT/node_modules 自身。 */
+      let depStore = null;
+      for (let d = REPO_ROOT; ; d = path.dirname(d)) {
+        if (existsSync(path.join(d, 'node_modules', 'express', 'package.json'))) { depStore = path.join(d, 'node_modules'); break; }
+        if (path.dirname(d) === d) break;
+      }
+      if (!depStore) {
+        C.fail('B04', '依赖仓定位（向上找含 express 的 node_modules）', { expected: '命中一处依赖仓', actual: 'REPO_ROOT 向上未找到', ctx: `REPO_ROOT=${REPO_ROOT}` });
+        throw new SmokeFailError('B04');
+      }
+      symlinkSync(depStore, path.join(bTmp, 'node_modules'), 'junction');
+      const bPort = await getFreePort();
+      const bBase = `http://127.0.0.1:${bPort}`;
+      bChild = spawn(process.execPath, [path.join(bTmp, 'apps', 'server', 'dist', 'server.js')], {
+        cwd: REPO_ROOT,
+        env: { ...process.env, PORT: String(bPort), BOCHA_API_KEY: '', SEARXNG_URL: '' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      bExit = new Promise(res => bChild.once('exit', (c, s) => res({ code: c, signal: s })));
+      let bOut = '';
+      let bExited = false;
+      void bExit.then(() => { bExited = true; });
+      bChild.stdout.setEncoding('utf8'); bChild.stdout.on('data', d => { bOut += d; });
+      bChild.stderr.setEncoding('utf8'); bChild.stderr.on('data', d => { bOut += d; });
+      let bHealth = null;
+      const bt0 = Date.now();
+      for (;;) {
+        if (bExited) break;
+        try {
+          const r = await fetch(`${bBase}/api/v1/health`, { signal: AbortSignal.timeout(2000) });
+          if (r.status === 200) { bHealth = { status: r.status, json: await r.json().catch(() => null) }; break; }
+        } catch { /* 未就绪，继续轮询 */ }
+        if (Date.now() - bt0 > 20000) break;
+        await sleep(250);
+      }
+      const b4 = bHealth
+        ? await api(bBase, 'GET', '/api/v1/workbench/git')
+        : { status: 0, json: null, text: `探针实例未就绪（exit=${bExited}）${bOut.slice(-160)}`, method: 'GET', url: '/api/v1/workbench/git' };
+      C.ok(bHealth?.status === 200 && bHealth.json?.ok === true
+        && b4.status === 404 && b4.json?.error === 'not a git repository',
+        'B04', '探针实例（临时非 git 目录，spawn cwd=仓库根）健康 200 → GET /api/v1/workbench/git → 404 {error:"not a git repository"}（误锚 process.cwd() 会得 200 恰好击穿；与 B01 合成锚定双向证明）',
+        { expected: 'health 200 + 404 not a git repository', actual: JSON.stringify({ health: bHealth?.status, ok: bHealth?.json?.ok, wb: `${b4.status} ${b4.json?.error ?? String(b4.text).slice(0, 60)}` }), ctx: `tmp=${bTmp} | spawn cwd=REPO_ROOT` });
+    } finally {
+      if (bChild) {
+        try { bChild.kill(); } catch { /* 已退出 */ }
+        await Promise.race([bExit, sleep(3000)]);
+        try { bChild.kill('SIGKILL'); } catch { /* 已退出 */ }
+      }
+      try { rmSync(bTmp, { recursive: true, force: true }); } catch { /* 尽力而为，如实容忍 */ }
+    }
+  }
+  { /* B05 · 纪律源扫描（MT12 先例）：workbench 三源码 /shell/i 零命中（含注释——注释
+       写「命令解释器」；推论 spawn 未显式传命令解释器选项）；git.ts 含 setTimeout( 与
+       .kill()（5s 超时强杀形态在场）；可写命令单引号 argv 字面量零命中；
+       rev-parse/status/log 三词在场（只读白名单承载本体） */
+    const wbSrc = {};
+    for (const f of ['root.ts', 'git.ts', 'routes.ts']) {
+      wbSrc[f] = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', f), 'utf8');
+    }
+    const g = wbSrc['git.ts'];
+    const shellHit = Object.entries(wbSrc).filter(([, s]) => /shell/i.test(s)).map(([f]) => f);
+    const writeHit = g.match(/'(add|commit|push|pull|checkout|reset|clean|merge|rebase|stash)'/g) ?? [];
+    C.ok(shellHit.length === 0 && g.includes('setTimeout(') && g.includes('.kill()')
+      && writeHit.length === 0
+      && ['rev-parse', 'status', 'log'].every(w => g.includes(w)),
+      'B05', '源码扫描：workbench 三文件 /shell/i 零命中；git.ts 有 setTimeout( 与 .kill()（5s 强杀）；可写命令单引号 argv 字面量零命中；rev-parse/status/log 在场（只读白名单）',
+      { expected: 'shell 零命中 + 超时形态在场 + 可写零命中 + 三命令在场', actual: JSON.stringify({ shellHit, timeout: g.includes('setTimeout('), kill: g.includes('.kill()'), writeHit }), ctx: 'apps/server/src/workbench/{root,git,routes}.ts readFileSync 字面扫描' });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例

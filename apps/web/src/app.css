@@ -595,3 +595,42 @@ body.running #float-bar{display:block}
   max-height:160px;overflow-y:auto;user-select:text}
 .node.collapsed .node-term{display:none}
 .node-term-err{color:var(--err)}
+
+/* ===== 右栏工作台（BK-0040 / 迭代 0036 修宪轮 · ADR-0016 §2 B 案）=====
+   懒创建：未打开前 #wb-tabs/#workbench 均 display:none（s0~s11 零波及）；
+   值全取既有变量与既有字面量，零新增自定义属性（gate cssVars 不变量）；
+   视图切换只靠 #rightbar 类名——#props 既有规则零改动。 */
+#wb-tabs{display:none;flex:none;align-items:center;gap:2px;height:30px;padding:0 8px;
+  border-bottom:1px solid var(--border2)}
+#rightbar.wb-on #wb-tabs{display:flex}
+.wb-tab{height:22px;padding:0 9px;font-size:11px;color:var(--text2);background:transparent;
+  border:none;border-radius:5px;cursor:pointer;font-family:var(--font)}
+.wb-tab:hover{color:var(--text)}
+.wb-tab.on{color:var(--text);background:var(--panel3)}
+.wb-tab:disabled{opacity:.4;cursor:default}
+#workbench{display:none;flex-direction:column;flex:1;min-height:0}
+#rightbar.wb-page-git #props{display:none}          /* 互斥视图切换（新选择器，不改 #props 既有规则） */
+#rightbar.wb-page-git #workbench{display:flex}
+.wb-topbar{display:flex;align-items:center;gap:8px;height:34px;padding:0 12px;flex:none;
+  border-bottom:1px solid var(--border2)}
+.wb-topbar .wb-title{font-size:12px;font-weight:600;color:var(--text2);flex:1}
+.wb-topbar .wb-refresh{height:22px;padding:0 8px;font-size:11px}   /* 复用 .ibtn 通用样式，仅补布局位 */
+.wb-scroll{flex:1;overflow-y:auto;min-height:0;padding:12px}
+.wb-summary{border:1px solid var(--border2);border-radius:9px;background:var(--panel2);padding:9px 11px}
+.wb-kv{display:flex;align-items:center;gap:8px;font-size:11px;line-height:1.9}
+.wb-kv span{color:var(--text3);width:44px;flex:none}
+.wb-kv b{color:var(--text);font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wb-sec{margin:14px 0 6px;padding-top:9px;border-top:1px solid var(--border2);
+  font-size:10.5px;color:var(--text3);letter-spacing:.5px}
+.wb-commit{padding:6px 0;border-bottom:1px solid var(--border)}
+.wb-c1{display:flex;align-items:center;gap:8px;font-size:11px;min-width:0}
+.wb-c1 .wb-au{color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wb-c1 .wb-ts{margin-left:auto;color:var(--text3);font-size:10px;flex:none;font-family:var(--mono)}
+.wb-c2{font-size:11px;color:var(--text2);margin-top:2px;line-height:1.5;word-break:break-all}
+.wb-sha{font-family:var(--mono);color:#8fd3ff;flex:none}
+.wb-change{display:flex;align-items:baseline;gap:8px;padding:3px 0;font-size:11px}
+.wb-st{font-family:var(--mono);color:var(--warn);width:18px;flex:none}
+.wb-path{color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--mono);font-size:10.5px}
+.wb-path .wb-path-o{color:var(--text3)}
+.wb-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:11px;line-height:1.8}

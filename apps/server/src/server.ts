@@ -38,6 +38,7 @@ import {
   sessionsCreateHandler, sessionsListHandler, sessionDetailHandler, sessionChatHandler, sessionStopHandler,
   abortActiveSessions, activeSessionCount,
 } from './sessions.js';
+import { workbenchGitHandler } from './workbench/routes.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -217,6 +218,8 @@ app.get('/api/v1/sessions', sessionsListHandler);
 app.get('/api/v1/sessions/:id', sessionDetailHandler);
 app.post('/api/v1/sessions/:id/chat', sessionChatHandler);
 app.post('/api/v1/sessions/:id/stop', sessionStopHandler);
+/* 迭代 0036 / BK-0040 workbench 端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
+app.get('/api/v1/workbench/git', workbenchGitHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{

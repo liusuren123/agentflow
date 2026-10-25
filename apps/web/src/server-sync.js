@@ -39,6 +39,9 @@ export const stopSessionOnServer = id => apiJson('/sessions/' + encodeURICompone
 /* 运行历史：列表（started_at 倒序）/ 单条完整事件回放 */
 export const fetchRunList = (limit = 50) => apiJson('/runs?limit=' + limit).then(j => Array.isArray(j.runs) ? j.runs : []);
 export const fetchRunDetail = id => apiJson('/runs/' + encodeURIComponent(id));
+/* 工作台（BK-0040）：git 信息（E1）——仅数据层（ADR 4.4），面板 DOM 归 app.js；
+   404/500 走非 2xx 抛错，由调用方渲染错误态 */
+export const fetchWorkbenchGit = (limit = 20) => apiJson('/workbench/git?limit=' + limit);
 
 /* ---------- 服务端缓存（内存态 —— ADR 4.4；null = 尚未成功拉取过） ---------- */
 export const SVR = {
@@ -50,13 +53,17 @@ export const SVR = {
   openRunId: null,     // 历史面板当前展开回放的 runId（同面板同时只展开一个）
   sessions: null,      // SessionRow[] | null：{id,title,model,sys,created_at,updated_at}（BK-0034）
   sessionsErr: false,  // 最近一次会话列表拉取失败 → 恢复列表错误空态
+  wbGit: null,         // E1 出参 | null：{branch,head,changes,commits}（BK-0040）
+  wbGitErr: false,     // 最近一次 git 信息拉取失败 → 工作台错误空态
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
 let wfArrive = null, runsArrive = null, sessionsArrive = null;
+let wbGitArrive = null;   // 工作台 git 信息到达回调（BK-0040）
 export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
 export function onSessionsArrive(fn){ sessionsArrive = fn; }
+export function onWorkbenchGitArrive(fn){ wbGitArrive = fn; }
 
 export async function refreshWorkflows(){
   try{ SVR.wf = await fetchWorkflowList(); SVR.wfErr = false; }
@@ -72,6 +79,11 @@ export async function refreshSessions(){
   try{ SVR.sessions = await fetchSessionList(20); SVR.sessionsErr = false; }
   catch(_){ SVR.sessionsErr = true; }
   sessionsArrive && sessionsArrive();
+}
+export async function refreshWorkbenchGit(limit = 20){
+  try{ SVR.wbGit = await fetchWorkbenchGit(limit); SVR.wbGitErr = false; }
+  catch(_){ SVR.wbGitErr = true; }
+  wbGitArrive && wbGitArrive();
 }
 
 /* 展开回放：成功/失败都写入缓存（null=获取失败），由回调重绘分组容器 */

@@ -234,6 +234,54 @@ const TERMVIEW_WF_SEED = JSON.stringify({ tabs: [{ name: '终端只读流示例'
   { id: 2, type: 'termview', x: 410, y: 250, title: '终端只读流' },
 ], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
 
+/* ---------- s12 工作台 git 信息在线态场景基建（ADR-0016 §6 · 迭代 0036 / BK-0040 修宪轮） ----------
+   打开路径 = 真实交互两步：空画布 contextmenu（向 #viewport 派发 → 无 .node/g.edge →
+   空画布菜单分支）→ 按「工作台」文本定位 .mi 并 click（app.js ctxmenu 真实委托 →
+   item.f → wbOpen('git')）；懒创建首开落位（打开前零新增可见 DOM → s0~s11 零波及）。
+   E1 mock 沿 WF/RUN/SESSION 同口径 fixture（尾通配 ** 覆盖 ?limit=20 查询串）；
+   ts 为 2026-01-01/02 UTC 整点毫秒，配合 timezoneId:'UTC' 使 fmtTs 确定性渲染
+   1/1 00:00:00；字面量 ASCII + 固定中文样例（字形安全口径）。 */
+const WB_ROUTES = [
+  { pattern: '**/api/health',
+    handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/workbench/git**',
+    handler: route => route.fulfill({ json: {
+      branch: 'main', head: 'a1b2c3d',
+      changes: [ { status: ' M', path: 'apps/web/src/app.css' },
+                 { status: '??', path: 'notes/draft.md' } ],
+      commits: [ { sha: '1111111111111111111111111111111111111111', short: '1111111',
+                 author: 'AgentFlow', ts: 1767225600000, subject: 'fix: 修复画布缩放手势' },
+               { sha: '2222222222222222222222222222222222222222', short: '2222222',
+                 author: '示例用户', ts: 1767312000000, subject: 'feat: 新增节点库过滤' } ] } }) },
+];
+const wbOpen = async page => {
+  await page.evaluate(() => {
+    document.getElementById('viewport')
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+  });
+  await page.evaluate(() => {
+    const mi = [...document.querySelectorAll('#ctxmenu .mi')]
+      .find(m => m.textContent.includes('工作台'));
+    mi.click();
+  });
+};
+/* 就绪探针（状态量非时延量，wfReady 先例）：git 页数据已落 DOM（2 提交 + 2 变更行）；
+   超时红即 FAIL，不落伪基线 */
+const wbReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#workbench .wb-commit').length === 2
+    && document.querySelectorAll('#workbench .wb-change').length === 2,
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量（公共六键后 spread）：页签集 + 激活(*)/禁用(!)标记、
+   #props 视图态、概要卡分支、提交/变更行计数 */
+const wbInv = page => page.evaluate(() => ({
+  wbTabs: [...document.querySelectorAll('#wb-tabs .wb-tab')]
+    .map(b => b.dataset.wb + (b.classList.contains('on') ? '*' : '') + (b.disabled ? '!' : '')),
+  propsShown: getComputedStyle(document.getElementById('props')).display !== 'none',
+  wbBranch: (document.querySelector('#workbench .wb-summary b') || {}).textContent,
+  wbCounts: document.querySelectorAll('#workbench .wb-commit').length + 'c/'
+    + document.querySelectorAll('#workbench .wb-change').length + 'g',
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -254,6 +302,8 @@ const SCENARIOS = [
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), WEBSHOW_WF_SEED) },
   { id: 's11-termview-node', steps: [],
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERMVIEW_WF_SEED) },
+  { id: 's12-workbench-git-online', routes: WB_ROUTES, timezoneId: 'UTC',
+    steps: [wbOpen], ready: wbReady, inv: wbInv },
 ];
 
 const runScenario = async (browser, sc) => {
