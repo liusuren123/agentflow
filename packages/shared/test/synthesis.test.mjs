@@ -57,7 +57,7 @@ test('10 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即
     assert.deepEqual(NODES[type].params.map(p => p.k), ks, `${type} params 序漂移`);
 });
 
-test('快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，19 键全量）', () => {
+test('快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，20 键全量）', () => {
   const baseline = readFileSync(new URL('./nodes.baseline.json', import.meta.url)); // Buffer，零文本模式
   const actual = Buffer.from(JSON.stringify(NODES, null, 2) + '\n', 'utf8');
   let off = -1;
