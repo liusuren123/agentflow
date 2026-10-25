@@ -7,8 +7,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { NODES, NODE_NAMES, paramDefaultsOf, validateEvent } from '../dist/index.js';
 
-test('节点注册表完整：17 种节点，字段齐全', () => {
-  assert.equal(Object.keys(NODES).length, 17);
+test('节点注册表完整：18 种节点，字段齐全', () => {
+  assert.equal(Object.keys(NODES).length, 18);
   for (const [type, def] of Object.entries(NODES)) {
     assert.ok(def.name, `${type} 缺 name`);
     assert.ok(['input', 'chat', 'knowledge', 'tools', 'logic', 'output', 'human'].includes(def.cat), `${type} cat 非法`);

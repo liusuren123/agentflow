@@ -1,7 +1,7 @@
 /* ================================================================
  *  readme-consistency.test.mjs — README 生成物一致性测试（迭代 0022 / BK-0021 批次 2）
  *  ① 表格回比：解析在库 README 端口/参数表回比 dist/nodes/<type>/node.js
- *     源数据；总索引 16 行且序 = Object.keys(NODES)；目录集 ↔ README
+ *     源数据；总索引 18 行且序 = Object.keys(NODES)；目录集 ↔ README
  *     一一对应（NDP §8：README 由 node.ts 生成，手写漂移即红）。
  *  ② 生成器确定性：spawnSync(process.execPath) 重生成到 os.tmpdir，18 份
  *     产物与在库文件比对——在库侧先 CRLF→LF 归一（本仓 core.autocrlf=true
@@ -60,10 +60,10 @@ const portRows = def => [
   ...def.ports.outputs.map((pt, i) => [String(i + 1), 'out', `\`${pt.id}\``, pt.label, pt.type]),
 ];
 
-test('表格回比：17 类型 README 端口/参数表 ⇄ dist node.js 源数据', async () => {
+test('表格回比：18 类型 README 端口/参数表 ⇄ dist node.js 源数据', async () => {
   const dirs = readdirSync(NODES_DIR, { withFileTypes: true })
     .filter(e => e.isDirectory()).map(e => e.name).sort();
-  assert.deepEqual(dirs, [...TYPES].sort(), 'src/nodes 目录集应恰为 17 类型（无缺无孤）');
+  assert.deepEqual(dirs, [...TYPES].sort(), 'src/nodes 目录集应恰为 18 类型（无缺无孤）');
   assert.deepEqual(readdirSync(NODES_DIR).filter(f => f.endsWith('.md')), ['README.md'],
     'src/nodes 根层只应有总索引 README.md（孤儿 md 即红）');
   for (const type of TYPES) {
@@ -77,14 +77,14 @@ test('表格回比：17 类型 README 端口/参数表 ⇄ dist node.js 源数�
   }
 });
 
-test('总索引 README：恰 17 行且序 = Object.keys(NODES)', () => {
+test('总索引 README：恰 18 行且序 = Object.keys(NODES)', () => {
   const lines = readFileSync(join(NODES_DIR, 'README.md'), 'utf8').replace(/\r\n/g, '\n').split('\n');
   const rows = tableRowsOf(lines, '# 节点总索引（NDP v0.2）');
   assert.deepEqual(rows, TYPES.map(t => [`\`${t}\``, `\`nodes/${t}/\``, NODES[t].name, NODES[t].desc]),
     '总索引行集/行序与 NODES 声明序漂移');
 });
 
-test('生成器确定性：temp 重生成 18 份产物与在库一致（幂等回比）', () => {
+test('生成器确定性：temp 重生成 19 份产物与在库一致（幂等回比）', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'gen-node-readmes-'));
   try {
     const r = spawnSync(process.execPath, [GEN, '--out', tmp], { encoding: 'utf8' });

@@ -1880,6 +1880,7 @@ const RUN_META = {
   merge:     {dur:300,  out:()=>'已合并 2 路输入'},
   reply:     {dur:600,  out:()=>'已输出回复 · 248 字'},
   setvar:    {dur:250,  out:n=>`${paramsOf(n).name||'answer'} 已写入变量`},
+  webshow:   {dur:500,  out:n=>{ const u=String(paramsOf(n).url||''); return WS_HTTP_S.test(u)?'已呈现网页 · '+u:'未呈现 · 无有效网址（占位降级）'; }},
   approval:  {dur:1300, out:()=>'审批通过 · 值班经理 (模拟)'},
 };
 function topoOrder(){
@@ -1895,6 +1896,38 @@ function topoOrder(){
 }
 function nodeEl(id){ return nodesLayer.querySelector(`.node[data-id="${id}"]`); }
 function setNodeOut(id, text){ const el = nodeEl(id); if(el) el.querySelector('.node-out').textContent = text; }
+/* ---------- webshow 网页呈现（迭代 0033 / BK-0036 修宪轮：纯插入，不改既有文本路径） ---------- */
+const WS_HTTP_S = /^https?:\/\/\S+$/i;   /* http(s) 白名单——与 handlers.ts webshow 同字面量双保险 */
+function webshowUrlOf(n, inputs){
+  /* 呈现源解析（镜像 handler 序）：① 最近真实运行 in-url 到达值（node:done 事件
+   * inputs 预览，engine preview 140 截断——>140 字 URL 截断后不过正则即诚实回落，
+   * 不伪造）；② params.url 静态兜底；③ 均无效返回 ''（占位降级）。 */
+  const inVal = (inputs || lastRunData.get(n.id)?.inputs || [])[0]?.val;
+  if (typeof inVal === 'string' && WS_HTTP_S.test(inVal)) return inVal;
+  const u = String(paramsOf(n).url ?? '').trim();
+  return WS_HTTP_S.test(u) ? u : '';
+}
+function setNodeWebshow(id, ev){
+  const n = nodeById(id), el = nodeEl(id); if(!n || !el) return;
+  const out = el.querySelector('.node-out'); if(!out) return;
+  const url = webshowUrlOf(n, Array.isArray(ev?.inputs) ? ev.inputs : undefined);
+  out.classList.add('ws-on');
+  out.textContent = '';
+  if(url){
+    const f = document.createElement('iframe');
+    f.className = 'ws-frame';
+    f.src = url;
+    f.title = '网页呈现';
+    f.referrerPolicy = 'no-referrer';                 /* ADR-0015 §4.1「CSP/嵌入策略收紧」评估项落地 */
+    if(paramsOf(n).sandbox !== false) f.setAttribute('sandbox', '');   /* 空值最严；false=用户显式关闭（责任翻转） */
+    out.appendChild(f);
+  } else {
+    const ph = document.createElement('div');
+    ph.className = 'ws-placeholder';
+    ph.textContent = '无有效网址 · 占位呈现';
+    out.appendChild(ph);
+  }
+}
 function flashEdges(ids){
   if(!settings.flowAnim) return;
   ids.forEach(eid=>{
@@ -2164,6 +2197,7 @@ async function runReal(){
         const el = nodeEl(ev.id); if(!el) break;
         el.classList.remove('st-running'); el.classList.add('st-done');
         setNodeOut(ev.id, ev.out!=null?String(ev.out):'完成');
+        if(nodeById(ev.id)?.type==='webshow') setNodeWebshow(ev.id, ev);
         barDone(el);
         measurePorts(); updateEdgesOf([ev.id]);
         const n = nodeById(ev.id);

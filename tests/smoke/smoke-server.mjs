@@ -16,6 +16,10 @@
  * A 组（迭代 0031 / BK-0033）：通用智能体节点——mock 实例 A01-A05（「智能体」前缀
  * 关键词路由与互审正交）：会话绑定与出参锚 / sqlite 真工具两步循环 / 预算上限 /
  * 停止透传 / 契约零新增（SPEC §7；残留纪律沿 G 组：按自建 title 定位存在性）。
+ * O 组（迭代 0033 / BK-0036）：网页展示节点——主实例 O01-O05（无模型依赖、零出站，
+ * 不需要 mock 实例）：URL 透传（out 摘要锚 + output 事件 + outputs 汇入）/ 静态兜底
+ * （trigger 对象 strInput 归空）/ 非 http(s) 与空输入占位降级（不伪造结果、outputs
+ * 零汇入、run 不崩）/ 契约零新增（SPEC §8）。
  * Z 组（迭代 0019 / BK-0011）：悬挂 run 启动扫尾——独立实例 WFAPPR 挂起 run（事件为门）
  * → SIGKILL 崩溃语义击杀（不经优雅停机）→ 同端口重启（扫尾在 listen 前，health 200
  * 即扫尾完成时序门）→ 经 API 断言 status 收敛 stopped、ended_ms/done/total 原值、
@@ -70,6 +74,15 @@ const wfCode = (params, name) => ({
   name,
   nodes: [{ id: 1, type: 'code', x: 100, y: 100, params }],
   edges: [],
+});
+/* O 组夹具工厂（迭代 0033 / BK-0036）：userinput(defv) → webshow(url 兜底) */
+const wfShow = (defv, url) => ({
+  name: 'smoke-webshow',
+  nodes: [
+    { id: 1, type: 'userinput', x: 100, y: 100, params: { var: 'url', defv } },
+    { id: 2, type: 'webshow',   x: 320, y: 100, params: { url } },
+  ],
+  edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
 });
 
 const C = new Checker();
@@ -1032,6 +1045,135 @@ async function main() {
     }
     C.ok(bad === null && parsed === all.length,
       'A05', `A01/A03/A04 捕获的全部事件（${all.length} 条，含 node:delta/node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）`,
+      { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
+  }
+
+  /* O 组：网页展示节点（O01-O05 · 迭代 0033 / BK-0036 · SPEC §8）——主实例。
+   * 呈现型 sink 无模型依赖、服务端零出站（仅校验 + 透传字符串 + 事件），
+   * 全部走主实例（与 G/V/A 组的 mockSrv 差异点）；SSE 消费沿 aRun 同型。 */
+  const oRun = async (wf) => {
+    const sse = await openSse(srv.base, wf);
+    const runId = (await sse.waitFor((e) => e.type === 'run:accepted', 15000)).runId;
+    CLEAN.runIds.push(runId);
+    return { sse, runId };
+  };
+  let oCapO01 = [], oCapO03 = [], oCapO04 = [];
+  { /* O01 · URL 透传：userinput(defv=http URL) → webshow：out 摘要锚 + output 事件 + outputs 汇入 */
+    let sse = null;
+    try {
+      ({ sse } = await oRun(wfShow('https://example.com/agentflow', '')));
+    } catch (e) {
+      C.fail('O01', 'O 组前置（openSse + run:accepted）', { expected: 'run:accepted', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，wfShow）' });
+      throw new SmokeFailError('O01');
+    }
+    let done = null;
+    try {
+      done = await sse.waitFor((e) => e.type === 'run:done', 20000);
+    } catch (e) {
+      C.fail('O01', 'waitFor run:done（事件门）', { expected: 'run:done{ok:true}', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，O01 URL 透传）' });
+      throw new SmokeFailError('O01');
+    }
+    await sse.waitEnd(10000);
+    oCapO01 = sse.events;
+    const wsDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    const outEv = sse.events.find((e) => e.type === 'output');
+    C.ok(done.ok === true && Array.isArray(done.outputs) && done.outputs.includes('https://example.com/agentflow')
+      && wsDone?.out === '已呈现网页 · https://example.com/agentflow'
+      && outEv?.text === 'https://example.com/agentflow',
+      'O01', 'userinput(defv=https URL)→webshow：run:done{ok:true} 且 outputs 含该 URL；webshow node:done(id=2).out ===「已呈现网页 · <url>」；存在 output 事件且 text === 该 URL',
+      { expected: 'ok:true + outputs 含 URL + out 摘要锚 + output 事件', actual: JSON.stringify({ done: { ok: done.ok, outputs: done.outputs }, out: wsDone?.out, outEv: outEv?.text }).slice(0, 300), ctx: 'POST /api/v1/run（主实例，输入端口值优先）' });
+  }
+  { /* O02 · 静态兜底：trigger 对象经 strInput 归空 → params.url 生效（独立夹具常量） */
+    const wfStatic = {
+      name: 'smoke-webshow-static',
+      nodes: [
+        { id: 1, type: 'trigger', x: 40, y: 100, title: '手动触发' },
+        { id: 2, type: 'webshow', x: 320, y: 100, params: { url: 'https://example.com/static-fallback' } },
+      ],
+      edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
+      inputs: {},
+    };
+    let sse = null;
+    try {
+      ({ sse } = await oRun(wfStatic));
+    } catch (e) {
+      C.fail('O02', 'O 组前置（openSse + run:accepted）', { expected: 'run:accepted', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，trigger→webshow）' });
+      throw new SmokeFailError('O02');
+    }
+    let done = null;
+    try {
+      done = await sse.waitFor((e) => e.type === 'run:done', 20000);
+    } catch (e) {
+      C.fail('O02', 'waitFor run:done（事件门）', { expected: 'run:done{ok:true}', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，O02 静态兜底）' });
+      throw new SmokeFailError('O02');
+    }
+    await sse.waitEnd(10000);
+    const wsDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    C.ok(done.ok === true && Array.isArray(done.outputs) && done.outputs.includes('https://example.com/static-fallback')
+      && wsDone?.out === '已呈现网页 · https://example.com/static-fallback',
+      'O02', 'trigger→webshow(params.url=静态兜底)：trigger 对象输入端口值归空（strInput 语义）→ 兜底参数生效：out ===「已呈现网页 · <兜底URL>」且 outputs 含该 URL；run:done{ok:true}',
+      { expected: 'ok:true + outputs 含兜底 URL + out 摘要锚', actual: JSON.stringify({ done: { ok: done.ok, outputs: done.outputs }, out: wsDone?.out }).slice(0, 300), ctx: 'POST /api/v1/run（主实例，静态兜底路径）' });
+  }
+  { /* O03 · 非 http(s) 降级：javascript: 输入 → warn + 占位，不伪造、不崩、零汇入 */
+    let sse = null;
+    try {
+      ({ sse } = await oRun(wfShow('javascript:alert(1)', '')));
+    } catch (e) {
+      C.fail('O03', 'O 组前置（openSse + run:accepted）', { expected: 'run:accepted', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，wfShow）' });
+      throw new SmokeFailError('O03');
+    }
+    let done = null;
+    try {
+      done = await sse.waitFor((e) => e.type === 'run:done', 20000);
+    } catch (e) {
+      C.fail('O03', 'waitFor run:done（事件门，降级不崩的直接锚）', { expected: 'run:done{ok:true}', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，O03 非 http(s)）' });
+      throw new SmokeFailError('O03');
+    }
+    await sse.waitEnd(10000);
+    oCapO03 = sse.events;
+    const wsDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    const warns = sse.events.filter((e) => e.type === 'log' && e.lvl === 'warn').map((e) => String(e.msg ?? ''));
+    C.ok(done.ok === true && Array.isArray(done.outputs) && done.outputs.length === 0
+      && wsDone?.out === '未呈现 · 无有效网址（占位降级）'
+      && warns.some((m) => m.includes('webshow') && m.includes('占位降级'))
+      && !sse.events.some((e) => e.type === 'output'),
+      'O03', 'javascript: 输入：run:done{ok:true}（降级不崩）且 outputs 深等 []（零汇入）；node:done.out ===「未呈现 · 无有效网址（占位降级）」；log warn 含「webshow」与「占位降级」；无任何 output 事件（不伪造结果）',
+      { expected: 'ok:true + outputs=[] + 占位 out + warn + 零 output 事件', actual: JSON.stringify({ done: { ok: done.ok, outputs: done.outputs }, out: wsDone?.out, warnHit: warns.some((m) => m.includes('webshow') && m.includes('占位降级')), outEvents: sse.events.filter((e) => e.type === 'output').length }).slice(0, 300), ctx: 'POST /api/v1/run（主实例，协议白名单拒绝路径）' });
+  }
+  { /* O04 · 空输入降级：defv 空 + 兜底空 → 同 O03 判据 */
+    let sse = null;
+    try {
+      ({ sse } = await oRun(wfShow('', '')));
+    } catch (e) {
+      C.fail('O04', 'O 组前置（openSse + run:accepted）', { expected: 'run:accepted', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，wfShow）' });
+      throw new SmokeFailError('O04');
+    }
+    let done = null;
+    try {
+      done = await sse.waitFor((e) => e.type === 'run:done', 20000);
+    } catch (e) {
+      C.fail('O04', 'waitFor run:done（事件门，降级不崩的直接锚）', { expected: 'run:done{ok:true}', actual: String(e?.message ?? e), ctx: 'POST /api/v1/run（主实例，O04 空输入）' });
+      throw new SmokeFailError('O04');
+    }
+    await sse.waitEnd(10000);
+    oCapO04 = sse.events;
+    const wsDone = sse.events.find((e) => e.type === 'node:done' && e.id === 2);
+    const warns = sse.events.filter((e) => e.type === 'log' && e.lvl === 'warn').map((e) => String(e.msg ?? ''));
+    C.ok(done.ok === true && Array.isArray(done.outputs) && done.outputs.length === 0
+      && wsDone?.out === '未呈现 · 无有效网址（占位降级）'
+      && warns.some((m) => m.includes('webshow') && m.includes('占位降级'))
+      && !sse.events.some((e) => e.type === 'output'),
+      'O04', '空输入 + 空兜底：run:done{ok:true} 且 outputs 深等 []；out ===「未呈现 · 无有效网址（占位降级）」；log warn 含「webshow」与「占位降级」；无任何 output 事件',
+      { expected: 'ok:true + outputs=[] + 占位 out + warn + 零 output 事件', actual: JSON.stringify({ done: { ok: done.ok, outputs: done.outputs }, out: wsDone?.out, warnHit: warns.some((m) => m.includes('webshow') && m.includes('占位降级')), outEvents: sse.events.filter((e) => e.type === 'output').length }).slice(0, 300), ctx: 'POST /api/v1/run（主实例，空输入路径）' });
+  }
+  { /* O05 · 契约零新增：O01/O03/O04 捕获事件逐条 RunEventSchema 校验（webshow 仅取用既有 15 种，events.ts 零 diff 联证——A05 同型） */
+    const all = [...oCapO01, ...oCapO03, ...oCapO04];
+    let parsed = 0, bad = null;
+    for (const ev of all) {
+      try { validateEvent(ev); parsed += 1; } catch (e) { bad = { type: ev?.type, err: String(e?.message ?? e) }; break; }
+    }
+    C.ok(bad === null && parsed === all.length,
+      'O05', `O01/O03/O04 捕获的全部事件（${all.length} 条，含 node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）`,
       { expected: `${all.length}/${all.length} 通过`, actual: bad ? `${parsed} 通过后失败于 ${bad.type}：${bad.err}` : `${parsed}/${all.length}`, ctx: '@agentflow/shared validateEvent（仅作校验器，被测系统仍只经 HTTP 触达）' });
   }
 

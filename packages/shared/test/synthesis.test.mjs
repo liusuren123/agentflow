@@ -12,13 +12,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { NODES } from '../dist/index.js';
 
-test('caps 固定序：llm/agent=[mcp,skill] / code=[mcp] / 其余 15 键无 caps 键', () => {
+test('caps 固定序：llm/agent=[mcp,skill] / code=[mcp] / 其余 16 键无 caps 键', () => {
   assert.deepEqual(NODES.llm.caps, ['mcp', 'skill']);
   assert.deepEqual(NODES.agent.caps, ['mcp', 'skill']);
   assert.deepEqual(NODES.code.caps, ['mcp']);
+  /* webshow 回归锚（迭代 0033）：capabilities.data 不进 caps（合成层只映射 mcp/skill）
+   * ——不进上方跳过集，由下方循环 !('caps' in def) 自然覆盖，再显式锚定一次 */
+  assert.ok(!('caps' in NODES.webshow), 'webshow 不应含 caps 键（data 不进 caps 的回归锚）');
   for (const [type, def] of Object.entries(NODES)) {
     if (type === 'llm' || type === 'agent' || type === 'code') continue;
-    assert.ok(!('caps' in def), `${type} 不应含 caps 键（15 节点无 caps 的复现条件）`);
+    assert.ok(!('caps' in def), `${type} 不应含 caps 键（16 节点无 caps 的复现条件）`);
   }
 });
 
@@ -37,7 +40,7 @@ test('if 编译产物六行真值表（迁移前语义 = 旧 nodes.ts trigger �
   assert.equal(path.if({ mode: '定时触发' }), false);
 });
 
-test('9 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即契约）', () => {
+test('10 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即契约）', () => {
   const EXPECTED_ORDER = {
     trigger: ['mode', 'cron', 'path'],
     userinput: ['var', 'vtype', 'req', 'defv'],
@@ -48,12 +51,13 @@ test('9 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即�
     code: ['lang', 'code'],
     condition: ['expr'],
     delay: ['s'],
+    webshow: ['url', 'sandbox'],
   };
   for (const [type, ks] of Object.entries(EXPECTED_ORDER))
     assert.deepEqual(NODES[type].params.map(p => p.k), ks, `${type} params 序漂移`);
 });
 
-test('快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，17 键全量）', () => {
+test('快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，18 键全量）', () => {
   const baseline = readFileSync(new URL('./nodes.baseline.json', import.meta.url)); // Buffer，零文本模式
   const actual = Buffer.from(JSON.stringify(NODES, null, 2) + '\n', 'utf8');
   let off = -1;
