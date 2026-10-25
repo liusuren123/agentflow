@@ -790,12 +790,42 @@ const evWt = await runTool(["read", wtPath(`${EVIDENCE_DIR}/manifest.json`)], 30
 const evidenceOk =
   (evTrunk.exitCode === 0 && evTrunk.stdout.includes("scenes")) ||
   (evWt.exitCode === 0 && evWt.stdout.includes("scenes"));
-const retest = merge.retest ?? { build: false, gate: false, test: false, smoke: false };
+/* 2026-10-26 迭代 0040 实发：仲裁员结构化返回偶发缺 retest 字段（复测已实跑且证据
+   已落盘，仅返回体漏字段）→ 旧逻辑回退 false×4 → retestOk=false 把成功迭代机械判
+   failed。修复：retest 缺失时从落盘证据日志回退解析四项——与 evidenceOk 同一取证
+   精神：以落盘日志为准，不信口头声称，也不凭空判 false；日志缺失或无成功标志仍为
+   false（fail-safe 方向不变，证据源从「仲裁员返回」换成「落盘日志」）。 */
+const retestFromLogs = async () => {
+  const readEv = async (f: string): Promise<string> => {
+    const t = await runTool(["read", `${EVIDENCE_DIR}/${f}`], 30_000);
+    if (t.exitCode === 0) return t.stdout;
+    const w = await runTool(["read", wtPath(`${EVIDENCE_DIR}/${f}`)], 30_000);
+    return w.exitCode === 0 ? w.stdout : "";
+  };
+  const [buildLog, gateLog, testLog, smokeLog] = await Promise.all([
+    readEv("build.log"),
+    readEv("gate.log"),
+    readEv("test.log"),
+    readEv("smoke.log"),
+  ]);
+  return {
+    /* build 全链成功标志：vite 收尾的 "built in <n>ms"（build = shared tsc + web vite） */
+    build: /built in \d+ms/.test(buildLog),
+    /* gate.mjs 收尾的成功横幅 */
+    gate: gateLog.includes("宪法门禁：通过"),
+    /* node --test 摘要（ℹ/# 两种前缀兼容）恰为 fail 0 */
+    test: /[ℹ#] fail 0/.test(testLog),
+    /* smoke 运行器收尾汇总行 0 failed */
+    smoke: /smoke:server：\d+ passed \/ 0 failed/.test(smokeLog),
+  };
+};
+const retest = merge.retest ?? (await retestFromLogs());
+const retestSource = merge.retest ? "仲裁员结构化返回" : "证据日志回退解析（返回缺 retest 字段）";
 const retestOk = retest.build && retest.gate && retest.test && retest.smoke;
 /* 终态三要素：工作树内门禁与验收 + 主干复测四项 + 证据落盘 */
 const outcomeText =
   finalState === "passed" ? (retestOk && evidenceOk ? "done" : "failed") : finalState === "failed" ? "failed" : "blocked";
-log(`主干复测：build=${retest.build} gate=${retest.gate} test=${retest.test} smoke=${retest.smoke}；证据落盘=${evidenceOk}；终态=${outcomeText}`);
+log(`主干复测：build=${retest.build} gate=${retest.gate} test=${retest.test} smoke=${retest.smoke}（${retestSource}）；证据落盘=${evidenceOk}；终态=${outcomeText}`);
 
 phase("主干最终记账（状态、度量与 BACKLOG）");
 /* 终态取决于主干复测结果，故最终记账必须在【合并复测之后】做，且在合并锁内执行
