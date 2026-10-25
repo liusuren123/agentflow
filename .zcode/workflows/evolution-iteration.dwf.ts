@@ -1,13 +1,12 @@
 /* zcode-workflow
-description: 执行一次 AgentFlow 进化迭代（v3 · 特性分支工作树模型）：预检（STATE/熔断/主干干净）→
-  原子分配迭代号并在 .zcode/worktree/feat/<NNNN>-<slug>/ 建隔离工作树 → GitHub issue 同步（needs-approval
+description: 执行一次 AgentFlow 进化迭代（v3 · 特性分支工作树模型）：预检（STATE/熔断/主干干净）→ 原子分配迭代号并在
+  .zcode/worktree/feat/<NNNN>-<slug>/ 建隔离工作树 → GitHub issue 同步（needs-approval
   批复处理 / user-request 面板）→ 侦察档案（残缺标记/悬挂 run）→ 产品经理选题（doc 项不占心跳；S 项可免
-  SPEC；无证据不立项，无候选即空转）→ 代码开发实现（脚本在工作树内统一跑 build/gate/test 门禁；修宪轮
-  允许一次 gate:update）→ 测试经理验收 → 修复循环 ≤2 → 特性分支提交 → 合并仲裁员合回主干并检出解决冲突
-  → 主干端到端复测（build/gate/test/smoke）+ 日志与图像证据留档 → 归档 + issue 回执关单。
-  契约见 docs/evolution/WORKFLOW.md；权限边界见 docs/evolution/POLICY.md。
-whenToUse: 每次进化心跳（定时/闲时唤起）或手动推进一轮迭代时调用。每轮迭代在独立特性分支与隔离工作树中
-  进行，用户可同时开多路工作流而互不干扰（迭代号原子分配防撞号，主干合并由排他锁串行化）。
+  SPEC；无证据不立项，无候选即空转）→ 代码开发实现（脚本在工作树内统一跑 build/gate/test 门禁；重录轮 允许一次
+  gate:update）→ 测试经理验收 → 修复循环 ≤2 → 特性分支提交 → 合并仲裁员合回主干并检出解决冲突 →
+  主干端到端复测（build/gate/test/smoke）+ 日志与图像证据留档 → 归档 + issue 回执关单。 契约见
+  docs/evolution/WORKFLOW.md；权限边界见 docs/evolution/POLICY.md。
+whenToUse: 每次进化心跳（定时/闲时唤起）或手动推进一轮迭代时调用。每轮迭代在独立特性分支与隔离工作树中进行，用户可同时开多路工作流而互不干扰（迭代号原子分配防撞号，主干合并由排他锁串行化）。
   issue 操作只用 gh CLI；循环的 issue 评论一律带 🤖 前缀；needs-approval 批复仅认用户本人评论。
 */
 
@@ -24,7 +23,7 @@ interface PlanResult {
   skipSpec?: boolean;
   /** 来源 issue 号（user-request / 批复转 ready 项：完成时回执关单） */
   sourceIssue?: number;
-  /** 修宪轮（用户 issue 批准的 UI/golden 变更）：门禁失败时允许一次 gate:update 重录 */
+  /** 重录轮（用户 issue 批准的 UI/golden 变更）：门禁失败时允许一次 gate:update 重录 */
   reconstitutional?: boolean;
   /** 批次化条目未到终轮（STATE.item 跨迭代续填该 ID）：迭代 PASS 只发进度回执，不关来源 issue */
   itemContinues?: boolean;
@@ -304,9 +303,9 @@ for (const it of issues.filter((i) => hasLabel(i, "needs-approval"))) {
       "comment",
       String(it.number),
       "--body",
-      `🤖 #${it.number} 已收到批准：进入实施通道（触 UI 项按修宪流程 ADR → 实现 → 同迭代重录 golden），完成时回执关单。`,
+      `🤖 #${it.number} 已收到批准：进入实施通道（触 UI 项按重录流程 ADR → 实现 → 同迭代重录 golden），完成时回执关单。`,
     ]);
-    log(`issue #${it.number} 用户批准，进入修宪通道`);
+    log(`issue #${it.number} 用户批准，进入重录通道`);
   }
 }
 
@@ -329,7 +328,7 @@ const dossier = [
 
 const pm = agent("产品经理", {
   system:
-    "你是 AgentFlow 进化工作流本轮迭代的产品经理。开工前按顺序读 .zcode/agents/product-manager.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md、docs/evolution/POLICY.md。遵守宪法铁律：触 UI 的需求只能转 needs-approval issue（返回 uiIssueNumbers 或 ui_quarantined），绝不承诺实现。无法完成或有冲突时 escalate 说明。",
+    "你是 AgentFlow 进化工作流本轮迭代的产品经理。开工前按顺序读 .zcode/agents/product-manager.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md、docs/evolution/POLICY.md。遵守根本规范铁律：触 UI 的需求只能转 needs-approval issue（返回 uiIssueNumbers 或 ui_quarantined），绝不承诺实现。无法完成或有冲突时 escalate 说明。",
 });
 
 phase("选题与需求（产品经理）");
@@ -349,7 +348,7 @@ let planRetried = 0;
 let itemClaimFailed = false;
 for (;;) {
   plan = await pm.ask<PlanResult>(
-  `按 WORKFLOW.md §4 的 PLAN 契约（v2）为迭代 ${ITER} 选题。**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 PRD 写到 ${PRD_PATH}），绝不要用裸相对路径（那会落到主干），更不要碰主干目录**。先读 ${WT_REL}/docs/evolution/BACKLOG.md、ROADMAP.md、metrics.md 与最近 3 个 ${WT_REL}/docs/evolution/iterations/ 目录，再读下方档案：\n\n${dossier}${claimedNote}\n\n规则：\n① 档案 approved 的 issue：BACKLOG 已有「来源=issue#N」行的不重复建行，仅解除该行备注所载的转 ready 门槛；无行的建 ready 行（优先级 P0，来源=issue#N，备注「已获用户 issue 批复」）。优先选已获批的 ready 项为本轮项（返回 sourceIssue）；所选项即使来源列非 issue#N、但系某获批 issue 解阻的（备注含「issue#N 获批/解阻」字样），同样返回 sourceIssue=N，且该 issue 名下还有未竟姊妹子项时返回 itemContinues=true（迭代 done 只发进度回执、全部子项终轮才不设）；reconstitutional=true 仅当所选项触 UI/需重录 golden（ui-proposal 或触UI=是），纯后端/等价重组织的批复项一律 reconstitutional=false（批复只解除 POLICY 需批准面，不构成修宪轮，禁止 gate:update 与 golden 重录）。\n② 档案中 user-request issue 且 BACKLOG 无「issue#N」来源行的：建 proposed 行（P1，来源=issue#N，大小按内容估）；其中触 UI 的不建行，返回 uiIssueNumbers 交脚本转待批准。选题时若选了来源为 issue#N 的项，同样返回 sourceIssue。\n③ 档案 rejected 的 issue：BACKLOG 对应行（若有）状态改 skipped、备注「用户 issue 驳回」。\n④ 常规选题：最高优先 ready 项（优先 S/M；类型 doc 本轮跳过——攒治理日批量处理，ready 全为 doc 时视同枯竭）；枯竭时仅可依侦察档案补题，每个新项必须挂可验证证据指针（文件:行 / 探针输出 / issue 链接），无证据不得立项；仍无候选则返回 outcome=noop（此时不写任何文件、不改 STATE）。\n⑤ 选题后：PRD 写入 ${PRD_PATH}（必含触UI 分类结论与 Given/When/Then 验收标准；S 项免 SPEC 时还须内嵌受影响文件清单与验收口径并返回 skipSpec=true）；把 ${STATE_PATH} 的 phase 改 PLAN、item 填所选 ID、started/updated 填当前时间。批次/分期编排未到终轮时返回 itemContinues=true 且 STATE.item 保持该 ID 跨迭代续填（终轮才置 done，来源 issue 才关单）。\n⑥ BACKLOG 常规项发现触 UI：状态改 pending-approval、备注「转 issue 待批准」，返回 outcome=ui_quarantined 与 uiReason（动机/影响面一句话）。`,
+  `按 WORKFLOW.md §4 的 PLAN 契约（v2）为迭代 ${ITER} 选题。**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 PRD 写到 ${PRD_PATH}），绝不要用裸相对路径（那会落到主干），更不要碰主干目录**。先读 ${WT_REL}/docs/evolution/BACKLOG.md、ROADMAP.md、metrics.md 与最近 3 个 ${WT_REL}/docs/evolution/iterations/ 目录，再读下方档案：\n\n${dossier}${claimedNote}\n\n规则：\n① 档案 approved 的 issue：BACKLOG 已有「来源=issue#N」行的不重复建行，仅解除该行备注所载的转 ready 门槛；无行的建 ready 行（优先级 P0，来源=issue#N，备注「已获用户 issue 批复」）。优先选已获批的 ready 项为本轮项（返回 sourceIssue）；所选项即使来源列非 issue#N、但系某获批 issue 解阻的（备注含「issue#N 获批/解阻」字样），同样返回 sourceIssue=N，且该 issue 名下还有未竟姊妹子项时返回 itemContinues=true（迭代 done 只发进度回执、全部子项终轮才不设）；reconstitutional=true 仅当所选项触 UI/需重录 golden（ui-proposal 或触UI=是），纯后端/等价重组织的批复项一律 reconstitutional=false（批复只解除 POLICY 需批准面，不构成重录轮，禁止 gate:update 与 golden 重录）。\n② 档案中 user-request issue 且 BACKLOG 无「issue#N」来源行的：建 proposed 行（P1，来源=issue#N，大小按内容估）；其中触 UI 的不建行，返回 uiIssueNumbers 交脚本转待批准。选题时若选了来源为 issue#N 的项，同样返回 sourceIssue。\n③ 档案 rejected 的 issue：BACKLOG 对应行（若有）状态改 skipped、备注「用户 issue 驳回」。\n④ 常规选题：最高优先 ready 项（优先 S/M；类型 doc 本轮跳过——攒治理日批量处理，ready 全为 doc 时视同枯竭）；枯竭时仅可依侦察档案补题，每个新项必须挂可验证证据指针（文件:行 / 探针输出 / issue 链接），无证据不得立项；仍无候选则返回 outcome=noop（此时不写任何文件、不改 STATE）。\n⑤ 选题后：PRD 写入 ${PRD_PATH}（必含触UI 分类结论与 Given/When/Then 验收标准；S 项免 SPEC 时还须内嵌受影响文件清单与验收口径并返回 skipSpec=true）；把 ${STATE_PATH} 的 phase 改 PLAN、item 填所选 ID、started/updated 填当前时间。批次/分期编排未到终轮时返回 itemContinues=true 且 STATE.item 保持该 ID 跨迭代续填（终轮才置 done，来源 issue 才关单）。\n⑥ BACKLOG 常规项发现触 UI：状态改 pending-approval、备注「转 issue 待批准」，返回 outcome=ui_quarantined 与 uiReason（动机/影响面一句话）。`,
   );
   if (plan.outcome !== "selected") break;
   const claimOut = await runTool(["claim-item", plan.itemId], 30_000);
@@ -382,7 +381,7 @@ for (const n of plan.uiIssueNumbers ?? []) {
     "comment",
     String(n),
     "--body",
-    `🤖 #${n} 已收录：经评估触 UI 三层，转为待批准——批复「批准」进入修宪通道（ADR → 实现 → 重录 golden），「驳回」则关闭。`,
+    `🤖 #${n} 已收录：经评估触 UI 三层，转为待批准——批复「批准」进入重录通道（ADR → 实现 → 重录 golden），「驳回」则关闭。`,
   ]);
 }
 
@@ -437,7 +436,7 @@ if (plan.outcome !== "selected") {
       plan.uiReason ?? plan.title,
       "",
       "### 影响面",
-      "触 UI 三层——修宪通道：批准后 ADR 入 docs/adr/ → 实现 → 同迭代重录 golden。",
+      "触 UI 三层——重录通道：批准后 ADR 入 docs/adr/ → 实现 → 同迭代重录 golden。",
       "",
       "### 怎么批复",
       "评论 **批准** 或 **驳回**（仅认 owner 本人；循环评论带 🤖 前缀）。",
@@ -518,7 +517,7 @@ if (plan.outcome !== "selected") {
 
 const dev = agent("代码开发", {
   system:
-    "你是 AgentFlow 进化工作流本轮迭代的代码开发。开工前按顺序读 .zcode/agents/code-developer.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md。遵守宪法：未经用户批准（issue 批复或对话确认）的 UI 变更必须拒绝执行；修宪轮（用户已批准）按 SPEC 的 golden 重录方案执行。完整门禁与 git 提交由脚本在你之后统一执行，你不要自行运行。无法完成或有冲突时 escalate 说明，不要绕过或伪造。",
+    "你是 AgentFlow 进化工作流本轮迭代的代码开发。开工前按顺序读 .zcode/agents/code-developer.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md。遵守根本规范：未经用户批准（issue 批复或对话确认）的 UI 变更必须拒绝执行；重录轮（用户已批准）按 SPEC 的 golden 重录方案执行。完整门禁与 git 提交由脚本在你之后统一执行，你不要自行运行。无法完成或有冲突时 escalate 说明，不要绕过或伪造。",
 });
 const tester = agent("测试经理", {
   system:
@@ -538,10 +537,10 @@ if (plan.skipSpec) {
 } else {
   const specDesigner = agent("SPEC 设计师", {
     system:
-      "你是 AgentFlow 进化工作流本轮迭代的 SPEC 设计师。开工前按顺序读 .zcode/agents/spec-designer.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md。规格与代码/宪法冲突时如实指出并 escalate，不得虚构未实现能力。",
+      "你是 AgentFlow 进化工作流本轮迭代的 SPEC 设计师。开工前按顺序读 .zcode/agents/spec-designer.md（你的完整职责）、CONSTITUTION.md、AGENTS.md、docs/evolution/WORKFLOW.md。规格与代码/根本规范冲突时如实指出并 escalate，不得虚构未实现能力。",
   });
   spec = await specDesigner.ask<SpecResult>(
-    `按 WORKFLOW.md §4 的 SPEC 契约处理迭代 ${ITER}（${plan.itemId} ${plan.title}）：**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 SPEC 写到 ${SPEC_PATH}），绝不要用裸相对路径（那会落到主干）**。读 ${PRD_PATH} 与 ${WT_REL}/ 下的相关代码，把技术规格写入 ${SPEC_PATH}（必含受影响文件清单、模块边界、验收口径=npm run build / npm run gate / npm test + 手动 E2E 点位），并把 ${STATE_PATH} 的 phase 改为 SPEC。需要架构决策时在 ${WT_REL}/docs/adr/ 新建草案（编号顺延，标注「待用户批准」）并返回 needsAdr=true。${plan.reconstitutional ? "本迭代为修宪轮（用户已 issue 批准）：SPEC 必须含 golden 重录方案（重录范围与宪法第 3 条依据），ADR 标注「已获用户 issue #${plan.sourceIssue} 批复」。" : ""}`,
+    `按 WORKFLOW.md §4 的 SPEC 契约处理迭代 ${ITER}（${plan.itemId} ${plan.title}）：**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 SPEC 写到 ${SPEC_PATH}），绝不要用裸相对路径（那会落到主干）**。读 ${PRD_PATH} 与 ${WT_REL}/ 下的相关代码，把技术规格写入 ${SPEC_PATH}（必含受影响文件清单、模块边界、验收口径=npm run build / npm run gate / npm test + 手动 E2E 点位），并把 ${STATE_PATH} 的 phase 改为 SPEC。需要架构决策时在 ${WT_REL}/docs/adr/ 新建草案（编号顺延，标注「待用户批准」）并返回 needsAdr=true。${plan.reconstitutional ? "本迭代为重录轮（用户已 issue 批准）：SPEC 必须含 golden 重录方案（重录范围与根本规范第 3 条依据），ADR 标注「已获用户 issue #${plan.sourceIssue} 批复」。" : ""}`,
   );
 }
 log(`SPEC 完成：${spec.touchedPaths.length} 个受影响文件${spec.needsAdr ? "，含 ADR 草案" : ""}`);
@@ -583,14 +582,14 @@ for (let round = 1; round <= 3; round += 1) {
       const redo = await runTool(["run", WT, "npm", "run", "gate:update"], 900_000);
       goldenReRecorded = redo.exitCode === 0;
       if (goldenReRecorded) {
-        log("修宪轮：按宪法第 3 条（用户 issue 批复）在工作树内重录 golden 一次，复跑门禁");
+        log("重录轮：按根本规范第 3 条（用户 issue 批复）在工作树内重录 golden 一次，复跑门禁");
         continue;
       }
-      feedback = `[门禁] 修宪轮 gate:update 重录失败：\n${redo.stdout.slice(-600)}`;
+      feedback = `[门禁] 重录轮 gate:update 失败：\n${redo.stdout.slice(-600)}`;
       finalState = "failed";
       continue;
     }
-    feedback = `[门禁] 工作树内像素门禁红（宪法违例，必须修复）：\n${g.stdout.slice(-600)}`;
+    feedback = `[门禁] 工作树内像素门禁红（根本规范违例，必须修复）：\n${g.stdout.slice(-600)}`;
     finalState = "failed";
     continue;
   }
@@ -735,7 +734,7 @@ const merge = await arbiter.ask<MergeResult>(
 - 迭代目录（工作树内，相对主干）：${iterDir}
 - 本轮提交信息：${commitMessage || "（无，本轮未提交）"}
 - 验收报告：${iterDir}/REPORT.md（若存在）
-- 本轮是否修宪轮（允许一次 golden 重录）：${plan.reconstitutional === true ? "是" : "否"}（否 = 禁止 gate:update）
+- 本轮是否重录轮（允许一次 golden 重录）：${plan.reconstitutional === true ? "是" : "否"}（否 = 禁止 gate:update）
 
 【步骤】
 1. 确认主干工作区干净（git status）；有未提交改动则不要强行合并，如实报告并停止。
@@ -889,7 +888,7 @@ await artifact.markdown(
     `# 进化迭代 ${ITER}：${plan.title}`,
     "",
     `- 项：${plan.itemId}（${plan.title}）${plan.sourceIssue ? ` · 来源 issue #${plan.sourceIssue}` : ""}`,
-    `- 终态：${outcomeText}${goldenReRecorded ? "（修宪轮：golden 已重录）" : ""}`,
+    `- 终态：${outcomeText}${goldenReRecorded ? "（重录轮：golden 已重录）" : ""}`,
     finalState === "passed" ? `- 产品提交：${commitMessage}` : `- 未提交：${feedback.slice(0, 200)}`,
     `- 分支与合并：${BRANCH}${merge.commit ? ` → 主干 ${merge.commit.slice(0, 8)}` : ""}${merge.conflicts.length > 0 ? ` · 冲突 ${merge.conflicts.length} 处` : " · 无冲突"}`,
     `- 主干复测：build=${retest.build} gate=${retest.gate} test=${retest.test} smoke=${retest.smoke}`,
