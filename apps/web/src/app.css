@@ -367,6 +367,12 @@ body.running #float-prog{display:flex}
   font-size:12px;outline:none;resize:vertical;min-height:70px;line-height:1.6}
 .prow textarea:focus{border-color:var(--accent)}
 .prow .switchline{display:flex;align-items:center;justify-content:space-between}
+/* BK-0046 · 审批人节点引用拾取入口（#props 参数行内，ADR-0017 §2） */
+#props .role-pick{display:flex;align-items:center;justify-content:center;gap:6px;
+  width:100%;height:26px;background:var(--panel2);border:1px solid var(--border2);
+  border-radius:7px;color:var(--text2);font-size:11px;cursor:pointer;padding:0}
+#props .role-pick:hover{border-color:var(--accent);color:var(--text)}
+#props .role-pick svg.ic{width:13px;height:13px;flex:none}
 #props .pbtns{display:flex;gap:8px;margin-top:18px}
 #props .pbtns .ibtn{flex:1;justify-content:center}
 #props .pbtns .danger:hover{border-color:var(--err);color:var(--err)}
@@ -520,6 +526,9 @@ body.running #float-bar{display:block}
 #ctxmenu .mi.danger:hover{background:rgba(248,113,113,.12)}
 #ctxmenu .msep{height:1px;background:var(--border);margin:4px 8px}
 #ctxmenu .mtitle{padding:6px 11px 4px;font-size:10.5px;color:var(--text3);letter-spacing:.5px}
+/* BK-0046 · 拾取菜单非 LLM 节点置灰（复用 #ctxmenu，ADR-0017 §2） */
+#ctxmenu .mi.off{color:var(--text3);opacity:.55}
+#ctxmenu .mi.off:hover{background:none}
 
 /* Toast */
 #toasts{position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:300;display:flex;

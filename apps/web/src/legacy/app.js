@@ -951,6 +951,7 @@ function renderProps(){
         <button class="ibtn" id="prop-copy">${I('copy')} 复制</button>
         <button class="ibtn danger" id="prop-del">${I('trash')} 删除</button>
       </div>`;
+    if(n.type==='approval') mountApprovalRolePicker();
     return;
   }
   const e = state.edges.find(x=>x.id===[...sel.edges][0]);
@@ -1000,6 +1001,73 @@ function capsHtml(n, def){
   return h;
 }
 
+/* ===== 审批人节点引用拾取器（BK-0046 / ADR-0017 §2）===== */
+function mountApprovalRolePicker(){
+  /* 幂等：innerHTML 刚整体替换，无残留按钮；仅 approval 单选态被调用 */
+  const inp = $('#props input[data-k="role"]');
+  if(!inp) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'role-pick';
+  btn.title = '从画布选择节点作为互审审官（写入 node:<id>）';
+  btn.innerHTML = I('workflow') + '<span>从画布选择审官节点</span>';
+  inp.insertAdjacentElement('afterend', btn);
+}
+function openApprovalRolePicker(n){
+  /* 现状选中态：role 已为 node:<id> 时对应项带 ✓（PRD REQ-0046-01 第二组 GWT） */
+  const cur = String(paramsOf(n).role||'').match(/^node:(\d+)$/);
+  const others = state.nodes.filter(x=>x.id!==n.id);   /* 排除自身（PRD 硬约束） */
+  const items = [];
+  if(!others.some(x=>x.type==='llm'))
+    items.push({ cls:'mtitle', t:'画布无 LLM 节点（审官须为 LLM 类型）' });
+  others.forEach(x=>{
+    const isLLM = x.type==='llm';
+    const hit = cur && +cur[1]===x.id;
+    items.push({
+      ic: defOf(x).icon,
+      t: `${x.title||defOf(x).name} · #${x.id}`,
+      cls: isLLM ? '' : 'off',
+      mk: hit ? '✓' : (isLLM ? 'LLM' : ''),
+      f: isLLM ? ()=>{ writeRolePick(n, 'node:'+x.id); }
+               : ()=>{ toast('仅 LLM 节点可担任互审审官','warn'); },
+    });
+  });
+  const r = $('#props .role-pick').getBoundingClientRect();
+  showMenu(r.left, r.bottom+6, items);
+}
+function writeRolePick(n, val){
+  /* 覆盖语义（PRD：含已有值时整体覆盖，SPEC 定）：选中即整体替换；
+   * 经既有 change 委托落 params + rerenderNode（与 .pvar 插入同型，app.js:1055） */
+  const inp = $('#props input[data-k="role"]');
+  if(!inp) return;
+  inp.value = val;
+  inp.dispatchEvent(new Event('change',{bubbles:true}));
+}
+
+/* ===== code 节点 lang 切换样例联动（BUG-0012 / ADR-0017 §3）===== */
+/* JS 等价样例：与 apps/server/src/handlers.ts:113 兜底字面量逐字一致（含 \n 转义
+ * 形态）——两处漂移由 smoke K04 源锁断言守护（ADR-0017 §3）。 */
+const CODE_JS_SAMPLE = '// 处理输入后返回\nresult = input\nreturn result';
+
+function syncCodeSampleLang(n){
+  /* 触发条件：lang change 已写入（select 的 change 仅在取值实际变化时触发）；
+   * cur 逐字等于「切换前语言的默认样例」才替换，其余零改动（绝不覆盖用户代码，
+   * 与后端兜底「唯一组合命中」同口径，handlers.ts:106-109）。 */
+  const ps = paramsOf(n);
+  const pySample = DEFS.code.params.find(p=>p.k==='code').d;   /* 单一来源：DEFS 运行时值 */
+  const cur = ps.code;
+  let next = null;
+  if(ps.lang==='JavaScript' && cur===pySample) next = CODE_JS_SAMPLE;
+  else if(ps.lang==='Python' && cur===CODE_JS_SAMPLE) next = pySample;
+  if(next===null || next===cur) return;
+  n.params = n.params||{};
+  n.params.code = next;
+  rerenderNode(n);                                    /* 节点体 textarea 重建为新值 */
+  const ta = $('#props textarea[data-k="code"]');     /* #props 面板同步（该委托不重渲染 #props） */
+  if(ta) ta.value = next;
+  toast('默认样例与所选语言不匹配，已替换为等价样例');
+}
+
 $('#props').addEventListener('change', e=>{
   if(sel.nodes.size!==1) return;
   const n = nodeById([...sel.nodes][0]); if(!n) return;
@@ -1033,6 +1101,7 @@ $('#props').addEventListener('change', e=>{
     n.params = n.params||{};
     n.params[k] = e.target.type==='checkbox' ? e.target.checked :
                   e.target.type==='number' ? Number(e.target.value) : e.target.value;
+    if(n.type==='code' && k==='lang') syncCodeSampleLang(n);   /* BUG-0012 前端联动（ADR-0017 §3） */
     rerenderNode(n); renderMinimap(); saveLocal();
   }
 });
@@ -1042,6 +1111,13 @@ $('#props').addEventListener('click', e=>{
     const sid = exp.dataset.expand;
     mcpExpanded.has(sid)?mcpExpanded.delete(sid):mcpExpanded.add(sid);
     renderProps(); return;
+  }
+  /* BK-0046：审批人行拾取入口 → 打开画布节点清单（ADR-0017 §2） */
+  const rpick = e.target.closest('.role-pick');
+  if(rpick && sel.nodes.size===1){
+    const n = nodeById([...sel.nodes][0]);
+    if(n && n.type==='approval') openApprovalRolePicker(n);
+    return;
   }
   /* ③ 可用变量 chip → 在光标处插入 {{变量}} */
   const vchip = e.target.closest('.pvar');
@@ -1677,6 +1753,7 @@ nodesLayer.addEventListener('change', e=>{
   const k = e.target.dataset.k; if(k===undefined) return;
   n.params = n.params||{};
   n.params[k] = e.target.type==='checkbox'?e.target.checked : e.target.type==='number'?Number(e.target.value):e.target.value;
+  if(n.type==='code' && k==='lang') syncCodeSampleLang(n);   /* BUG-0012 前端联动·节点体入口（ADR-0017 §3） */
   const def = defOf(n), ps = paramsOf(n);
   if((def.params||[]).some(p=>p.if&&p.k===k)){ rerenderNode(n); }
   renderMinimap(); saveLocal();
