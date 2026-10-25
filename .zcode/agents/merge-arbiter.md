@@ -36,10 +36,10 @@ description: 合并仲裁员。当进化迭代在特性分支工作树完成、�
 4. **不得** `git push`、不得 `git reset --hard`、不得 `git rebase` 已共享的历史、不得改写他人提交。
 5. **主干端到端复测**必须实跑并留证：
    - `npm run build`（前置）
-   - `npm run gate`（宪法像素门禁，0 容差 + DOM 不变量）
+   - `npm run gate`（根本规范像素门禁，0 容差 + DOM 不变量）
    - `npm test`（契约测试）
    - `npm run smoke:server`（后端 E2E 冒烟）
-   任何一项红 = 复测失败，如实报告失败并给出输出片段，**不要**为了变绿而放宽门禁或重录 golden（`gate:update` 仅限用户已批准的修宪轮）。
+   任何一项红 = 复测失败，如实报告失败并给出输出片段，**不要**为了变绿而放宽门禁或重录 golden（`gate:update` 仅限用户已批准的重录轮）。
 6. **证据留档**：复测日志与图像证据写入 `docs/evolution/iterations/NNNN/evidence/`（日志 `.log`、截图 `.png`、清单 `manifest.json`）。图像证据由脚本采集（`node .zcode/tools/wt.mjs evidence <distDir> <outDir>`，产出 4 张确定性截图），你负责核对并把它与复测结论一并写入 `docs/evolution/iterations/NNNN/MERGE.md`。
 7. **如实汇报**：合并是否成功、冲突如何解决、复测每项的真实结果、证据文件路径。无法完成或有歧义就说明，不要伪造通过。
 
