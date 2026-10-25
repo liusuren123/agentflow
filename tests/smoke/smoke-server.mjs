@@ -434,6 +434,23 @@ async function main() {
   const w7 = await api(srv.base, 'DELETE', `/api/v1/workflows/${wfId}`);
   C.eq(w7.status, 404, 'W07', '再次 DELETE → 404（再删反例）', ctxOf(w7));
 
+  { /* W08/W09 · 静态托管正路径护栏（迭代 0040 / BK-0052 · REQ-0052-03）：GET / 与
+       GET /index.html → 200 + text/html + 响应体与构建产物逐字相等（Windows 下
+       sendFile 绝对路径 404 的回归锚，该路由首次获得机器护栏）。fetch 直连：
+       api() 不透出 Content-Type，沿 chatSse 直连前例；触达通道按本轮 PRD 明示
+       扩至静态路由（非 /api/v1/*）。 */
+    const distIndex = readFileSync(path.join(REPO_ROOT, 'apps', 'web', 'dist', 'index.html'), 'utf8');
+    for (const [id, urlPath] of [['W08', '/'], ['W09', '/index.html']]) {
+      const r = await fetch(`${srv.base}${urlPath}`, { signal: AbortSignal.timeout(15000) });
+      const body = await r.text();
+      C.ok(r.status === 200 && (r.headers.get('content-type') ?? '').includes('text/html') && body === distIndex,
+        id, `GET ${urlPath} → 200、Content-Type 含 text/html、响应体与 apps/web/dist/index.html 逐字相等`,
+        { expected: '200 text/html + body === dist/index.html',
+          actual: `${r.status} ${r.headers.get('content-type') ?? '(无 Content-Type)'} · body ${body.length} 字符${body === distIndex ? `（= dist ${distIndex.length}）` : `（≠ dist ${distIndex.length}）`}：${JSON.stringify(body.slice(0, 60))}`,
+          ctx: `GET ${urlPath}（主实例；P01 已保证 dist 在位）` });
+    }
+  }
+
   /* N 组：参数反例（N01-N03） */
   const n1 = await api(srv.base, 'POST', '/api/v1/run', { name: 'x', nodes: {} });
   C.ok(n1.status === 400 && n1.json?.error === 'body.nodes 必须是数组', 'N01', 'POST /run nodes 非数组 → 400 {error:"body.nodes 必须是数组"}',
