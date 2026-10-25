@@ -28,6 +28,14 @@ export const saveWorkflowToServer = (id, body) => apiJson('/workflows' + (id ? '
 export const deleteWorkflowFromServer = id => apiJson('/workflows/' + encodeURIComponent(id), { method: 'DELETE' });
 export const deleteRunFromServer = id => apiJson('/runs/' + encodeURIComponent(id), { method: 'DELETE' });
 
+/* 会话（BK-0034）：列表（updated_at 倒序）/ 详情 {session,messages} / 新建 / 停止
+ * ——仅数据层（ADR 4.4），面板 DOM 归 app.js；409/404 走非 2xx 抛错由调用方提示 */
+export const fetchSessionList = (limit = 20) => apiJson('/sessions?limit=' + limit).then(j => Array.isArray(j.sessions) ? j.sessions : []);
+export const fetchSessionDetail = id => apiJson('/sessions/' + encodeURIComponent(id));
+export const createSessionOnServer = body => apiJson('/sessions',
+  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export const stopSessionOnServer = id => apiJson('/sessions/' + encodeURIComponent(id) + '/stop', { method: 'POST' });
+
 /* 运行历史：列表（started_at 倒序）/ 单条完整事件回放 */
 export const fetchRunList = (limit = 50) => apiJson('/runs?limit=' + limit).then(j => Array.isArray(j.runs) ? j.runs : []);
 export const fetchRunDetail = id => apiJson('/runs/' + encodeURIComponent(id));
@@ -40,12 +48,15 @@ export const SVR = {
   runsErr: false,
   runEvents: new Map(),// runId → events[]（成功）| null（404/失败）
   openRunId: null,     // 历史面板当前展开回放的 runId（同面板同时只展开一个）
+  sessions: null,      // SessionRow[] | null：{id,title,model,sys,created_at,updated_at}（BK-0034）
+  sessionsErr: false,  // 最近一次会话列表拉取失败 → 恢复列表错误空态
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
-let wfArrive = null, runsArrive = null;
+let wfArrive = null, runsArrive = null, sessionsArrive = null;
 export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
+export function onSessionsArrive(fn){ sessionsArrive = fn; }
 
 export async function refreshWorkflows(){
   try{ SVR.wf = await fetchWorkflowList(); SVR.wfErr = false; }
@@ -56,6 +67,11 @@ export async function refreshRuns(){
   try{ SVR.runs = await fetchRunList(50); SVR.runsErr = false; }
   catch(_){ SVR.runsErr = true; }
   runsArrive && runsArrive();
+}
+export async function refreshSessions(){
+  try{ SVR.sessions = await fetchSessionList(20); SVR.sessionsErr = false; }
+  catch(_){ SVR.sessionsErr = true; }
+  sessionsArrive && sessionsArrive();
 }
 
 /* 展开回放：成功/失败都写入缓存（null=获取失败），由回调重绘分组容器 */

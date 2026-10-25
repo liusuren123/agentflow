@@ -4,6 +4,7 @@ import { NODES } from '@agentflow/shared';
 import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveWorkflowToServer,
          deleteWorkflowFromServer, deleteRunFromServer,
          onWorkflowsArrive, onRunsArrive, fmtTs, replayLines, runCardMeta } from '../server-sync.js';
+import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refreshSessions } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -2422,5 +2423,228 @@ viewport.addEventListener('mousemove', e=>{
   if(fresh){ try{ fitView(); renderAll(); }catch(e){ console.error(e); } }
   if(fresh) addLog('欢迎使用 AgentFlow · 点击画布顶部「▶ 运行」开始执行','sys');
 })();
+
+/* ================================================================
+ *  goal 会话面板（BK-0034 / 迭代 0032 修宪轮 · ADR-0013 §4 入口案 B）
+ *  动态单例 #goal-panel（默认不可见 → s0~s8 零波及）；入口 = agent 节点主体
+ *  双击（排除 .ntitle 重命名 / .wdg 输入 / .port）；会话绑定 = 同名恢复优先、
+ *  无则新建（GOAL_BIND 运行时表，不入 localStorage/undo）；SSE turn 恰消费
+ *  7 种既有事件（ADR-0013 §5.2 语义逐条），零新增契约（§5.3 护栏）。
+ * ================================================================ */
+const GOAL_BIND = new Map();                    /* nodeId → sessionId（运行时绑定） */
+const GOAL = { nodeId:null, sid:null, turning:false };
+
+function goalEnsure(){
+  let p = $('#goal-panel');
+  if(p) return p;
+  p = document.createElement('div');
+  p.id = 'goal-panel';
+  p.innerHTML = `
+    <div class="gp-head">
+      <span class="gp-title"></span>
+      <span class="gp-status"></span>
+      <button class="ibtn" data-gp="list" title="历史会话">${I('book-open')}</button>
+      <button class="ibtn" data-gp="close" title="关闭">${I('x')}</button>
+    </div>
+    <div class="gp-stream"></div>
+    <div class="gp-list"></div>
+    <div class="gp-input">
+      <textarea spellcheck="false" placeholder="向智能体输入本轮目标…（Enter 发送 / Shift+Enter 换行）"></textarea>
+      <button class="gp-send">发送</button>
+      <button class="gp-stop">停止</button>
+    </div>`;
+  document.body.appendChild(p);
+  p.querySelector('[data-gp="close"]').addEventListener('click', ()=>p.classList.remove('show'));
+  p.querySelector('[data-gp="list"]').addEventListener('click', ()=>goalToggleList());
+  p.querySelector('.gp-send').addEventListener('click', ()=>goalSendTurn());
+  p.querySelector('.gp-stop').addEventListener('click', ()=>goalStopTurn());
+  p.querySelector('textarea').addEventListener('keydown', ev=>{
+    ev.stopPropagation();
+    if(ev.key==='Enter' && !ev.shiftKey){ ev.preventDefault(); goalSendTurn(); }
+  });
+  return p;
+}
+function goalStream(){ return $('#goal-panel .gp-stream'); }
+function goalScroll(){ const s = goalStream(); if(s) s.scrollTop = s.scrollHeight; }
+function goalAddMsg(role, text){
+  const d = document.createElement('div');
+  d.className = 'gp-msg ' + role;
+  d.textContent = text;
+  goalStream().appendChild(d); goalScroll();
+  return d;
+}
+function goalAddSys(text){
+  const d = document.createElement('div');
+  d.className = 'gp-sys'; d.textContent = text;
+  goalStream().appendChild(d); goalScroll();
+  return d;
+}
+function goalSetTurning(on){
+  GOAL.turning = on;
+  const p = $('#goal-panel'); if(!p) return;
+  p.classList.toggle('turning', on);
+  p.querySelector('textarea').disabled = on;
+  p.querySelector('.gp-status').textContent = on ? '生成中…' : '';
+}
+/* 入口：agent 节点主体双击（再次双击同节点 = 收起）；.ntitle 重命名 / .wdg 输入 /
+ * .port 连线手势零触碰（既有 :2353/:1580 分支行为不变） */
+nodesLayer.addEventListener('dblclick', e=>{
+  const nodeEl = e.target.closest('.node'); if(!nodeEl) return;
+  if(e.target.closest('.ntitle') || e.target.closest('.wdg') || e.target.closest('.port')) return;
+  const n = nodeById(+nodeEl.dataset.id);
+  if(!n || n.type !== 'agent') return;
+  const p = $('#goal-panel');
+  if(p && p.classList.contains('show') && GOAL.nodeId === n.id){ p.classList.remove('show'); return; }
+  openGoalPanel(n);
+});
+async function openGoalPanel(n){
+  const p = goalEnsure();
+  GOAL.nodeId = n.id;
+  p.classList.add('show');
+  p.classList.remove('gp-mode-list');
+  p.querySelector('.gp-title').textContent = n.title || defOf(n).name;
+  const stream = goalStream();
+  stream.innerHTML = '';
+  goalAddSys('正在连接会话…');
+  try{
+    let sid = GOAL_BIND.get(n.id);
+    if(!sid){
+      await refreshSessions();
+      const hit = (SVR.sessions || []).find(s => s.title === (n.title || defOf(n).name));
+      if(hit) sid = hit.id;                    /* 同名恢复优先（服务端持久会话） */
+      else{
+        const ps = paramsOf(n);
+        sid = (await createSessionOnServer({ title:n.title||defOf(n).name, model:ps.model, sys:ps.sys })).id;
+      }
+      GOAL_BIND.set(n.id, sid);
+    }
+    GOAL.sid = sid;
+    const d = await fetchSessionDetail(sid);
+    stream.innerHTML = '';
+    const msgs = Array.isArray(d.messages) ? d.messages : [];
+    if(!msgs.length) goalAddSys('暂无消息 · 在下方输入目标开始');
+    msgs.forEach(m => goalAddMsg(m.role === 'assistant' ? 'assistant' : 'user', m.text));
+  }catch(err){
+    stream.innerHTML = '';
+    GOAL.sid = null;
+    goalAddSys('后端不可达或会话不存在（' + String(err && err.message || err).slice(0,60) + '）');
+  }
+}
+/* 续聊：POST chat SSE 流式消费——恰 7 种事件（ADR-0013 §5.2 表逐条）；
+ * stopped=true 时服务端不发 node:done（部分文本已落库），以末次 delta 累积全文固化 */
+async function goalSendTurn(){
+  if(GOAL.turning || !GOAL.sid) return;
+  const p = $('#goal-panel'); if(!p) return;
+  const ta = p.querySelector('textarea');
+  const text = ta.value.trim();
+  if(!text) return;
+  ta.value = '';
+  goalAddMsg('user', text);
+  goalSetTurning(true);
+  let bubble = null, lastText = '', accepted = false, finalized = false;
+  const finish = stopped => {
+    if(finalized) return; finalized = true;
+    goalSetTurning(false);
+    if(stopped && bubble){
+      bubble.textContent = lastText || '（已停止，无输出）';
+      const foot = document.createElement('span');
+      foot.className = 'gp-foot'; foot.textContent = '已停止';
+      bubble.appendChild(foot); goalScroll();
+    }
+  };
+  try{
+    const resp = await fetch('/api/v1/sessions/' + encodeURIComponent(GOAL.sid) + '/chat', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ text }),
+    });
+    if(resp.status === 409){ goalAddSys('回复进行中，请稍候'); goalSetTurning(false); return; }
+    if(!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder(); let buf = '';
+    for(;;){
+      const {done, value} = await reader.read();
+      if(done) break;
+      buf += dec.decode(value, {stream:true});
+      let idx;
+      while((idx = buf.indexOf('\n\n')) >= 0){
+        const chunk = buf.slice(0, idx); buf = buf.slice(idx+2);
+        const line = chunk.split('\n').find(l=>l.startsWith('data: '));
+        if(!line) continue;
+        let ev; try{ ev = JSON.parse(line.slice(6)); }catch(_){ continue; }
+        switch(ev.type){
+          case 'run:accepted': accepted = true; break;            /* turn 边界：不渲染日志行 */
+          case 'node:start':  bubble = goalAddMsg('assistant', ''); break;
+          case 'node:delta':                                        /* 累积全文，覆盖式渲染 */
+            lastText = String(ev.text || '');
+            if(!bubble) bubble = goalAddMsg('assistant', '');
+            bubble.textContent = lastText; goalScroll();
+            break;
+          case 'node:done': {                                       /* 定稿 + tokens/耗时脚注 */
+            const t = String(ev.out != null ? ev.out : lastText);
+            if(!bubble) bubble = goalAddMsg('assistant', '');
+            bubble.textContent = t;
+            const foot = document.createElement('span');
+            foot.className = 'gp-foot';
+            foot.textContent = (ev.tokens != null ? ev.tokens + ' tokens · ' : '') + ((Number(ev.ms)||0)/1000).toFixed(1) + 's';
+            bubble.appendChild(foot); goalScroll();
+            break;
+          }
+          case 'log':        goalAddSys(ev.msg || ''); break;       /* ⚠/🔧/✓ 系统行 */
+          case 'run:error':  goalAddSys('✗ ' + String(ev.message||'').slice(0,120)); break;
+          case 'run:done':   finish(!!ev.stopped); break;           /* stopped → 末次 delta 固化 */
+          default: break;                                           /* 其余 8 种 turn 流不发射 */
+        }
+      }
+    }
+    finish(false);   /* 流正常结束但未收到 run:done（服务端异常断开兜底） */
+  }catch(err){
+    if(!accepted) goalAddSys('发送失败（' + String(err && err.message || err).slice(0,60) + '）');
+    finish(false);
+  }
+}
+/* 停止：服务端中止（POST stop）；404 = 无活动 turn 的兜底语义（ADR §5.1） */
+async function goalStopTurn(){
+  if(!GOAL.turning || !GOAL.sid) return;
+  try{
+    await stopSessionOnServer(GOAL.sid);
+  }catch(err){
+    if(String(err && err.message || '').includes('404')) goalAddSys('当前无进行中回复');
+    /* 其余失败不阻断：turn 仍由 run:done 收尾 */
+  }
+}
+/* 恢复列表：GET sessions（limit 20）→ 点击回放详情并绑定为当前会话 */
+async function goalToggleList(){
+  const p = $('#goal-panel'); if(!p) return;
+  if(!p.classList.contains('gp-mode-list')){
+    const list = p.querySelector('.gp-list');
+    list.innerHTML = '<div class="gp-empty">加载中…</div>';
+    p.classList.add('gp-mode-list');
+    await refreshSessions();
+    list.innerHTML = '';
+    if(SVR.sessionsErr || !SVR.sessions || !SVR.sessions.length){
+      list.innerHTML = '<div class="gp-empty">' + (SVR.sessionsErr ? '会话列表拉取失败' : '暂无历史会话') + '</div>';
+      return;
+    }
+    SVR.sessions.forEach(s=>{
+      const it = document.createElement('div');
+      it.className = 'gp-item';
+      it.innerHTML = '<b>' + esc(s.title || '未命名会话') + '</b><br><span class="gp-item-meta">'
+        + esc(s.model || '') + ' · ' + fmtTs(s.updated_at) + '</span>';
+      it.addEventListener('click', async ()=>{
+        GOAL.sid = s.id; GOAL_BIND.set(GOAL.nodeId, s.id);
+        p.classList.remove('gp-mode-list');
+        const stream = goalStream(); stream.innerHTML = '';
+        try{
+          const d = await fetchSessionDetail(s.id);
+          const msgs = Array.isArray(d.messages) ? d.messages : [];
+          if(!msgs.length) goalAddSys('暂无消息 · 在下方输入目标开始');
+          msgs.forEach(m => goalAddMsg(m.role === 'assistant' ? 'assistant' : 'user', m.text));
+        }catch(_){ goalAddSys('会话详情拉取失败'); }
+      });
+      list.appendChild(it);
+    });
+  }
+  else p.classList.remove('gp-mode-list');
+}
 
 }

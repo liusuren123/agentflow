@@ -185,6 +185,37 @@ const AGENT_WF_SEED = JSON.stringify({ tabs: [{ name: '智能体示例', nodes: 
   { id: 2, type: 'agent',   x: 410, y: 250, title: '通用智能体' },
 ], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
 
+/* ---------- s9 goal 会话面板在线态场景基建（ADR-0013 §6 · 迭代 0032 / BK-0034） ----------
+   面板打开路径（app.js openGoalPanel）：refreshSessions（GET list）→ 同名「通用智能体」
+   恢复优先命中 → fetchSessionDetail（GET :id）→ 两条消息气泡回放；无 POST（新建/续聊/
+   停止静态态不触发）。fixture 字面量同 WF_ROUTES 口径（整点毫秒 + 固定中文样例）。
+   注册序注意：Playwright 路由后注册者先匹配——list 模式 `sessions?*` 的 `?`/`*`
+   也会命中 detail URL，故 detail 必须注册在 list 之后（先试 detail、回落 list）。 */
+const SESSION_FIX_ID = 'sess-goal-fix';
+const SESSION_ROUTES = [
+  { pattern: '**/api/health',
+    handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/sessions?*',
+    handler: route => route.fulfill({ json: { sessions: [
+      { id: SESSION_FIX_ID, title: '通用智能体', model: 'GLM-4.7',
+        created_at: 1767225600000, updated_at: 1767312000000 },
+    ] } }) },
+  { pattern: '**/api/v1/sessions/sess-goal-fix',
+    handler: route => route.fulfill({ json: { session: {
+        id: SESSION_FIX_ID, title: '通用智能体', model: 'GLM-4.7',
+        sys: '你是通用智能体，围绕用户目标自主推进，工具调用前评估必要性。',
+        created_at: 1767225600000, updated_at: 1767312000000 },
+      messages: [
+        { seq: 1, role: 'user',      text: '整理本周仓库提交记录，输出变更摘要' },
+        { seq: 2, role: 'assistant', text: '已完成梳理：本周共 6 次提交，覆盖 NDP 迁移、会话 API 与门禁扩充三个主题。' },
+      ] } }) },
+];
+const goalOpen = page => page.evaluate(() => document.querySelector('.node[data-id="2"]')
+  .dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+const goalReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#goal-panel .gp-msg').length === 2,
+  undefined, { timeout: 10000, polling: 100 });
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -198,6 +229,9 @@ const SCENARIOS = [
   { id: 's7-log-filter-warn', steps: [], after: logPanelAfter('warn'), inv: logInv },
   { id: 's8-agent-node', steps: [],
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), AGENT_WF_SEED) },
+  { id: 's9-goal-panel-online', routes: SESSION_ROUTES,
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), AGENT_WF_SEED),
+    steps: [goalOpen], ready: goalReady },
 ];
 
 const runScenario = async (browser, sc) => {
