@@ -560,7 +560,11 @@ for (let round = 1; round <= 3; round += 1) {
       ? `按 WORKFLOW.md §4 的 BUILD 契约实现迭代 ${ITER}（${plan.itemId} ${plan.title}）：**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写与代码改动一律使用带 ${WT_REL}/ 前缀的完整路径（例如代码改 ${WT_REL}/apps/... 、${WT_REL}/packages/...），绝不要用裸相对路径（那会落到主干，主干保持干净是并行不冲突的前提）**。读 ${PRD_PATH} 与 ${plan.skipSpec ? PRD_PATH : SPEC_PATH}${plan.skipSpec ? "（S 项免 SPEC：受影响文件清单与验收口径内嵌 PRD）" : ""}，按受影响文件清单实现；把 ${STATE_PATH} 的 phase 改为 BUILD，过程写入 ${JOURNAL_PATH}。若需扩大影响面或发现未经批准的 UI 触及：立即停止改动并返回 blockedReason。完整门禁（build/gate/test${plan.reconstitutional ? "，含按 SPEC 方案重录 golden" : ""}）与 git 提交由脚本统一执行，你不要自行运行；若确需自测，请 cd 到 ${WT_REL} 后再执行命令。返回 productFiles=本轮实际改动/新增的产品文件清单（**相对工作树根**的路径，受影响文件白名单口径、含新增文件、不含 docs/evolution）——脚本只 add 该清单，清单外文件（如外部工具骨架）不得混入产品提交。`
       : `修复验收/门禁发现的问题后完成本轮（仍在工作树 ${WT_REL} 内操作，路径一律带 ${WT_REL}/ 前缀）：\n${feedback}\n更新 ${JOURNAL_PATH}；同样不要自行运行门禁或提交。`;
   const built = await dev.ask<BuildResult>(buildAsk);
-  builtProductFiles = built.productFiles ?? [];
+  /* productFiles 必须【跨轮累积并集】，不可覆盖：修复轮的申报只含本轮改动，
+     若覆盖，首轮新建的文件（如新节点目录 node.ts/README）永远不进提交——
+     分支将引用一个不存在的模块、合并后主干编译失败
+     （2026-10-25 迭代 0034 实发：termview 目录漏提交，nodes.ts 引用悬空）。 */
+  builtProductFiles = [...new Set([...builtProductFiles, ...(built.productFiles ?? [])])];
   if ((built.blockedReason ?? "") !== "") {
     finalState = "blocked";
     summary = built.blockedReason ?? "";
