@@ -1,9 +1,11 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 6 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
- *    s0~s3 离线静态态；s4/s5 在线态（ADR-0009，issue#7 批准）——Playwright
- *    路由拦截 fixture 供数（probe 的 /api/health + /api/v1 列表）+ 时区钉死 UTC
+ *  · 16 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5/s9/s15 在线态——Playwright 路由拦截 fixture 供数
+ *    （probe 的 /api/health + /api/v1 列表），其中 s4/s5（ADR-0009，issue#7 批准）
+ *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039；其余 s6~s8、s10~s14 为离线扩展场景
+ *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
  *  · 稳定性等待：连续两帧截图一致才算场景就绪（消化入场动画/字体加载）
