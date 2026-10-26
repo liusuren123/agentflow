@@ -28,7 +28,6 @@ const EXPECTED_DEFAULTS = {
   termview:   { lines: 200, autoscroll: true },
   setvar:     { name: 'answer' },
   webshow:    { url: '', sandbox: true },
-  termview:   { lines: 200, autoscroll: true },
   jsoncanvas: { expand: 2, fmt: true },
   approval:   { role: '值班经理', to: '挂起' },
 };
@@ -46,7 +45,7 @@ test('DEFS 默认值 42/42 全量断言（字面量期望，防未经 ADR 的漂
   assert.deepEqual(
     Object.keys(NODES).sort(),
     Object.keys(EXPECTED_DEFAULTS).sort(),
-    '节点注册表键集与定稿 18 种漂移（未经 ADR 的 DEFS 变更？）',
+    '节点注册表键集与定稿 20 种漂移（未经 ADR 的 DEFS 变更？）',
   );
 
   /* ③ 逐节点参数键集：抓参数新增/删除/改名 */
