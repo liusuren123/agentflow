@@ -2,7 +2,7 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→H→W→N→CAP→S→R→D→E→K→G→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→Z→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
  * G 组（迭代 0015 / BK-0016）：三实例矩阵——主实例 G01-G04（CRUD/404/limit
