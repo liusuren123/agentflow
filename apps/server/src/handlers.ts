@@ -1,5 +1,5 @@
 /* ================================================================
- *  handlers.ts — 节点处理器（基础 16 种；LLM 见 llm.ts）
+ *  handlers.ts — 节点处理器（基础 18 种；LLM/agent 见 llm.ts · agent.ts）
  *  自 engine.js 原文拆出，逻辑逐字保留（ADR-0004 TS 化拆分）。
  * ================================================================ */
 import { paramDefaultsOf } from '@agentflow/shared';
