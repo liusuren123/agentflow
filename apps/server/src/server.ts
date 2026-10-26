@@ -10,10 +10,12 @@
  *  · GET  /api/v1/runs?limit=  · GET /api/v1/runs/:id → 运行历史 + 事件回放
  *  · DELETE /api/v1/workflows/:id · DELETE /api/v1/runs/:id → 删除（ADR-0007，
  *    run 级联清 run_events；活动 run 以内存注册表判 409）
+ *  · POST /api/v1/sessions（创建）· GET /api/v1/sessions[/:id]（列表/详情）
+ *    · POST …/chat（SSE 续聊）· POST …/stop（停止）→ 持久会话五端点（迭代 0015 / BK-0016）
  *  · GET  /api/v1/capabilities → 能力清单（builtin MCP × TOOL_SPECS 派生 +
  *    外部注册条目 + skills 常量；只读进程内状态，迭代 0039 / BK-0049）
  *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
- *  （workflows/runs 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
+ *  （workflows/runs/sessions/capabilities 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
  *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
  *  （run:accepted 直写与 ctx.emit 同径；`: ping` 保活注释不落库）。
  *  出站安全：工作流中用户配置的 URL 一律经 guard.ts 守卫
