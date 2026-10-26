@@ -658,3 +658,27 @@ body.running #float-bar{display:block}
   font-family:var(--mono);font-size:10.5px}
 .wb-path .wb-path-o{color:var(--text3)}
 .wb-empty{padding:18px 4px;text-align:center;color:var(--text3);font-size:11px;line-height:1.8}
+
+/* ===== 右栏工作台 · diff 审查页（BK-0041 / 迭代 0054 修宪轮 · ADR-0016 §2.2）=====
+   纯插入（:623-660 既有行零改动）：视图切换对新选择器（wb-page-git 对同型）；
+   值全取既有变量与既有字面量，零新增自定义属性（gate cssVars 不变量）。 */
+#rightbar.wb-page-diff #props{display:none}          /* 互斥视图切换（不改 #props 既有规则，:636 同型） */
+#rightbar.wb-page-diff #workbench{display:flex}
+.wb-diff-bar{display:flex;gap:6px;padding:0 0 10px}   /* ref 对选择行：三输入并排 */
+.wb-ref{flex:1;min-width:0;height:22px;background:var(--panel2);border:1px solid var(--border2);
+  border-radius:5px;color:var(--text);font-size:11px;padding:0 7px}   /* 输入面取值沿 .lib-search input（:100-102） */
+.wb-ref:focus{border-color:var(--accent);outline:none}
+.wb-diff-file{display:flex;align-items:baseline;gap:8px;padding:3px 6px;border-radius:5px;
+  cursor:pointer;font-size:11px}                      /* 文件行；.on 激活 */
+.wb-diff-file.on{background:var(--panel3)}
+.wb-diff-st{font-family:var(--mono);width:14px;flex:none}
+.wb-diff-st.wa{color:var(--ok)}                       /* 状态色：A 新增绿 / D 删除红 / R 改名青 / M 修改琥珀 */
+.wb-diff-st.wd{color:var(--err)}
+.wb-diff-st.wr{color:var(--cat-logic)}
+.wb-diff-st.wm{color:var(--warn)}
+.wb-diff-path{color:var(--text2);min-width:0;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;font-family:var(--mono);font-size:10.5px}   /* 排版沿 .wb-path（:657-658） */
+.wb-diff-nums{margin-left:auto;flex:none;font-family:var(--mono);font-size:10px;color:var(--text3)}
+.wb-diff-pre{margin:0;padding:8px 10px;background:rgba(0,0,0,.45);border-left:2px solid #60a5fa;
+  border-radius:5px;font-family:var(--mono);font-size:11px;line-height:1.5;color:#c7d6ee;
+  white-space:pre-wrap;word-break:break-all;user-select:text}    /* 等宽补丁块，取值沿 .node-jtree（:609-611） */

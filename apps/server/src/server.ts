@@ -17,6 +17,10 @@
  *  · GET  /api/v1/workbench/git → 工作台 git 信息页数据源（branch/head/changes/
  *    commits；git 只读白名单三命令子进程 + 项目根模块级常量锚定，零出站零 env，
  *    ADR-0016 §3.1，迭代 0036 / BK-0040）
+ *  · GET  /api/v1/workbench/diff → 工作台 diff 审查页数据源（base/head ref 对 +
+ *    path 前缀 + stat 统计模式；git 只读白名单 diff 一命令子进程，ref 白名单与
+ *    path 防越界 400 / 404 无仓库 / 500 超时，零出站零 env，ADR-0016 §3.2，
+ *    迭代 0054 / BK-0041）
  *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
  *  （workflows/runs/sessions/capabilities/workbench 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
  *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
@@ -47,6 +51,7 @@ import {
 } from './sessions.js';
 import { capabilitiesHandler } from './capabilities.js';
 import { workbenchGitHandler } from './workbench/routes.js';
+import { workbenchDiffHandler } from './workbench/routes.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -234,6 +239,8 @@ app.post('/api/v1/sessions/:id/stop', sessionStopHandler);
 app.get('/api/v1/capabilities', capabilitiesHandler);
 /* 迭代 0036 / BK-0040 workbench 端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
 app.get('/api/v1/workbench/git', workbenchGitHandler);
+/* 迭代 0054 / BK-0041 workbench diff 端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
+app.get('/api/v1/workbench/diff', workbenchDiffHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{

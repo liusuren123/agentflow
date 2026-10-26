@@ -7,6 +7,7 @@ import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveW
 import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refreshSessions,
          refreshCaps, onCapsArrive } from '../server-sync.js';
 import { refreshWorkbenchGit } from '../server-sync.js';
+import { refreshWorkbenchDiff } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -2952,10 +2953,11 @@ async function goalToggleList(){
  *  懒创建：#wb-tabs/#workbench 首次打开时动态创建（goalEnsure 先例），
  *  未打开前零新增可见 DOM（默认态像素 = 基线，s0~s11 零波及）；打开后
  *  页签条常驻至页面重载。#props 面零触碰（B 案核心承诺）：视图切换只靠
- *  #rightbar 类名（wb-page-git 时 #props display:none，renderProps 语义
- *  不受影响）。数据面 = server-sync refreshWorkbenchGit（on-open fetch +
- *  页内手动刷新，零轮询零 SSE，ADR-0016 §2.4）；本批仅 git 页落地，
- *  diff/tree 为禁用占位（后续批次 BK-0041/BK-0042）。
+ *  #rightbar 类名（wb-page-git/wb-page-diff 时 #props display:none，
+ *  renderProps 语义不受影响）。数据面 = server-sync refreshWorkbenchGit /
+ *  refreshWorkbenchDiff（on-open fetch + 页内手动刷新，零轮询零 SSE，
+ *  ADR-0016 §2.4）；git/diff 页已落地（0036/0054），tree 为禁用占位
+ *  （后续批次 BK-0042）。
  * ================================================================ */
 const WB = { page:'props' };   /* 运行时页态（内存，不入 localStorage/undo，GOAL_BIND 先例） */
 
@@ -2967,7 +2969,7 @@ function wbEnsure(){
   const tabs = document.createElement('div');
   tabs.id = 'wb-tabs';
   tabs.innerHTML = mk('props','属性',false) + mk('git','仓库',false)
-                  + mk('diff','变更',true) + mk('tree','目录',true);
+                  + mk('diff','变更',false) + mk('tree','目录',true);
   tabs.addEventListener('click', e=>{
     const b = e.target.closest('.wb-tab'); if(!b || b.disabled) return;
     wbSwitch(b.dataset.wb);
@@ -2982,7 +2984,10 @@ function wbEnsure(){
     </div>
     <div class="wb-scroll"></div>`;
   wb.querySelector('.wb-refresh').addEventListener('click', async ()=>{
-    await refreshWorkbenchGit(); wbRenderGit();
+    /* 按页派发（BK-0041）：diff 页刷新即「应用 ref 对/路径过滤」控件（右栏宽度
+       约束下不新增第二按钮，ADR-0016 §2.4 克制形态）；git 页保持既有两行 */
+    if(WB.page === 'diff'){ await refreshWorkbenchDiff(wbdQuery()); wbRenderDiff(); }
+    else { await refreshWorkbenchGit(); wbRenderGit(); }
   });
   bar.appendChild(wb);
 }
@@ -2997,10 +3002,16 @@ async function wbSwitch(page){
   const bar = $('#rightbar');
   WB.page = page;
   bar.classList.toggle('wb-page-git', page === 'git');
+  bar.classList.toggle('wb-page-diff', page === 'diff');
+  const title = $('.wb-title');   /* 顶栏标题随页态（首开即 wbSwitch，无中间态可见） */
+  if(title) title.textContent = page === 'diff' ? '变更对比' : page === 'git' ? '仓库信息' : '属性';
   $$('#wb-tabs .wb-tab').forEach(b=>b.classList.toggle('on', b.dataset.wb === page));
   if(page === 'git'){
     await refreshWorkbenchGit();   /* on-open fetch：打开/切回 git 页即取（REQ-0040-05） */
     wbRenderGit();
+  }else if(page === 'diff'){
+    await refreshWorkbenchDiff(wbdQuery());   /* on-open fetch：打开/切至 diff 页即取（REQ-0041-02） */
+    wbRenderDiff();
   }
 }
 
@@ -3034,6 +3045,66 @@ function wbRenderGit(){
       </div>`).join('') || `<div class="wb-empty">暂无提交记录</div>`}
     <div class="wb-sec">变更文件</div>
     ${chgHtml}`;
+}
+
+/* ---------- diff 审查页（BK-0041 / 迭代 0054 修宪轮 · ADR-0016 §2.2）----------
+   ref 对选择行（base/head/path 三输入，WBD 为唯一事实源——重渲染回填不丢值）+
+   文件列表（状态码/路径/±行数）+ 选中文件等宽补丁视图；刷新 = on-open fetch +
+   .wb-refresh 按页派发 + 输入 Enter 同径（零轮询零 SSE，ADR-0016 §2.4）。
+   tree 页签保持禁用占位（BK-0042 射程，禁用态像素零变化）。类名一律 wb-diff-/
+   wb-ref 前缀（不触 .wtab/.wdg/.port/.node 计数面与 -- 自定义属性面）。 */
+const WBD = { base:'', head:'', path:'', sel:0 };   /* diff 页运行时态（内存，WB 先例） */
+const wbdQuery = () => {
+  const q = {};
+  if(WBD.base) q.base = WBD.base;
+  if(WBD.head) q.head = WBD.head;
+  if(WBD.path) q.path = WBD.path;
+  return q;   /* 空串省略 = 端点缺省语义 */
+};
+
+function wbRenderDiff(){
+  const box = $('#workbench .wb-scroll'); if(!box) return;
+  if(SVR.wbDiffErr || !SVR.wbDiff){
+    box.innerHTML = `<div class="wb-empty">diff 拉取失败 · 点击刷新重试</div>`;
+    return;
+  }
+  const d = SVR.wbDiff;
+  const files = Array.isArray(d.files) ? d.files : [];
+  if(!files.length){
+    box.innerHTML = `<div class="wb-empty">无变更（选定范围工作区干净）</div>`;
+    return;
+  }
+  if(WBD.sel >= files.length) WBD.sel = 0;
+  const stCls = s => s === 'A' ? 'wa' : s === 'D' ? 'wd' : s === 'R' ? 'wr' : 'wm';
+  box.innerHTML = `
+    ${d.truncated ? `<div class="wb-empty">diff 输出已截断 · 可用 path 过滤收窄范围</div>` : ''}
+    <div class="wb-diff-bar">
+      <input class="wb-ref" data-wbd="base" placeholder="HEAD" value="${esc(WBD.base)}">
+      <input class="wb-ref" data-wbd="head" placeholder="工作区" value="${esc(WBD.head)}">
+      <input class="wb-ref" data-wbd="path" placeholder="路径过滤" value="${esc(WBD.path)}">
+    </div>
+    <div class="wb-sec">文件</div>
+    ${files.map((f,i)=>`<div class="wb-diff-file${i === WBD.sel ? ' on' : ''}" data-idx="${i}">
+        <span class="wb-diff-st ${stCls(String(f.status||''))}">${esc(String(f.status||''))}</span>
+        <span class="wb-diff-path">${esc(String(f.path||''))}</span>
+        <span class="wb-diff-nums">+${Number(f.adds)||0}/-${Number(f.dels)||0}</span>
+      </div>`).join('')}
+    <div class="wb-sec">补丁</div>
+    <pre class="wb-diff-pre">${esc(String(files[WBD.sel]?.patch ?? ''))}</pre>`;
+  $$('#workbench .wb-ref').forEach(inp=>{
+    inp.addEventListener('input', ()=>{ WBD[inp.dataset.wbd] = inp.value; });
+    inp.addEventListener('keydown', async e=>{
+      if(e.key === 'Enter'){ await refreshWorkbenchDiff(wbdQuery()); wbRenderDiff(); }
+    });
+  });
+  $$('#workbench .wb-diff-file').forEach(row=>{
+    row.addEventListener('click', ()=>{   /* 仅重渲补丁区（输入焦点不丢） */
+      WBD.sel = Number(row.dataset.idx) || 0;
+      $$('#workbench .wb-diff-file').forEach(r=>r.classList.toggle('on', r === row));
+      const pre = $('#workbench .wb-diff-pre');
+      if(pre) pre.textContent = String(files[WBD.sel]?.patch ?? '');
+    });
+  });
 }
 
 }

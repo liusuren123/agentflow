@@ -42,6 +42,19 @@ export const fetchRunDetail = id => apiJson('/runs/' + encodeURIComponent(id));
 /* 工作台（BK-0040）：git 信息（E1）——仅数据层（ADR 4.4），面板 DOM 归 app.js；
    404/500 走非 2xx 抛错，由调用方渲染错误态 */
 export const fetchWorkbenchGit = (limit = 20) => apiJson('/workbench/git?limit=' + limit);
+/* 工作台（BK-0041 / 迭代 0054）：diff 审查（E2，ADR-0016 §3.2）——仅数据层零 DOM；
+   URLSearchParams 负责查询串编码（ref/path 含 / 与 . 安全传递），空串省略 = 端点
+   缺省语义（base=HEAD、head=工作区）；400/404/500 走非 2xx 抛错 → 面板错误态；
+   stat 模式为 API 级能力，前端不传（UI 无开关，SPEC §1 不做范围） */
+export const fetchWorkbenchDiff = (q = {}) => {
+  const p = new URLSearchParams();
+  if(q.base) p.set('base', q.base);
+  if(q.head) p.set('head', q.head);
+  if(q.path) p.set('path', q.path);
+  if(q.stat) p.set('stat', '1');
+  const s = p.toString();
+  return apiJson('/workbench/diff' + (s ? '?' + s : ''));
+};
 
 /* 能力清单（BK-0049 / ADR-0018）：GET /api/v1/capabilities → 归一化 {servers,skills}
  * 数据层三件套：fetch（apiJson 8s 超时同口径）→ SVR.caps 缓存 → onCapsArrive 回调。
@@ -84,16 +97,20 @@ export const SVR = {
   capsErr: false,      // 最近一次能力清单拉取失败（静默降级，无 toast/日志行）
   wbGit: null,         // E1 出参 | null：{branch,head,changes,commits}（BK-0040）
   wbGitErr: false,     // 最近一次 git 信息拉取失败 → 工作台错误空态
+  wbDiff: null,        // E2 出参 | null：{files:[{path,status,adds,dels,patch}],truncated}（BK-0041 / 迭代 0054）
+  wbDiffErr: false,    // 最近一次 diff 拉取失败 → diff 页错误空态
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
 let wfArrive = null, runsArrive = null, sessionsArrive = null, capsArrive = null;
 let wbGitArrive = null;   // 工作台 git 信息到达回调（BK-0040）
+let wbDiffArrive = null;  // 工作台 diff 到达回调（BK-0041 / 迭代 0054）
 export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
 export function onSessionsArrive(fn){ sessionsArrive = fn; }
 export function onCapsArrive(fn){ capsArrive = fn; }
 export function onWorkbenchGitArrive(fn){ wbGitArrive = fn; }
+export function onWorkbenchDiffArrive(fn){ wbDiffArrive = fn; }
 
 export async function refreshWorkflows(){
   try{ SVR.wf = await fetchWorkflowList(); SVR.wfErr = false; }
@@ -121,6 +138,11 @@ export async function refreshWorkbenchGit(limit = 20){
   try{ SVR.wbGit = await fetchWorkbenchGit(limit); SVR.wbGitErr = false; }
   catch(_){ SVR.wbGitErr = true; }
   wbGitArrive && wbGitArrive();
+}
+export async function refreshWorkbenchDiff(q){
+  try{ SVR.wbDiff = await fetchWorkbenchDiff(q); SVR.wbDiffErr = false; }
+  catch(_){ SVR.wbDiffErr = true; }
+  wbDiffArrive && wbDiffArrive();
 }
 
 /* 展开回放：成功/失败都写入缓存（null=获取失败），由回调重绘分组容器 */

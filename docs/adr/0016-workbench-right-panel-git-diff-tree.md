@@ -1,9 +1,10 @@
 # ADR-0016 · 会话面板右侧工作台分批修宪方案草案（右栏容器与 git 信息 / diff 审查 / 目录树三页签）
 
 - 状态：**草案 · BK-0040 实施轮已消费（迭代 0036 BUILD 落地「右栏容器+git 信息
-  页」，见 §7 首代码块尾实施纪要）/ BK-0041 diff 审查修宪轮 / BK-0042 目录树
-  修宪轮——链终轮——待实施；原文其余按草案态保留至链终；授权链 = issue#4
-  用户批复承继（2026-10-23T15:49:17Z，见 BACKLOG BK-9004 行）**
+  页」，见 §7 首代码块尾实施纪要）/ BK-0041 实施轮已消费（迭代 0054 BUILD 落地
+  「diff 审查页」，见 §7 第二代码块尾实施纪要）/ BK-0042 目录树修宪轮——链终轮
+  ——待实施；原文其余按草案态保留至链终；授权链 = issue#4 用户批复承继
+  （2026-10-23T15:49:17Z，见 BACKLOG BK-9004 行）**
 - 日期：2026-10-25（BUILD 阶段产出，迭代 0030 / BK-0039，S 项 skipSpec——PRD §7 内嵌定界）
 - 关联：BACKLOG BK-0039（本 SPEC 先行轮，done 归档于迭代 0030 CLOSE）/ BK-0040 /
   BK-0041 / BK-0042（三修宪实施轮，proposed）/ BK-9004（skipped，拆分母项）/
@@ -269,6 +270,8 @@ CLOSE 时回执 issue#4 关单。
 ```text
 触UI=是——修宪轮（授权链 = issue#4 批复承继 2026-10-23T15:49:17Z + ADR-0016（§2.2 diff 页签/§3.2 E2 契约/§3.4 git 子进程纪律/§4 安全面/§5 编排/§6 golden 预案），定界字面一致——ADR-0016 §7 本行即权威字面量）：受影响文件=前端三文件（diff 审查页签：ref 对选择行 + 文件列表（状态/±行数）+ 选中文件对比视图（补丁等宽呈现），ADR-0016 §2.2；复用 BK-0040 容器与页签基建；app.js 纯插入 + app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动）+ 后端承载 workbench 模块 E2 端点（GET /api/v1/workbench/diff：base/head ref 对（缺省 HEAD↔工作区）+ path 子前缀 + stat 可选入参/ref 字符白名单校验拒选项注入/files+truncated 出参/git 白名单 git diff --no-color 一命令/400 ref 非法或 path 越界/404 无仓库/500 超时，ADR-0016 §3.2）+ smoke 扩断言（E2 契约/ref 校验/400 路径）+ gate 场景增量（diff 页在线态新场景 golden-created + 既有场景零波及 gate 实测确认，场景编号按落盘时序，ADR-0016 §6）；验收命令口径=npm run build + npm run gate（增量后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言 + 手动 E2E（diff 呈现点位，实施 SPEC 定）；依赖关系=前置 BK-0039 done + BK-0040（容器）；实施序=BK-0040 → BK-0041 → BK-0042；晋升条件=两者 CLOSE 后随链晋升
 ```
+
+> 实施纪要（BK-0041 · 迭代 0054 BUILD 轮，2026-10-27）：上方代码块已由实施轮 SPEC 终稿消费（`docs/evolution/iterations/0054/SPEC.md` §2，字面一致）；落地面 = `apps/server/src/workbench/diff.ts`（E2：ref 白名单 + path 防越界 + `git diff --no-color` 一命令 + 逐文件 patch 20,000 字符截断 + files 500 条上限，两 truncated 顶标记）+ `git.ts` runGit 导出复用（E1 语义零变化）+ `routes.ts` E2 handler（400/404/500 映射）+ `server.ts` v1-only 注册 + `server-sync.js` 数据面第五件 + `app.js` workbench 段 diff 分支（diff 页签解禁、tree 保持禁用占位——BK-0042 射程）+ `app.css` wb-diff 家族纯插入 + gate `s17-workbench-diff-online`（golden-created 通道，零 gate:update）+ s16 受波及重录（页签条解禁致 disabled 态像素与不变量双变化，修宪轮 gate:update 恰一次）+ smoke B06-B12（138→145）。**定形偏差记档**：stat 统计模式以 `--numstat` 落地（非 §3.2 正文示意 flag `--stat`）——数据保真（`--stat` 人读格式不分离 adds/dels、图形列宽截断，无法填出出参五键精确值）+ 输出体量最小（「仅统计快速总览」本意）+ §3.4 只读不变式全部保持（子命令仍 diff、零可写、argv 数组零拼接、5s 强杀）；§3.2 出参形态明文归实施 SPEC（0054 SPEC §3.1.3 裁定）。`Skeleton.tsx`/`packages/shared`/`package*.json`/`config.ts`/`guard.ts` 零改动（四零机器证明）。
 
 ```text
 触UI=是——修宪轮（授权链 = issue#4 批复承继 2026-10-23T15:49:17Z + ADR-0016（§2.2 tree 页签/§3.3 E3 契约/§4 防越界（safePath 机理同构、锚定根=项目根）/§5 编排/§6 golden 预案），定界字面一致——ADR-0016 §7 本行即权威字面量）：受影响文件=前端三文件（目录树页签：缩进树/折叠占位/逐级下钻（带 path 前缀请求），ADR-0016 §2.2；复用 BK-0040 容器与页签基建；app.js 纯插入 + app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动）+ 后端承载 workbench 模块 E3 端点（GET /api/v1/workbench/tree：path 子前缀（默认根）+ depth 入参/Node fs 遍历非 git/.git 恒不入树 + node_modules/dist/data 折叠占位 + 条目上限 truncated/children 树形出参/400 path 越界（resolve 后前缀校验，tools.ts safePath 机理同构、锚定根=项目根，ADR-0016 §4）/404 子路径不存在/500 遍历异常，ADR-0016 §3.3）+ smoke 扩断言（E3 契约/防越界矩阵含 ../ 与绝对路径注入）+ gate 场景增量（tree 页在线态新场景 golden-created + 既有场景零波及 gate 实测确认，场景编号按落盘时序，ADR-0016 §6）；验收命令口径=npm run build + npm run gate（增量后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言 + 手动 E2E（树呈现/展开点位，实施 SPEC 定）；依赖关系=前置 BK-0039 done + BK-0040；实施序=BK-0040 → BK-0041 → BK-0042；晋升条件=两者 CLOSE 后随链晋升；**本链终轮**——CLOSE 时回执 issue#4 关单（沿 issue#10/11 终轮先例，中间子项不回执）

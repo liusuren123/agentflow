@@ -1,11 +1,12 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 17 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
- *    s0~s3 离线静态态；s4/s5/s9/s15/s16 在线态——Playwright 路由拦截 fixture 供数
+ *  · 18 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17 在线态——Playwright 路由拦截 fixture 供数
  *    （probe 的 /api/health + /api/v1 列表），其中 s4/s5（ADR-0009，issue#7 批准）
  *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039、s16 溯源迭代 0036（WB_ROUTES + UTC，
- *    原 s12 撞号改号，时序裁决）；其余 s6~s8、s10~s14 为离线扩展场景
+ *    原 s12 撞号改号，时序裁决）、s17 溯源迭代 0054（WB_ROUTES E2 mock + UTC，
+ *    diff 审查页，BK-0041）；其余 s6~s8、s10~s14 为离线扩展场景
  *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
@@ -370,6 +371,14 @@ const WB_ROUTES = [
                  author: 'AgentFlow', ts: 1767225600000, subject: 'fix: 修复画布缩放手势' },
                { sha: '2222222222222222222222222222222222222222', short: '2222222',
                  author: '示例用户', ts: 1767312000000, subject: 'feat: 新增节点库过滤' } ] } }) },
+  { pattern: '**/api/v1/workbench/diff**',
+    handler: route => route.fulfill({ json: {
+      files: [
+        { path: 'apps/web/src/app.css', status: 'M', adds: 12, dels: 3,
+          patch: 'diff --git a/apps/web/src/app.css b/apps/web/src/app.css\n@@ -660,3 +660,8 @@\n+/* wb-diff */\n+.wb-diff-bar{display:flex}\n+.wb-ref{height:22px}\n+/* 新增选择器纯插入 */\n context' },
+        { path: 'notes/draft.md', status: 'A', adds: 5, dels: 0,
+          patch: 'diff --git a/notes/draft.md b/notes/draft.md\nnew file mode 100644\n@@ -0,0 +1,5 @@\n+# 草稿\n+第二行\n+第三行\n+第四行\n+第五行' } ],
+      truncated: false } }) },
 ];
 const wbOpen = async page => {
   await page.evaluate(() => {
@@ -397,6 +406,35 @@ const wbInv = page => page.evaluate(() => ({
   wbBranch: (document.querySelector('#workbench .wb-summary b') || {}).textContent,
   wbCounts: document.querySelectorAll('#workbench .wb-commit').length + 'c/'
     + document.querySelectorAll('#workbench .wb-change').length + 'g',
+}));
+
+/* ---------- s17 工作台 diff 审查在线态场景基建（ADR-0016 §6/§2.2 · 迭代 0054 / BK-0041 修宪轮） ----------
+   三步真实交互：空画布 contextmenu → 点「工作台」（wbOpen('git')，E1 fetch → E1 mock
+   供数；先等 wbReady——git 页数据落 DOM 后再点 diff 页签，排除「git fetch 晚于 diff
+   fetch 完成时 wbRenderGit 后写覆盖 .wb-scroll」的时序竞争，保末态确定性）→ 点
+   diff 页签（真实 click 委托 → wbSwitch('diff') → E2 fetch → E2 mock 供数）。
+   E2 mock 固定字面量（ASCII + 固定中文样例，字形安全口径；diff 页无时间渲染，
+   无需整点毫秒）。s16 不切 diff 页 → 该路由对 s16 零请求零渲染因果（页签条像素
+   变化唯一源仍是 diff 页签解禁）。 */
+const wbDiffOpen = async page => {
+  await wbOpen(page);
+  await wbReady(page);
+  await page.evaluate(() => document.querySelector('#wb-tabs .wb-tab[data-wb="diff"]').click());
+};
+/* 就绪探针（状态量非时延量，wbReady 先例）：diff 页数据已落 DOM（2 文件行 + 补丁块）；
+   超时红即 FAIL，不落伪基线 */
+const wbDiffReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#workbench .wb-diff-file').length === 2
+    && !!document.querySelector('#workbench .wb-diff-pre'),
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量（公共六键后 spread）：页签集 + 激活(*)/禁用(!)标记（git 非激活、
+   diff 激活、tree 仍禁用）、#props 视图态、文件行计数、补丁块首 24 字符（fixture 确定性） */
+const wbDiffInv = page => page.evaluate(() => ({
+  wbTabs: [...document.querySelectorAll('#wb-tabs .wb-tab')]
+    .map(b => b.dataset.wb + (b.classList.contains('on') ? '*' : '') + (b.disabled ? '!' : '')),
+  propsShown: getComputedStyle(document.getElementById('props')).display !== 'none',
+  diffCounts: document.querySelectorAll('#workbench .wb-diff-file').length + 'f',
+  patchHead: ((document.querySelector('#workbench .wb-diff-pre') || {}).textContent || '').slice(0, 24),
 }));
 
 const SCENARIOS = [
@@ -431,6 +469,8 @@ const SCENARIOS = [
     steps: [selectNode('.node[data-id="2"]')], ready: capsReady, inv: capsInv },
   { id: 's16-workbench-git-online', routes: WB_ROUTES, timezoneId: 'UTC',   /* 原 s12，与 0035 s12-jsoncanvas 撞号合流改号（时序裁决），像素零变化 */
     steps: [wbOpen], ready: wbReady, inv: wbInv },
+  { id: 's17-workbench-diff-online', routes: WB_ROUTES, timezoneId: 'UTC',
+    steps: [wbDiffOpen], ready: wbDiffReady, inv: wbDiffInv },
 ];
 
 const runScenario = async (browser, sc) => {
