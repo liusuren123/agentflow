@@ -1,0 +1,7 @@
+$ node .zcode/tools/wt.mjs evidence apps/web/dist docs/evolution/iterations/0051/evidence
+✓ 01-initial 76884B（渲染节点 19）
+✓ 02-node-selected 91689B（渲染节点 19）
+✓ 03-settings 94615B（渲染节点 19）
+✓ 04-library 119528B（渲染节点 19）
+evidence ok: 4 张 → docs/evolution/iterations/0051/evidence
+exit 0（采集时间 2026-10-26 14:15，主干工作区，合并提交 f173e3d 之后）
