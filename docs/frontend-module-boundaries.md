@@ -4,18 +4,20 @@
 > `CONSTITUTION.md` / `AGENTS.md` / `docs/adr/` 为准，冲突时以宪法为先。
 > 引用原则：宪法条文、AGENTS 约定、`packages/shared` DEFS 数据一律指针引用、
 > 不整段复制——本文档的增量价值是整合视图与追溯链，不是第二份原文。
-> 行数等易变数据核对日期：**2026-10-22**（`wc -l` 实测，与迭代 0001 盘点基线
-> `docs/evolution/iterations/0001/JOURNAL.md:164-169` 零漂移）。
+> 行数等易变数据核对日期：**2026-10-26**（W44 周度治理 `wc -l` 实测刷新；原
+> 2026-10-22 基线（迭代 0001 盘点）之后，经迭代 0032~0039 六轮修宪合法增长——
+> goal 会话面板 / 呈现三件套 / 智能体类目与审批人拾取器 / caps 清单换源等
+> 纯插入，属机械移植约束下的预期演化，模块边界职责未变）。
 > 来源：迭代 0008 · BK-0012（ROADMAP T1-M2）。
 
 ## 1. 总览
 
-| 模块 | 路径 | 行数（核对 2026-10-22） | 一句话职责 | 边界权威指针 |
+| 模块 | 路径 | 行数（核对 2026-10-26） | 一句话职责 | 边界权威指针 |
 | --- | --- | --- | --- | --- |
-| React 骨架 | `apps/web/src/Skeleton.tsx` | 182 | app 壳层静态结构的等价 JSX 唯一源 | ADR-0002 CP-C；`Skeleton.tsx:1-7` |
-| 画布/交互 | `apps/web/src/legacy/app.js` | 2419 | 命令式画布与全部交互语义（bootLegacyApp） | ADR-0002 决策 2；宪法第 1 条交互层 |
-| 数据接入 | `apps/web/src/server-sync.js` | 131 | `/api/v1` 数据与状态层，不操作面板 DOM | ADR-0006 方案 A；`server-sync.js:1-9` |
-| 样式 | `apps/web/src/app.css` | 532 | CSS 原文逐字冻结 | 宪法第 1 条结构层；AGENTS.md 硬性约定 1 |
+| React 骨架 | `apps/web/src/Skeleton.tsx` | 189 | app 壳层静态结构的等价 JSX 唯一源 | ADR-0002 CP-C；`Skeleton.tsx:1-7` |
+| 画布/交互 | `apps/web/src/legacy/app.js` | 2948 | 命令式画布与全部交互语义（bootLegacyApp） | ADR-0002 决策 2；宪法第 1 条交互层 |
+| 数据接入 | `apps/web/src/server-sync.js` | 184 | `/api/v1` 数据与状态层，不操作面板 DOM | ADR-0006 方案 A；`server-sync.js:1-9` |
+| 样式 | `apps/web/src/app.css` | 621 | CSS 原文逐字冻结 | 宪法第 1 条结构层；AGENTS.md 硬性约定 1 |
 
 - 组合点：`apps/web/src/App.tsx`（15 行）——React 只承载骨架，挂载后 boot
   legacy（§6）。
@@ -94,7 +96,7 @@ id/class/层级/属性值逐字保留；`class`→`className`；style 串→对�
 
 ### 事实源指针
 
-- 存量 2419 行不违 AGENTS.md 硬性约定 4（400 行上限只约束**新增**源文件）；
+- 存量 2948 行不违 AGENTS.md 硬性约定 4（400 行上限只约束**新增**源文件）；
   模块化拆分是长期余量，本文档只记载、不执行
   （`docs/evolution/iterations/0001/JOURNAL.md:96-97` §4.2-2）。
 

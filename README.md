@@ -10,9 +10,9 @@ ComfyUI 像素级复刻的智能体工作流编辑器 + Vercel AI SDK 7 真实�
 apps/web/           前端：React 18 + Vite + TS（单文件产物，双击可用）
                     · React 仅承载静态骨架；画布/交互为命令式 legacy 模块（ADR-0002）
 apps/server/        后端：Express + ai@7 + @ai-sdk/openai-compatible（SSE 执行引擎）
-packages/shared/    单一事实源（TS）：16 节点注册表 + 15 种 SSE 事件契约
-tools/pixel-gate/   宪法门禁执行器（Playwright 像素 diff + DOM 不变量）
-tests/golden/ui/    golden 基线（2026-10 定稿，永不重录；变更需宪法第 3 条流程）
+packages/shared/    单一事实源（TS）：20 节点注册表（18 基础 + llm/agent）+ 15 种 SSE 事件契约
+tools/pixel-gate/   宪法门禁执行器（Playwright 像素 diff + DOM 不变量，16 场景 s0~s15）
+tests/golden/ui/    golden 基线（2026-10 定稿；重录仅经宪法第 3 条流程：ADR + 用户批准）
 docs/adr/           架构决策记录 · AGENTS.md 为 AI 协作约定
 ```
 
@@ -41,6 +41,9 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 | `npm run gate` | **宪法门禁**（改前端后必跑；需先 `npm run build`） |
 | `npm test` | shared 契约测试（注册表/SSE 事件 schema/单一来源防回归） |
 | `npm run smoke:server` | 后端 E2E 冒烟（独立端口起 server：/api/v1 workflows CRUD + /run SSE 全事件链 + 删除守卫 409/200，自清理） |
+| `npm run smoke:mcp` | MCP 传输层冒烟（HTTP/stdio 双传输 connect→listTools→callTool→close 全链 + 超时/abort，迭代 0023） |
+| `npm run smoke:mcp:registry` | 外部 MCP 注册表冒烟（env 解析 fail-fast / 内置 id 冲突拒绝 / 工具发现缓存，迭代 0024） |
+| `npm run smoke:mcp:inject` | MCP 会话注入与 guard 出站冒烟（三分支会话 / 中止级联 / 私网拦截，迭代 0025） |
 | `npm run smoke:shutdown` | 后端优雅停机 SIGTERM 冒烟（win32 自动 SKIP，CI Linux 为权威） |
 | `npm run test:canvas` | 画布连线 portCache 几何离线断言（5 锁定点反演，迭代 0006 起） |
 | `npm run build` | 构建 shared + web |
@@ -53,19 +56,24 @@ npm start           # 构建 shared+web+server 并启动后端 → http://localh
 | 节点 | 真实实现 |
 | --- | --- |
 | LLM 对话 | `streamText` 逐 token 流式 / `generateText` 多轮 MCP 工具循环；usage 回传 |
+| 通用智能体 | agent 节点 goal 模式：maxSteps 预算工具循环 + 持久会话绑定 + goal 会话面板（列出/恢复/续聊/停止，ADR-0013，迭代 0031/0032） |
 | 知识库检索 | 内置 3 语料库，CJK 二字组 + TF-IDF 余弦，分数归一化后过阈值，写 `confidence` |
 | 网页搜索 | 节点 eng 严格路由：博查（`BOCHA_API_KEY`）/ SearXNG（`SEARXNG_URL`）未配置或失败如实跳过、不回退；Bing/Google 未接入 → warn 后按回退链（博查 → DuckDuckGo）执行；不伪造结果 |
 | HTTP 请求 | 真实 fetch（SSRF 守卫：私网/回环默认拦截） |
 | 代码执行 | Python / JS 独立子进程 + 5s 超时强杀 + JSON over stdio |
-| MCP 工具 | filesystem（沙箱）/ fetch / web-search；未实现者如实告知模型 |
+| MCP 工具 | filesystem（沙箱）/ fetch / web-search / sqlite（沙箱 DB 锚定 + SQL 黑名单，迭代 0026）；外部 MCP server 经 env 注册表（`MCP_HTTP_SERVERS`/`MCP_STDIO_SERVERS`）stdio / Streamable HTTP 接入 + 工具发现缓存 + 会话注入，guard `mcpFetch` 出站收口（ADR-0012，迭代 0023~0025）；browser 维持 stub 如实降级（ADR-0011 终态） |
 | 条件分支 | 自研安全表达式求值器（无 eval） |
 | 循环 | 下游闭包子图逐轮真实执行（并发 3，注入 item/index） |
-| 人工审批 | 真实挂起 → SSE 弹窗 → `/api/run/:id/approve` |
+| 人工审批 | 真实挂起 → SSE 弹窗 → `/api/run/:id/approve`；审批人支持节点引用（`role=node:<id>` 受控 LLM 互审裁决回填 + 审计留痕，迭代 0016/0038） |
+| 呈现三件套 | webshow（iframe sandbox，仅 http(s) 白名单）/ termview（等宽只读流，消费 `node:delta`）/ jsoncanvas（结构化树折叠，非 JSON 原文降级）——呈现型 sink 零出站（ADR-0015，迭代 0033~0035） |
 
 **接口**：`POST /api/run`（SSE：node:start/delta/done/error、cond、approval、run:progress/done，
 `node:done` 含各输入端口实际到达值）· `POST /api/run/:id/stop` · `POST /api/run/:id/approve`
 · `GET /api/health`（含模型列表，前端据此刷新下拉）。
-全部端点在 `/api/v1/*` 有等价命名空间（ADR-0004，旧 `/api/*` 保留为别名）。
+run 族端点在 `/api/v1/*` 有等价命名空间（ADR-0004，旧 `/api/*` 保留为别名）；另有
+两族 v1-only 端点：持久会话 `/api/v1/sessions`（创建/列表/详情/chat SSE 续聊/stop，
+ADR-0013 goal 面板消费，迭代 0015/0032）与 `GET /api/v1/capabilities`（MCP/技能
+勾选清单只读供数，迭代 0039）。
 
 ## 持久化与部署（ADR-0004~0007 已落地 2026-10-20/21）
 
