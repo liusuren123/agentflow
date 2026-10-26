@@ -1,8 +1,9 @@
 # ADR-0016 · 会话面板右侧工作台分批修宪方案草案（右栏容器与 git 信息 / diff 审查 / 目录树三页签）
 
-- 状态：**草案 · 待实施轮消费（BK-0040 右栏容器+git 修宪轮 / BK-0041 diff 审查修宪轮 /
-  BK-0042 目录树修宪轮——链终轮）；授权链 = issue#4 用户批复承继
-  （2026-10-23T15:49:17Z，见 BACKLOG BK-9004 行）**
+- 状态：**草案 · BK-0040 实施轮已消费（迭代 0036 BUILD 落地「右栏容器+git 信息
+  页」，见 §7 首代码块尾实施纪要）/ BK-0041 diff 审查修宪轮 / BK-0042 目录树
+  修宪轮——链终轮——待实施；原文其余按草案态保留至链终；授权链 = issue#4
+  用户批复承继（2026-10-23T15:49:17Z，见 BACKLOG BK-9004 行）**
 - 日期：2026-10-25（BUILD 阶段产出，迭代 0030 / BK-0039，S 项 skipSpec——PRD §7 内嵌定界）
 - 关联：BACKLOG BK-0039（本 SPEC 先行轮，done 归档于迭代 0030 CLOSE）/ BK-0040 /
   BK-0041 / BK-0042（三修宪实施轮，proposed）/ BK-9004（skipped，拆分母项）/
@@ -262,6 +263,8 @@ CLOSE 时回执 issue#4 关单。
 ```text
 触UI=是——修宪轮（授权链 = issue#4 批复承继 2026-10-23T15:49:17Z + ADR-0016（§2 容器信息架构/§3.1 E1 契约/§3.4 git 子进程纪律/§4 安全面/§5 编排/§6 golden 预案），定界字面一致——ADR-0016 §7 本行即权威字面量）：受影响文件=前端三文件（右栏容器（B 案独立容器切换：#props 旁新增兄弟容器 + 右栏顶部件页签条，#props 零触碰，ADR-0016 §2.1）+ git 信息页签（概要卡片/提交列表/变更行，ADR-0016 §2.2），容器为本链共享基建；app.js workbench 模块动态创建纯插入 + app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动（动态创建案；回退案静态骨架化则 s0 修宪轮重录，ADR-0016 §2.5））+ 后端承载 apps/server/src/workbench/ 新模块（E1 GET /api/v1/workbench/git：limit 入参/branch+head+changes+commits 出参/git 白名单 rev-parse+status+log 三命令/404 无仓库/500 超时，ADR-0016 §3.1；git 子进程 argv 数组零 shell + 5s 超时 kill + 只读命令白名单（可写命令一律排除），ADR-0016 §3.4；项目根=模块级常量锚定（SANDBOX 同构、dist 上溯两级），零 env，ADR-0016 §3.0；自主区面，可同迭代先行段）+ server.ts v1-only 注册（沿 :205-219 先例）+ server-sync.js workbench 数据面（ADR-0006 边界）+ smoke 扩断言（E1 契约/404/limit 校验）+ gate 场景增量（右栏在线态新场景 golden-created + 既有场景零波及 gate 实测确认，场景编号按落盘时序，ADR-0016 §6）；验收命令口径=npm run build + npm run gate（增量后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言 + 手动 E2E（打开右栏/切页签/呈现 git 信息点位，实施 SPEC 定）；依赖关系=前置 BK-0039（done，迭代 0030 ADR-0016 落盘），且须先于 0041/0042（容器先行）；实施序=BK-0040 → BK-0041 → BK-0042（一页签一迭代，ADR-0016 §5）；晋升条件=BK-0039 CLOSE 后晋升
 ```
+
+> 实施纪要（BK-0040 · 迭代 0036 BUILD 轮，2026-10-26）：上方代码块已由实施轮 SPEC 终稿消费（`docs/evolution/iterations/0036/SPEC.md` §2，字面一致）；落地面 = `apps/server/src/workbench/{root,git,routes}.ts`（E1 + PROJECT_ROOT 模块级常量锚定 dist/workbench 上溯三级，零 env）+ `server.ts` v1-only 注册 + `server-sync.js` 数据面四件 + `app.js` workbench 模块段（懒创建 + 首开后常驻 + 首开入口 = 空画布右键菜单项——§2.3 推荐案的零波及等价变形，既有 12 场景零波及几何论证见 SPEC §3.4）+ `app.css` 纯插入 + gate `s12-workbench-git-online`（golden-created 通道，零 gate:update）+ smoke B01-B05（含 B04 探针实例锚定双向证明）；`Skeleton.tsx`/`packages/shared`/`package*.json`/`config.ts` 零改动（四零机器证明）。
 
 ```text
 触UI=是——修宪轮（授权链 = issue#4 批复承继 2026-10-23T15:49:17Z + ADR-0016（§2.2 diff 页签/§3.2 E2 契约/§3.4 git 子进程纪律/§4 安全面/§5 编排/§6 golden 预案），定界字面一致——ADR-0016 §7 本行即权威字面量）：受影响文件=前端三文件（diff 审查页签：ref 对选择行 + 文件列表（状态/±行数）+ 选中文件对比视图（补丁等宽呈现），ADR-0016 §2.2；复用 BK-0040 容器与页签基建；app.js 纯插入 + app.css 新增选择器纯插入 + Skeleton.tsx 预期零改动）+ 后端承载 workbench 模块 E2 端点（GET /api/v1/workbench/diff：base/head ref 对（缺省 HEAD↔工作区）+ path 子前缀 + stat 可选入参/ref 字符白名单校验拒选项注入/files+truncated 出参/git 白名单 git diff --no-color 一命令/400 ref 非法或 path 越界/404 无仓库/500 超时，ADR-0016 §3.2）+ smoke 扩断言（E2 契约/ref 校验/400 路径）+ gate 场景增量（diff 页在线态新场景 golden-created + 既有场景零波及 gate 实测确认，场景编号按落盘时序，ADR-0016 §6）；验收命令口径=npm run build + npm run gate（增量后全绿、既有场景零波及实测）+ npm test + npm run smoke:server 扩断言 + 手动 E2E（diff 呈现点位，实施 SPEC 定）；依赖关系=前置 BK-0039 done + BK-0040（容器）；实施序=BK-0040 → BK-0041 → BK-0042；晋升条件=两者 CLOSE 后随链晋升

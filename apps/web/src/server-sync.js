@@ -39,6 +39,9 @@ export const stopSessionOnServer = id => apiJson('/sessions/' + encodeURICompone
 /* 运行历史：列表（started_at 倒序）/ 单条完整事件回放 */
 export const fetchRunList = (limit = 50) => apiJson('/runs?limit=' + limit).then(j => Array.isArray(j.runs) ? j.runs : []);
 export const fetchRunDetail = id => apiJson('/runs/' + encodeURIComponent(id));
+/* 工作台（BK-0040）：git 信息（E1）——仅数据层（ADR 4.4），面板 DOM 归 app.js；
+   404/500 走非 2xx 抛错，由调用方渲染错误态 */
+export const fetchWorkbenchGit = (limit = 20) => apiJson('/workbench/git?limit=' + limit);
 
 /* 能力清单（BK-0049 / ADR-0018）：GET /api/v1/capabilities → 归一化 {servers,skills}
  * 数据层三件套：fetch（apiJson 8s 超时同口径）→ SVR.caps 缓存 → onCapsArrive 回调。
@@ -79,14 +82,18 @@ export const SVR = {
   sessionsErr: false,  // 最近一次会话列表拉取失败 → 恢复列表错误空态
   caps: null,          // {servers,skills} | null：能力清单（BK-0049 / ADR-0018；null=未成功拉取过，前端保持回退集）
   capsErr: false,      // 最近一次能力清单拉取失败（静默降级，无 toast/日志行）
+  wbGit: null,         // E1 出参 | null：{branch,head,changes,commits}（BK-0040）
+  wbGitErr: false,     // 最近一次 git 信息拉取失败 → 工作台错误空态
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
 let wfArrive = null, runsArrive = null, sessionsArrive = null, capsArrive = null;
+let wbGitArrive = null;   // 工作台 git 信息到达回调（BK-0040）
 export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
 export function onSessionsArrive(fn){ sessionsArrive = fn; }
 export function onCapsArrive(fn){ capsArrive = fn; }
+export function onWorkbenchGitArrive(fn){ wbGitArrive = fn; }
 
 export async function refreshWorkflows(){
   try{ SVR.wf = await fetchWorkflowList(); SVR.wfErr = false; }
@@ -109,6 +116,11 @@ export async function refreshCaps(){
   try{ SVR.caps = await fetchCapabilities(); SVR.capsErr = false; }
   catch(_){ SVR.capsErr = true; }
   capsArrive && capsArrive();
+}
+export async function refreshWorkbenchGit(limit = 20){
+  try{ SVR.wbGit = await fetchWorkbenchGit(limit); SVR.wbGitErr = false; }
+  catch(_){ SVR.wbGitErr = true; }
+  wbGitArrive && wbGitArrive();
 }
 
 /* 展开回放：成功/失败都写入缓存（null=获取失败），由回调重绘分组容器 */

@@ -1,10 +1,11 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 16 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
- *    s0~s3 离线静态态；s4/s5/s9/s15 在线态——Playwright 路由拦截 fixture 供数
+ *  · 17 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5/s9/s15/s16 在线态——Playwright 路由拦截 fixture 供数
  *    （probe 的 /api/health + /api/v1 列表），其中 s4/s5（ADR-0009，issue#7 批准）
- *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039；其余 s6~s8、s10~s14 为离线扩展场景
+ *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039、s16 溯源迭代 0036（WB_ROUTES + UTC，
+ *    原 s12 撞号改号，时序裁决）；其余 s6~s8、s10~s14 为离线扩展场景
  *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
@@ -347,6 +348,57 @@ const capsInv = page => page.evaluate(() => ({
   nodeCaps: document.querySelector('.node[data-id="2"] .node-caps')?.textContent ?? null,
 }));
 
+/* ---------- s16 工作台 git 信息在线态场景基建（ADR-0016 §6 · 迭代 0036 / BK-0040 修宪轮） ----------
+   （合并仲裁注：分支内原号 s12，与 0035 先行落盘的 s12-jsoncanvas 撞号，后落者取
+   下一号——主干现最大号 s15 → s16；按 WORKFLOW §4 场景号落盘时序裁决改号
+   s12→s16（0034/0038/0039 三连先例之后续）；像素内容零变化，属改名非重录。）
+   打开路径 = 真实交互两步：空画布 contextmenu（向 #viewport 派发 → 无 .node/g.edge →
+   空画布菜单分支）→ 按「工作台」文本定位 .mi 并 click（app.js ctxmenu 真实委托 →
+   item.f → wbOpen('git')）；懒创建首开落位（打开前零新增可见 DOM → s0~s11 零波及）。
+   E1 mock 沿 WF/RUN/SESSION 同口径 fixture（尾通配 ** 覆盖 ?limit=20 查询串）；
+   ts 为 2026-01-01/02 UTC 整点毫秒，配合 timezoneId:'UTC' 使 fmtTs 确定性渲染
+   1/1 00:00:00；字面量 ASCII + 固定中文样例（字形安全口径）。 */
+const WB_ROUTES = [
+  { pattern: '**/api/health',
+    handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/workbench/git**',
+    handler: route => route.fulfill({ json: {
+      branch: 'main', head: 'a1b2c3d',
+      changes: [ { status: ' M', path: 'apps/web/src/app.css' },
+                 { status: '??', path: 'notes/draft.md' } ],
+      commits: [ { sha: '1111111111111111111111111111111111111111', short: '1111111',
+                 author: 'AgentFlow', ts: 1767225600000, subject: 'fix: 修复画布缩放手势' },
+               { sha: '2222222222222222222222222222222222222222', short: '2222222',
+                 author: '示例用户', ts: 1767312000000, subject: 'feat: 新增节点库过滤' } ] } }) },
+];
+const wbOpen = async page => {
+  await page.evaluate(() => {
+    document.getElementById('viewport')
+      .dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }));
+  });
+  await page.evaluate(() => {
+    const mi = [...document.querySelectorAll('#ctxmenu .mi')]
+      .find(m => m.textContent.includes('工作台'));
+    mi.click();
+  });
+};
+/* 就绪探针（状态量非时延量，wfReady 先例）：git 页数据已落 DOM（2 提交 + 2 变更行）；
+   超时红即 FAIL，不落伪基线 */
+const wbReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#workbench .wb-commit').length === 2
+    && document.querySelectorAll('#workbench .wb-change').length === 2,
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量（公共六键后 spread）：页签集 + 激活(*)/禁用(!)标记、
+   #props 视图态、概要卡分支、提交/变更行计数 */
+const wbInv = page => page.evaluate(() => ({
+  wbTabs: [...document.querySelectorAll('#wb-tabs .wb-tab')]
+    .map(b => b.dataset.wb + (b.classList.contains('on') ? '*' : '') + (b.disabled ? '!' : '')),
+  propsShown: getComputedStyle(document.getElementById('props')).display !== 'none',
+  wbBranch: (document.querySelector('#workbench .wb-summary b') || {}).textContent,
+  wbCounts: document.querySelectorAll('#workbench .wb-commit').length + 'c/'
+    + document.querySelectorAll('#workbench .wb-change').length + 'g',
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -377,6 +429,8 @@ const SCENARIOS = [
   { id: 's15-caps-panel', routes: CAP_ROUTES,   /* 原 s13，与 0038 s13/s14 撞号合流改号（时序裁决），像素零变化 */
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), CAPS_WF_SEED),
     steps: [selectNode('.node[data-id="2"]')], ready: capsReady, inv: capsInv },
+  { id: 's16-workbench-git-online', routes: WB_ROUTES, timezoneId: 'UTC',   /* 原 s12，与 0035 s12-jsoncanvas 撞号合流改号（时序裁决），像素零变化 */
+    steps: [wbOpen], ready: wbReady, inv: wbInv },
 ];
 
 const runScenario = async (browser, sc) => {
