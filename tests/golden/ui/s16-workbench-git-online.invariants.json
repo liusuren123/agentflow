@@ -57,7 +57,7 @@
  "wbTabs": [
   "props",
   "git*",
-  "diff!",
+  "diff",
   "tree!"
  ],
  "propsShown": false,

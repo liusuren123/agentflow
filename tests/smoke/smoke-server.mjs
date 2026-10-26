@@ -34,6 +34,10 @@
  * （临时非 git 目录 + spawn cwd 刻意=仓库根 → 404，与 B01 合成 PROJECT_ROOT 模块级
  * 锚定双向机器证明）、B05 纪律源扫描（shell 零命中 + 5s 超时强杀形态 + 只读白名单
  * 三命令在场，MT12 先例）。
+ * B06-B12（迭代 0054 / BK-0041）扩 E2 diff 端点（ADR-0016 §3.2）：默认契约
+ * （HEAD↔工作区，只锁形状不锁数量）/ 固定提交对 ref+path 前缀 / stat 模式
+ * （--numstat 定形面）/ ref 白名单与 path 越界 400 反例 / 404 探针实例（B04 同型）/
+ * diff.ts 纪律源扫描（B05 同型）。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -1576,6 +1580,171 @@ async function main() {
       && ['rev-parse', 'status', 'log'].every(w => g.includes(w)),
       'B05', '源码扫描：workbench 三文件 /shell/i 零命中；git.ts 有 setTimeout( 与 .kill()（5s 强杀）；可写命令单引号 argv 字面量零命中；rev-parse/status/log 在场（只读白名单）',
       { expected: 'shell 零命中 + 超时形态在场 + 可写零命中 + 三命令在场', actual: JSON.stringify({ shellHit, timeout: g.includes('setTimeout('), kill: g.includes('.kill()'), writeHit }), ctx: 'apps/server/src/workbench/{root,git,routes}.ts readFileSync 字面扫描' });
+  }
+
+  /* B 组续：workbench diff 审查端点 E2（B06-B12 · 迭代 0054 / BK-0041 · SPEC §3.8）——
+   * B06-B10 主实例（确定性锚 = 固定提交对 ed2f8ed↔d880b62：父子相邻、历史不可变、
+   * diff 恰 2 文件非二进制无改名；必须用字面 sha——HEAD~1 形态在 BUILD 提交后漂移，
+   * 且 ~ 被 ref 白名单拒绝）、B11 专用探针实例（B04 同型自建自清理）、B12 纯源扫描
+   * （B05 同型，扩扫 diff.ts + 复扫 routes.ts）。已知限制如实标注：git 超时 / git
+   * 二进制缺失（ENOENT）不做 HTTP 级测试（win32 无法可移植伪造，B04 同款），由
+   * B12 源扫描 + runGit 复用（B05 已断言 setTimeout/kill 形态在 git.ts）背书。 */
+  { /* B06 · E2 默认契约（无参 = HEAD↔工作区）：键集恰两键 + files 每项五键形状；
+       files 条数不定不断言（主实例工作区脏度随轮次变化，CI 干净检出时可为空——
+       只锁形状不锁数量，如实口径） */
+    const b6 = await api(srv.base, 'GET', '/api/v1/workbench/diff');
+    const b6keys = b6.json && typeof b6.json === 'object' && !Array.isArray(b6.json)
+      ? Object.keys(b6.json).sort().join(',') : '';
+    const b6filesOk = Array.isArray(b6.json?.files) && b6.json.files.every(f =>
+      typeof f?.path === 'string' && f.path !== ''
+      && typeof f?.status === 'string' && /^[MADR]$/.test(f.status)
+      && Number.isInteger(f?.adds) && f.adds >= 0
+      && Number.isInteger(f?.dels) && f.dels >= 0
+      && typeof f?.patch === 'string');
+    C.ok(b6.status === 200 && b6keys === 'files,truncated' && b6filesOk
+      && typeof b6.json?.truncated === 'boolean',
+      'B06', 'GET /api/v1/workbench/diff（无参 = HEAD↔工作区）→ 200；键集恰 {files,truncated}；files 每项恰五键 {path,status,adds,dels,patch}（path 非空 / status /^[MADR]$/ / adds、dels 非负整数 / patch string）；truncated boolean；条数不定不断言（工作区脏度随轮次变化）',
+      { expected: '200 两键契约 + 五键文件形状', actual: JSON.stringify({ status: b6.status, keys: b6keys, n: b6.json?.files?.length, truncated: b6.json?.truncated, filesOk: b6filesOk }).slice(0, 220), ctx: ctxOf(b6) });
+  }
+  { /* B07 · 显式 ref 对 + path 前缀（固定提交对）：默认模式 files 锁 2 条 + 路径集合
+       + 逐文件 status/adds/dels + truncated=false；path 前缀过滤生效（docs → 1 条、
+       .zcode → 1 条） */
+    const b7 = await api(srv.base, 'GET', '/api/v1/workbench/diff?base=ed2f8ed&head=d880b62');
+    const files7 = b7.json?.files ?? [];
+    const paths7 = files7.map(f => f.path).sort().join('|');
+    const by7 = Object.fromEntries(files7.map(f => [f.path, f]));
+    const b7d = await api(srv.base, 'GET', '/api/v1/workbench/diff?base=ed2f8ed&head=d880b62&path=docs');
+    const b7z = await api(srv.base, 'GET', '/api/v1/workbench/diff?base=ed2f8ed&head=d880b62&path=.zcode');
+    C.ok(b7.status === 200 && files7.length === 2 && b7.json?.truncated === false
+      && paths7 === '.zcode/workflows/evolution-iteration.dwf.ts|docs/evolution/STATE.md'
+      && by7['.zcode/workflows/evolution-iteration.dwf.ts']?.status === 'M'
+      && by7['.zcode/workflows/evolution-iteration.dwf.ts']?.adds === 21
+      && by7['.zcode/workflows/evolution-iteration.dwf.ts']?.dels === 7
+      && by7['docs/evolution/STATE.md']?.status === 'M'
+      && by7['docs/evolution/STATE.md']?.adds === 2
+      && by7['docs/evolution/STATE.md']?.dels === 2
+      && b7d.status === 200 && b7d.json?.files?.length === 1
+      && String(b7d.json?.files?.[0]?.path ?? '').startsWith('docs/')
+      && b7z.status === 200 && b7z.json?.files?.length === 1
+      && String(b7z.json?.files?.[0]?.path ?? '').startsWith('.zcode/'),
+      'B07', 'diff?base=ed2f8ed&head=d880b62 → 200 files=2（.zcode/workflows/evolution-iteration.dwf.ts=(M,21,7)、docs/evolution/STATE.md=(M,2,2)）、truncated=false；&path=docs → 1 条 docs/ 前缀；&path=.zcode → 1 条 .zcode/ 前缀（固定提交对确定性锚）',
+      { expected: '固定提交对确定性 diff', actual: JSON.stringify({ status: b7.status, paths: paths7, addsDels: files7.map(f => `${f.path}:${f.adds}+${f.dels}:${f.status}`), docs: `${b7d.status}:${b7d.json?.files?.length}`, zcode: `${b7z.status}:${b7z.json?.files?.length}` }).slice(0, 320), ctx: ctxOf(b7) });
+  }
+  { /* B08 · stat 模式（--numstat 定形面，SPEC §3.1.3）：跨模式计数一致（numstat 行数
+       === patch 块数机器互证）+ 每项 status=''/patch='' + adds/dels 与 B07 逐文件相等；
+       stat=abc → 400 */
+    const b8 = await api(srv.base, 'GET', '/api/v1/workbench/diff?base=ed2f8ed&head=d880b62&stat=1');
+    const files8 = b8.json?.files ?? [];
+    const by8 = Object.fromEntries(files8.map(f => [f.path, f]));
+    const b8bad = await api(srv.base, 'GET', '/api/v1/workbench/diff?stat=abc');
+    C.ok(b8.status === 200 && files8.length === 2
+      && files8.every(f => f.status === '' && f.patch === '')
+      && by8['.zcode/workflows/evolution-iteration.dwf.ts']?.adds === 21
+      && by8['.zcode/workflows/evolution-iteration.dwf.ts']?.dels === 7
+      && by8['docs/evolution/STATE.md']?.adds === 2
+      && by8['docs/evolution/STATE.md']?.dels === 2
+      && b8bad.status === 400 && b8bad.json?.error === 'stat 必须是 0/1/true/false',
+      'B08', 'diff?base=ed2f8ed&head=d880b62&stat=1 → 200 files=2（与 B07 默认模式跨模式计数一致）；每项 status===""、patch===""、adds/dels 与 B07 逐文件相等；stat=abc → 400 {error:"stat 必须是 0/1/true/false"}',
+      { expected: 'numstat 定形面 + stat 界值反例', actual: JSON.stringify({ status: b8.status, n: files8.length, rows: files8.map(f => `${f.path}:${f.adds}+${f.dels}`), bad: `${b8bad.status}:${b8bad.json?.error}` }).slice(0, 300), ctx: ctxOf(b8) });
+  }
+  { /* B09 · ref 白名单 400 反例：- 开头（选项注入）/ 白名单外字符（;rm）/ 空串（在而
+       缺省不在）/ HEAD~1（~ 不在白名单——SPEC §3.1.2 已知限制的正反例承载）；
+       合法形状但不可解析（假 sha deadbeef）→ 400 ref 不存在或不可解析 */
+    const bads9 = ['-x', 'main;rm', '', 'HEAD~1'];
+    const rs9 = [];
+    for(const v of bads9) rs9.push(await api(srv.base, 'GET', `/api/v1/workbench/diff?base=${encodeURIComponent(v)}`));
+    const unres9 = await api(srv.base, 'GET', '/api/v1/workbench/diff?base=deadbeef');
+    C.ok(rs9.every(r => r.status === 400 && r.json?.error === 'base 或 head ref 非法')
+      && unres9.status === 400 && unres9.json?.error === 'base 或 head ref 不存在或不可解析',
+      'B09', 'base=-x / base=main;rm / base=（空串在而缺省不在）/ base=HEAD~1 → 各 400 {error:"base 或 head ref 非法"}；base=deadbeef（合法形状不可解析）→ 400 {error:"base 或 head ref 不存在或不可解析"}（git 语义级 400，用户手误 ref 得 4xx 非 5xx）',
+      { expected: '5× 400 两类字面量', actual: rs9.map((r, i) => `${JSON.stringify(bads9[i])}:${r.status}:${r.json?.error}`).join(' | ') + ` | deadbeef:${unres9.status}:${unres9.json?.error}`, ctx: rs9.map(ctxOf).join(' | ') });
+  }
+  { /* B10 · path 越界 400：../ 逃逸 / 深层逃逸 / 绝对路径注入（win32 盘符形态 D:/ +
+       POSIX 根形态 /etc——resolve 归一后非项目根内同拒；smoke:server 仅本机 win32
+       与 windows CI 面向，CI contracts job 不跑本组） */
+    const bads10 = ['../', '../../', 'D:/', '/etc'];
+    const rs10 = [];
+    for(const v of bads10) rs10.push(await api(srv.base, 'GET', `/api/v1/workbench/diff?path=${encodeURIComponent(v)}`));
+    C.ok(rs10.every(r => r.status === 400 && r.json?.error === 'path 越界'),
+      'B10', 'path=../ / path=../../ / path=D:/（win32 绝对注入）/ path=/etc（POSIX 绝对注入）→ 各 400 {error:"path 越界"}（path.resolve 归一后前缀校验，非项目根内即拒）',
+      { expected: '4× 400 path 越界', actual: rs10.map((r, i) => `${bads10[i]}:${r.status}:${r.json?.error}`).join(' | '), ctx: rs10.map(ctxOf).join(' | ') });
+  }
+  { /* B11 · 404 无仓库（B04 同型专用探针实例，自建自清理）：mkdtemp 临时非 git 目录 +
+       双 dist 复制 + node_modules junction；spawn cwd 刻意 = REPO_ROOT（真仓库）→
+       健康后 GET /api/v1/workbench/diff → 404（E2 rev-parse 探测面；误锚
+       process.cwd() 会得 200 恰好击穿——与 B01/B04 同款双向证明的 diff 侧延伸） */
+    const b11Tmp = mkdtempSync(path.join(tmpdir(), 'af-wbdiff-smoke-'));
+    let b11Child = null;
+    let b11Exit = null;
+    try {
+      cpSync(path.join(REPO_ROOT, 'apps', 'server', 'dist'), path.join(b11Tmp, 'apps', 'server', 'dist'), { recursive: true });
+      cpSync(path.join(REPO_ROOT, 'apps', 'server', 'package.json'), path.join(b11Tmp, 'apps', 'server', 'package.json'));
+      cpSync(path.join(REPO_ROOT, 'apps', 'web', 'dist'), path.join(b11Tmp, 'apps', 'web', 'dist'), { recursive: true });
+      let dep11 = null;
+      for(let d = REPO_ROOT; ; d = path.dirname(d)){
+        if(existsSync(path.join(d, 'node_modules', 'express', 'package.json'))){ dep11 = path.join(d, 'node_modules'); break; }
+        if(path.dirname(d) === d) break;
+      }
+      if(!dep11){
+        C.fail('B11', '依赖仓定位（向上找含 express 的 node_modules）', { expected: '命中一处依赖仓', actual: 'REPO_ROOT 向上未找到', ctx: `REPO_ROOT=${REPO_ROOT}` });
+        throw new SmokeFailError('B11');
+      }
+      symlinkSync(dep11, path.join(b11Tmp, 'node_modules'), 'junction');
+      const b11Port = await getFreePort();
+      const b11Base = `http://127.0.0.1:${b11Port}`;
+      b11Child = spawn(process.execPath, [path.join(b11Tmp, 'apps', 'server', 'dist', 'server.js')], {
+        cwd: REPO_ROOT,
+        env: { ...process.env, PORT: String(b11Port), BOCHA_API_KEY: '', SEARXNG_URL: '' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      b11Exit = new Promise(res => b11Child.once('exit', (c, s) => res({ code: c, signal: s })));
+      let b11Out = '';
+      let b11Exited = false;
+      void b11Exit.then(() => { b11Exited = true; });
+      b11Child.stdout.setEncoding('utf8'); b11Child.stdout.on('data', d => { b11Out += d; });
+      b11Child.stderr.setEncoding('utf8'); b11Child.stderr.on('data', d => { b11Out += d; });
+      let b11Health = null;
+      const b11t0 = Date.now();
+      for(;;){
+        if(b11Exited) break;
+        try{
+          const r = await fetch(`${b11Base}/api/v1/health`, { signal: AbortSignal.timeout(2000) });
+          if(r.status === 200){ b11Health = { status: r.status, json: await r.json().catch(() => null) }; break; }
+        }catch{ /* 未就绪，继续轮询 */ }
+        if(Date.now() - b11t0 > 20000) break;
+        await sleep(250);
+      }
+      const b11 = b11Health
+        ? await api(b11Base, 'GET', '/api/v1/workbench/diff')
+        : { status: 0, json: null, text: `探针实例未就绪（exit=${b11Exited}）${b11Out.slice(-160)}`, method: 'GET', url: '/api/v1/workbench/diff' };
+      C.ok(b11Health?.status === 200 && b11Health.json?.ok === true
+        && b11.status === 404 && b11.json?.error === 'not a git repository',
+        'B11', '探针实例（临时非 git 目录，spawn cwd=仓库根）健康 200 → GET /api/v1/workbench/diff → 404 {error:"not a git repository"}（误锚 process.cwd() 会得 200 恰好击穿；B01/B04 锚定双向证明的 diff 侧延伸）',
+        { expected: 'health 200 + 404 not a git repository', actual: JSON.stringify({ health: b11Health?.status, ok: b11Health?.json?.ok, wb: `${b11.status} ${b11.json?.error ?? String(b11.text).slice(0, 60)}` }), ctx: `tmp=${b11Tmp} | spawn cwd=REPO_ROOT` });
+    } finally {
+      if(b11Child){
+        try { b11Child.kill(); } catch { /* 已退出 */ }
+        await Promise.race([b11Exit, sleep(3000)]);
+        try { b11Child.kill('SIGKILL'); } catch { /* 已退出 */ }
+      }
+      try { rmSync(b11Tmp, { recursive: true, force: true }); } catch { /* 尽力而为，如实容忍 */ }
+    }
+  }
+  { /* B12 · 纪律源扫描 diff.ts（B05 同型）+ routes.ts 复扫（扩后）：/shell/i 零命中
+       （含注释）；可写命令单引号 argv 字面量零命中（B05 同 regex）；'diff'/
+       '--no-color'/'--numstat' 三词在场（E2 只读白名单承载本体）；'./git.js' import
+       在场（runGit 复用非复制） */
+    const d12 = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', 'diff.ts'), 'utf8');
+    const r12 = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', 'routes.ts'), 'utf8');
+    const shell12 = [d12, r12].filter(s => /shell/i.test(s)).length;
+    const writeRe = /'(add|commit|push|pull|checkout|reset|clean|merge|rebase|stash)'/g;
+    const write12 = (d12.match(writeRe) ?? []).concat(r12.match(writeRe) ?? []);
+    const words12 = ["'diff'", "'--no-color'", "'--numstat'"];
+    C.ok(shell12 === 0 && write12.length === 0
+      && words12.every(w => d12.includes(w))
+      && d12.includes("'./git.js'"),
+      'B12', '源码扫描 diff.ts + routes.ts（扩后）：/shell/i 零命中；可写命令单引号 argv 字面量零命中；diff.ts 含 \'diff\'/\'--no-color\'/\'--numstat\'（只读白名单承载本体）与 \'./git.js\' import（runGit 复用非复制）',
+      { expected: 'shell 零命中 + 可写零命中 + 三命令词与复用 import 在场', actual: JSON.stringify({ shell12, write12, wordsOk: words12.every(w => d12.includes(w)), importOk: d12.includes("'./git.js'") }), ctx: 'apps/server/src/workbench/{diff,routes}.ts readFileSync 字面扫描' });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例

@@ -7,9 +7,12 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/* 编译产物 apps/server/dist/workbench/root.js → 上溯三级 = 仓库根
-   （dist/workbench → dist → apps/server → 仓库根；server.ts:44 为 dist 平铺
-   两级，本模块深一层故三级——off-by-one 即锚错为 apps/server，smoke B01/B04
-   双向拦截）；git 子进程 cwd 显式取该常量（ADR-0016 §3.4）。 */
+/* 编译产物 apps/server/dist/workbench/root.js → 上溯四级 = 仓库根
+   （workbench → dist → apps/server → apps → 仓库根）。
+   根因注记（迭代 0054 / BK-0041 修）：原三级上溯锚到 apps/ 而非仓库根——
+   「dist 上溯两级」系 tools.ts 位于 dist 根的口径，workbench 模块再深一级，
+   须上溯 4 级；该差级曾长期被 git 向上搜 .git 掩盖（apps/ 仍在仓库内，
+   status/log 输出与 cwd 无关），至 E2 pathspec 前缀过滤（相对 cwd 解析）才暴露。
+   git 子进程 cwd 显式取该常量（ADR-0016 §3.4）。 */
 export const PROJECT_ROOT =
-  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');

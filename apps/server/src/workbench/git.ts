@@ -20,8 +20,10 @@ export class WorkbenchGitError extends Error {
 }
 
 /* runGit：resolve {code,out,err}——非零退出码交调用方按语义归类
-   （rev-parse 非零 = not-repo；其余 = failed）；error 事件 / 超时即 reject */
-function runGit(args: string[], cwd: string = PROJECT_ROOT): Promise<{ code: number; out: string; err: string }> {
+   （rev-parse 非零 = not-repo；其余 = failed）；error 事件 / 超时即 reject。
+   迭代 0054 / BK-0041 起导出：E2（diff.ts）复用同一执行器（argv 数组 / 5s 强杀 /
+   cwd=PROJECT_ROOT，ADR-0016 §3.4），E1 语义零变化 */
+export function runGit(args: string[], cwd: string = PROJECT_ROOT): Promise<{ code: number; out: string; err: string }> {
   return new Promise((resolve, reject)=>{
     let child;
     try{
