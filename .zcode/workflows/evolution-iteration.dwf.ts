@@ -664,7 +664,30 @@ if (finalState === "passed") {
       if (commitOut.exitCode === 0) {
         const shaOut = await runGit(["-C", WT, "rev-parse", "HEAD"]);
         branchCommit = shaOut.stdout.trim();
-        log(`特性分支产品提交完成：${commitMessage}（${branchCommit.slice(0, 8)}）`);
+        /* 2026-10-28 加固：提交面完整性断言——productFiles 漏提交三发（0034 termview 目录 /
+           0036 workbench 三模块 / 0055 pty 四文件），磁盘有文件 ≠ 已进提交，分支引用悬空
+           模块要等主干构建才炸、靠事后补录。双查：
+           ① 白名单文件必须真的进了提交（git ls-tree 实查，防 add 路径错配/申报笔误静默丢失）；
+           ② 产品树（apps/ packages/ tools/ tests/）内不得残留未提交改动或未跟踪文件
+              （防 BUILD 忘申报——三发故障文件全在 apps/server/src/** 下，产品树判定无先例误伤；
+              openspec/ 等外部骨架在产品树外不受影响）。任一违例即 failed，修复轮补申报重跑。 */
+        const lsOut = await runGit(["-C", WT, "ls-tree", "-r", "--name-only", "HEAD"]);
+        const committed = new Set(lsOut.stdout.split("\n").map(s => s.trim()).filter(Boolean));
+        const onDiskMissing = whitelist.filter(p => !committed.has(p));
+        const st3 = parseJson<{ staged: string[]; unstaged: string[]; untracked: string[] }>(
+          (await runTool(["status", WT])).stdout,
+          { staged: [], unstaged: [], untracked: [] },
+        );
+        const leftoverProduct = [...st3.staged, ...st3.unstaged, ...st3.untracked].filter(
+          p => /^(apps|packages|tools|tests)\//.test(p),
+        );
+        if (onDiskMissing.length > 0 || leftoverProduct.length > 0) {
+          finalState = "failed";
+          summary = `提交面完整性断言违例——白名单未入提交：${onDiskMissing.join("、") || "无"}；产品树残留未提交：${leftoverProduct.join("、") || "无"}（productFiles 漏申报/错配三发先例 0034/0036/0055，修复轮须补申报累积并集后重跑）`;
+          log(summary);
+        } else {
+          log(`特性分支产品提交完成：${commitMessage}（${branchCommit.slice(0, 8)}）· 完整性断言过（白名单 ${whitelist.length} 项全在提交、产品树零残留）`);
+        }
       } else {
         finalState = "failed";
         summary = `提交被拒（钩子拦截或仓库规则）：${commitOut.stdout.slice(0, 300)}${commitOut.stderr.slice(0, 300)}`;
