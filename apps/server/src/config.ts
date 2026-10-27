@@ -31,6 +31,7 @@ for(const key of [
   'PORT', 'ALLOW_PRIVATE_NET', 'BOCHA_API_KEY', 'SEARXNG_URL',
   'DEEPSEEK_API_KEY', 'ZHIPU_API_KEY', 'OPENAI_API_KEY', 'MOONSHOT_API_KEY',
   'MCP_HTTP_SERVERS', 'MCP_STDIO_SERVERS',
+  'PTY_ENABLED', 'PTY_IDLE_TIMEOUT_MS', 'PTY_MAX_SESSION_MS', 'PTY_MAX_SESSIONS',
 ]){
   const v = process.env[key];
   rawEnv[key] = v !== undefined && v !== '' ? v : undefined;
@@ -71,6 +72,14 @@ const EnvSchema = z.object({
   MCP_STDIO_SERVERS: z.string().superRefine((v, ctx) => {
     for (const p of parseStdioServersSpec(v).problems) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p });
   }).optional(),
+  /* PTY 会话运行时（ADR-0014 §5.5 / 迭代 0055 BK-0044；issue#14 批复）：
+   * ENABLED 默认关（ALLOW_PRIVATE_NET 同款 TRUTHY/FALSY 词形）；IDLE 下限
+   * 1000ms 防误配亚秒级（SPEC D6 对例示值 60000 的显式偏离，默认值不变）；
+   * MAX_SESSION_MS 与 IDLE 的交叉校验见 loadConfig（E9 先例）。 */
+  PTY_ENABLED: z.string().refine(v => TRUTHY.test(v) || FALSY.test(v), { message: '只接受 1/true/yes 或 0/false/no' }).optional(),
+  PTY_IDLE_TIMEOUT_MS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1000, '必须 ≥1000ms（防误配亚秒级）').optional(),
+  PTY_MAX_SESSION_MS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1000, '必须 ≥1000ms').optional(),
+  PTY_MAX_SESSIONS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1, '必须在 1-16').max(16, '必须在 1-16').optional(),
 });
 
 function fail(problems: string[]): never {
@@ -106,9 +115,20 @@ function loadConfig(){
       fail(problems);
     }
   }
+  /* 交叉校验（BK-0044 / ADR-0014 §5.5）：两超时均配置时，最大时长须 ≥ idle 超时
+     （否则 max 硬顶先于 idle 兑现属配置自相矛盾，fail-fast 指明两变量名） */
+  if(env.PTY_IDLE_TIMEOUT_MS !== undefined && env.PTY_MAX_SESSION_MS !== undefined
+      && env.PTY_MAX_SESSION_MS < env.PTY_IDLE_TIMEOUT_MS){
+    problems.push(`PTY_MAX_SESSION_MS=${env.PTY_MAX_SESSION_MS}：必须 ≥ PTY_IDLE_TIMEOUT_MS=${env.PTY_IDLE_TIMEOUT_MS}（最大时长须 ≥ idle 超时）`);
+    fail(problems);
+  }
   return {
     port: env.PORT ?? 3000,
     allowPrivateNet: !!env.ALLOW_PRIVATE_NET && TRUTHY.test(env.ALLOW_PRIVATE_NET),
+    ptyEnabled: !!env.PTY_ENABLED && TRUTHY.test(env.PTY_ENABLED),
+    ptyIdleTimeoutMs: env.PTY_IDLE_TIMEOUT_MS ?? 600000,
+    ptyMaxSessionMs: env.PTY_MAX_SESSION_MS ?? 3600000,
+    ptyMaxSessions: env.PTY_MAX_SESSIONS ?? 4,
     aiBaseUrl: env.AI_BASE_URL,
     aiApiKey: env.AI_API_KEY,
     aiModels: env.AI_MODELS,
