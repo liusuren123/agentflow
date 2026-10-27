@@ -38,6 +38,10 @@
  * （HEAD↔工作区，只锁形状不锁数量）/ 固定提交对 ref+path 前缀 / stat 模式
  * （--numstat 定形面）/ ref 白名单与 path 越界 400 反例 / 404 探针实例（B04 同型）/
  * diff.ts 纪律源扫描（B05 同型）。
+ * B13-B18（迭代 0056 / BK-0042）扩 E3 tree 端点（ADR-0016 §3.3）：默认契约
+ * （含 .git 排除/FOLD 占位/先序/条目上限性质断言）/ path 前缀与 depth 语义 /
+ * depth 界值 400 / 防越界矩阵双形态 / 404 与折叠恒空 / tree.ts 纪律源扫描
+ * （零子进程 + fs 只读白名单）。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -1745,6 +1749,144 @@ async function main() {
       && d12.includes("'./git.js'"),
       'B12', '源码扫描 diff.ts + routes.ts（扩后）：/shell/i 零命中；可写命令单引号 argv 字面量零命中；diff.ts 含 \'diff\'/\'--no-color\'/\'--numstat\'（只读白名单承载本体）与 \'./git.js\' import（runGit 复用非复制）',
       { expected: 'shell 零命中 + 可写零命中 + 三命令词与复用 import 在场', actual: JSON.stringify({ shell12, write12, wordsOk: words12.every(w => d12.includes(w)), importOk: d12.includes("'./git.js'") }), ctx: 'apps/server/src/workbench/{diff,routes}.ts readFileSync 字面扫描' });
+  }
+
+  /* B 组续：workbench 目录树端点 E3（B13-B18 · 迭代 0056 / BK-0042 · SPEC §3.8）——
+   * B13-B17 主实例（E3 为 fs 只读遍历，工作树即真仓库直接可测；E1/E2 的「非 git
+   * 目录探针」对 E3 无证明力——SPEC §3.8 定形偏差记档：E3 零 git 探测、404 面是
+   * 「子路径不存在」，主实例直接可测，锚定证明由 B13 root.path==='' + 仓库根标志
+   * 目录合成）、B18 纯源扫描（B05/B12 同型，E3 差异面：零子进程 + fs 只读白名单）。
+   * 已知限制如实标注：遍历异常 500 不做 HTTP 级测试（win32 无法可移植伪造
+   * lstat/readdir 异常），由 B18 源扫描同构形态背书（WorkbenchTreeError('failed')
+   * → 500 映射字面量在场，B04/B11 同款如实口径）。 */
+  const FOLD_B = ['node_modules', 'dist', 'data', '.zcode'];
+  { /* B13 · E3 默认契约（主实例）：键集恰两键 {root,truncated}；root.name 非空
+       （不锁字面量——工作树/主干/CI 目录名异）、root.path===''、children 含仓库根
+       标志目录 apps/docs（锚定合成证明——锚错任何一级即缺失）；递归形状（name 非空、
+       type ∈ dir/file、dir 无 size 键、file 带 size 非负整数）；.git 递归零出现；
+       FOLD 名目录 children 恒 []（node_modules/data/.zcode 默认请求亲核 + dist 经
+       apps/server 深度 1 子树补充亲核——默认深度 2 看不到第三层 dist）；同层目录
+       先序（root.children 内全部 dir 下标 < 全部 file 下标）；truncated boolean；
+       全树条目递归计数 ≤ 500（「不爆响应」性质断言，不依赖仓库规模触发截断） */
+    const b13 = await api(srv.base, 'GET', '/api/v1/workbench/tree');
+    const keys13 = b13.json && typeof b13.json === 'object' && !Array.isArray(b13.json)
+      ? Object.keys(b13.json).sort().join(',') : '';
+    let shapeOk13 = true, gitHit13 = false, total13 = 0;
+    const seenFold13 = new Set();
+    const check13 = n => {
+      total13++;
+      if(!n || typeof n !== 'object'){ shapeOk13 = false; return; }
+      if(typeof n.name !== 'string' || n.name === '') shapeOk13 = false;
+      if(n.type !== 'dir' && n.type !== 'file') shapeOk13 = false;
+      if(n.name === '.git') gitHit13 = true;
+      if(n.type === 'file' && (!Number.isInteger(n.size) || n.size < 0)) shapeOk13 = false;
+      if(n.type === 'dir'){
+        if(n.size !== undefined) shapeOk13 = false;
+        if(FOLD_B.includes(n.name)){
+          seenFold13.add(n.name);
+          if(!(Array.isArray(n.children) && n.children.length === 0)) shapeOk13 = false;   // 折叠占位恒空
+        }else if(Array.isArray(n.children)){
+          n.children.forEach(check13);
+        }
+      }
+    };
+    const kids13 = Array.isArray(b13.json?.root?.children) ? b13.json.root.children : [];
+    kids13.forEach(check13);
+    const names13 = new Set(kids13.map(n => n?.name));
+    const firstFile13 = kids13.findIndex(n => n?.type === 'file');
+    const lastDir13 = kids13.reduce((m, n, i) => (n?.type === 'dir' ? i : m), -1);
+    const b13d = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=apps/server&depth=1');
+    const distRow13 = (b13d.json?.root?.children ?? []).find(n => n?.name === 'dist');
+    const distFoldOk13 = b13d.status === 200 && !!distRow13 && distRow13.type === 'dir'
+      && Array.isArray(distRow13.children) && distRow13.children.length === 0;
+    C.ok(b13.status === 200 && keys13 === 'root,truncated'
+      && typeof b13.json?.root?.name === 'string' && b13.json.root.name !== ''
+      && b13.json?.root?.path === '' && kids13.length > 0
+      && names13.has('apps') && names13.has('docs')
+      && shapeOk13 && !gitHit13
+      && ['node_modules', 'data', '.zcode'].every(f => seenFold13.has(f))
+      && (firstFile13 === -1 || lastDir13 < firstFile13)
+      && typeof b13.json?.truncated === 'boolean' && total13 <= 500
+      && distFoldOk13,
+      'B13', 'GET /api/v1/workbench/tree → 200；键集恰 {root,truncated}；root.name 非空（不锁字面量）、root.path===""；children 含 apps/docs（锚定合成证明）；递归形状（dir 无 size / file size 非负整数）；.git 零出现；FOLD 占位（node_modules/data/.zcode 根级 + dist 经 apps/server 子树亲核，children 恒 []）；同层 dir 先序；truncated boolean；全树条目 ≤ 500',
+      { expected: '200 两键契约 + 形状 + 折叠 + 先序 + ≤500', actual: JSON.stringify({ status: b13.status, keys: keys13, rootName: b13.json?.root?.name, rootPath: b13.json?.root?.path, n: kids13.length, total13, shapeOk: shapeOk13, gitHit: gitHit13, foldSeen: [...seenFold13], truncated: b13.json?.truncated, firstFile: firstFile13, lastDir: lastDir13, distFoldOk: distFoldOk13 }).slice(0, 320), ctx: ctxOf(b13) });
+  }
+  { /* B14 · path 前缀下钻 + depth 语义：?path=apps/server → root.name==='server'、
+       root.path==='apps/server'、children 含 src（dir）；同路径 depth=1 → 非折叠
+       dir 全部无 children 键（depth 耗尽形态；折叠 dir 仍为 children:[] 占位）；
+       depth=4 → src 子层出现 workbench 目录且带 children（≥3 层嵌套，深度机器判据） */
+    const b14 = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=apps/server');
+    const b14d1 = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=apps/server&depth=1');
+    const b14d4 = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=apps/server&depth=4');
+    const kids14 = b14.json?.root?.children ?? [];
+    const srcRow14 = kids14.find(n => n?.name === 'src');
+    const kids14d1 = b14d1.json?.root?.children ?? [];
+    const depth1Ok14 = kids14d1.every(n =>
+      !(n?.type === 'dir' && !FOLD_B.includes(n?.name)) || n?.children === undefined);
+    const src4 = (b14d4.json?.root?.children ?? []).find(n => n?.name === 'src');
+    const wb4 = Array.isArray(src4?.children) ? src4.children.find(n => n?.name === 'workbench') : null;
+    C.ok(b14.status === 200 && b14.json?.root?.name === 'server'
+      && b14.json?.root?.path === 'apps/server'
+      && srcRow14?.type === 'dir'
+      && b14d1.status === 200 && kids14d1.length > 0 && depth1Ok14
+      && b14d4.status === 200 && !!wb4 && wb4.type === 'dir' && Array.isArray(wb4.children),
+      'B14', 'tree?path=apps/server → 200 root.name="server"、root.path="apps/server"、children 含 src(dir)；&depth=1 → 非折叠 dir 全部无 children 键（depth 耗尽）；&depth=4 → src 子层出现 workbench 目录且带 children（≥3 层嵌套，深度机器判据）',
+      { expected: '下钻子树 + 深度语义', actual: JSON.stringify({ root: `${b14.json?.root?.name}@${b14.json?.root?.path}`, srcType: srcRow14?.type, d1: `${b14d1.status}:${kids14d1.length}:depth1Ok=${depth1Ok14}`, d4: `${b14d4.status}:workbench=${!!wb4}` }), ctx: ctxOf(b14) });
+  }
+  { /* B15 · depth 界值反例（B03 同型）：0 / 7 / abc / 2.5 → 各 400 {error:"depth 必须是 1-6 的整数"} */
+    const rs15 = [];
+    for(const v of ['0', '7', 'abc', '2.5']){
+      rs15.push(await api(srv.base, 'GET', `/api/v1/workbench/tree?depth=${v}`));
+    }
+    C.ok(rs15.every(r => r.status === 400 && r.json?.error === 'depth 必须是 1-6 的整数'),
+      'B15', 'depth=0 / depth=7 / depth=abc / depth=2.5 → 各 400 {error:"depth 必须是 1-6 的整数"}',
+      { expected: '4× 400 + error 字面量', actual: rs15.map(r => `${r.status}:${r.json?.error ?? r.text.slice(0, 40)}`).join(' | '), ctx: rs15.map(ctxOf).join(' | ') });
+  }
+  { /* B16 · path 越界 400（B10 同款双形态）：../ 逃逸 / 深层逃逸 / 绝对路径注入
+       （win32 盘符形态 D:/ + POSIX 根形态 /etc——resolve 归一后非项目根内同拒） */
+    const bads16 = ['../', '../../', 'D:/', '/etc'];
+    const rs16 = [];
+    for(const v of bads16){
+      rs16.push(await api(srv.base, 'GET', `/api/v1/workbench/tree?path=${encodeURIComponent(v)}`));
+    }
+    C.ok(rs16.every(r => r.status === 400 && r.json?.error === 'path 越界'),
+      'B16', 'path=../ / path=../../ / path=D:/（win32 绝对注入）/ path=/etc（POSIX 绝对注入）→ 各 400 {error:"path 越界"}（path.resolve 归一后前缀校验，非项目根内即拒）',
+      { expected: '4× 400 path 越界', actual: rs16.map((r, i) => `${bads16[i]}:${r.status}:${r.json?.error}`).join(' | '), ctx: rs16.map(ctxOf).join(' | ') });
+  }
+  { /* B17 · 404 与折叠语义：不存在子路径 → 404；存在但为文件（package.json）→ 404
+       同字面量（下钻语义两态共用）；折叠目录显式下钻（path=node_modules）→ 200
+       children===[] 恒空 + truncated=false（折叠语义机器证明，SPEC §3.1.3） */
+    const b17a = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=no-such-dir-xyz');
+    const b17b = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=package.json');
+    const b17c = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=node_modules');
+    C.ok(b17a.status === 404 && b17a.json?.error === 'path 不存在或不是目录'
+      && b17b.status === 404 && b17b.json?.error === 'path 不存在或不是目录'
+      && b17c.status === 200 && b17c.json?.root?.name === 'node_modules'
+      && Array.isArray(b17c.json?.root?.children) && b17c.json.root.children.length === 0
+      && b17c.json?.truncated === false,
+      'B17', 'tree?path=no-such-dir-xyz → 404 {error:"path 不存在或不是目录"}；?path=package.json（存在但为文件）→ 404 同字面量；?path=node_modules（折叠目录显式下钻）→ 200 root.children===[] 恒空、truncated=false（折叠语义机器证明）',
+      { expected: '404×2 同字面量 + 折叠恒空 200', actual: JSON.stringify({ a: `${b17a.status}:${b17a.json?.error}`, b: `${b17b.status}:${b17b.json?.error}`, c: `${b17c.status}:${b17c.json?.root?.name}:n=${b17c.json?.root?.children?.length}:truncated=${b17c.json?.truncated}` }), ctx: `${ctxOf(b17a)} | ${ctxOf(b17b)} | ${ctxOf(b17c)}` });
+  }
+  { /* B18 · 纪律源扫描（B05/B12 同型，E3 差异面）：tree.ts + routes.ts（扩后复扫）
+       + root.ts（复扫）/shell/i 零命中（含注释——注释措辞禁 shell 字样）；tree.ts
+       'spawn' 零命中（E3 零 git 子进程承载差异面）；'readdir' 与 'lstat' 在场
+       （fs 承载本体）；fs 写面禁词零命中（writeFile/appendFile/unlink/rename/
+       mkdir/chmod/chown/truncate/rm——调用形态词表 \b词\s*（，规避出参字段名
+       truncated 的子串误报；E1/E2 的可写命令 regex 是 git argv 面，E3 换 fs API
+       面词表）；'.git' 排除与 FOLD 四名字面量在场（'node_modules'/'dist'/'data'/'.zcode'） */
+    const t18 = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', 'tree.ts'), 'utf8');
+    const r18 = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', 'routes.ts'), 'utf8');
+    const o18 = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', 'root.ts'), 'utf8');
+    const shell18 = [t18, r18, o18].filter(s => /shell/i.test(s)).length;
+    const spawn18 = t18.includes('spawn');
+    const writeRe18 = /\b(writeFile|appendFile|unlink|rename|mkdir|chmod|chown|truncate|rm)\s*\(/g;
+    const write18 = [t18, r18, o18].flatMap(s => s.match(writeRe18) ?? []);
+    const foldWords18 = ["'node_modules'", "'dist'", "'data'", "'.zcode'"];
+    C.ok(shell18 === 0 && !spawn18 && write18.length === 0
+      && t18.includes('readdir') && t18.includes('lstat')
+      && t18.includes("'.git'") && foldWords18.every(w => t18.includes(w)),
+      'B18', '源码扫描 tree.ts + routes.ts（扩后）+ root.ts（复扫）：/shell/i 零命中（含注释）；tree.ts \'spawn\' 零命中（零 git 子进程）；\'readdir\'/\'lstat\' 在场（fs 承载本体）；fs 写面禁词（调用形态）零命中（writeFile/appendFile/unlink/rename/mkdir/chmod/chown/truncate/rm——词表规避 truncated 字段子串误报）；\'.git\' 排除与 FOLD 四名字面量在场',
+      { expected: 'shell/spawn/写面零命中 + readdir/lstat/.git/FOLD 四名在场', actual: JSON.stringify({ shell18, spawn18, write18, fsOk: t18.includes('readdir') && t18.includes('lstat'), gitExcl: t18.includes("'.git'"), foldOk: foldWords18.every(w => t18.includes(w)) }), ctx: 'apps/server/src/workbench/{tree,routes,root}.ts readFileSync 字面扫描' });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例

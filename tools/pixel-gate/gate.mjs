@@ -1,12 +1,13 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 18 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
- *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17 在线态——Playwright 路由拦截 fixture 供数
+ *  · 19 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17/s18 在线态——Playwright 路由拦截 fixture 供数
  *    （probe 的 /api/health + /api/v1 列表），其中 s4/s5（ADR-0009，issue#7 批准）
  *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039、s16 溯源迭代 0036（WB_ROUTES + UTC，
  *    原 s12 撞号改号，时序裁决）、s17 溯源迭代 0054（WB_ROUTES E2 mock + UTC，
- *    diff 审查页，BK-0041）；其余 s6~s8、s10~s14 为离线扩展场景
+ *    diff 审查页，BK-0041）、s18 溯源迭代 0056（WB_ROUTES E3 mock + UTC，
+ *    目录树页，BK-0042）；其余 s6~s8、s10~s14 为离线扩展场景
  *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
@@ -379,6 +380,23 @@ const WB_ROUTES = [
         { path: 'notes/draft.md', status: 'A', adds: 5, dels: 0,
           patch: 'diff --git a/notes/draft.md b/notes/draft.md\nnew file mode 100644\n@@ -0,0 +1,5 @@\n+# 草稿\n+第二行\n+第三行\n+第四行\n+第五行' } ],
       truncated: false } }) },
+  /* E3 目录树 mock（迭代 0056 / BK-0042 · SPEC §3.7.1）：fixture 即契约消费面——
+     mock 出参逐字符合 E3 契约（§3.1.4）；三 dir 形态刻意各一（可下钻/占位/已展开）
+     ——AC3 分级形态的全采集面；树页零时间渲染，无需整点毫秒；固定字面量
+     （ASCII + 固定中文文件名样例，字形安全口径）。s16/s17 不点 tree 页 → 本路由
+     对两场景零请求零渲染因果（页签条受波及唯一源仍是 tree 按钮解禁）。 */
+  { pattern: '**/api/v1/workbench/tree**',
+    handler: route => route.fulfill({ json: {
+      root: { name: 'demo-repo', path: '', children: [
+        { name: 'apps', type: 'dir', children: [
+            { name: 'server', type: 'dir' },                 /* 孙层可下钻形态（children 缺席） */
+            { name: 'web', type: 'dir', children: [] } ] },  /* 孙层空目录 → 占位形态 */
+        { name: 'docs', type: 'dir' },                       /* 子层可下钻形态（depth 耗尽） */
+        { name: 'node_modules', type: 'dir', children: [] }, /* 折叠占位形态 */
+        { name: 'package.json', type: 'file', size: 4096 },
+        { name: '示例文档.md', type: 'file', size: 2048 },
+      ] },
+      truncated: false } }) },
 ];
 const wbOpen = async page => {
   await page.evaluate(() => {
@@ -437,6 +455,35 @@ const wbDiffInv = page => page.evaluate(() => ({
   patchHead: ((document.querySelector('#workbench .wb-diff-pre') || {}).textContent || '').slice(0, 24),
 }));
 
+/* ---------- s18 工作台目录树在线态场景基建（ADR-0016 §6/§2.2 · 迭代 0056 / BK-0042 修宪轮） ----------
+   三步真实交互沿 s17（wbDiffOpen :419-423 同型）：空画布 contextmenu → 点
+   「工作台」（wbOpen('git')，E1 mock 供数，先等 wbReady——git 数据落 DOM 后再点
+   tree 页签，排除 git fetch 晚于 tree fetch 完成时 wbRenderGit 后写覆盖
+   .wb-scroll 的时序竞争，保末态确定性）→ 点 tree 页签（真实 click 委托 →
+   wbSwitch('tree') → E3 fetch → mock 供数）。 */
+const wbTreeOpen = async page => {
+  await wbOpen(page);
+  await wbReady(page);
+  await page.evaluate(() => document.querySelector('#wb-tabs .wb-tab[data-wb="tree"]').click());
+};
+/* 就绪探针（状态量非时延量，wbReady 先例）：树行 7 行全落 DOM（apps/docs/
+   node_modules/package.json/示例文档.md + server/web 孙层行）；超时红即 FAIL */
+const wbTreeReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#workbench .wb-tree-row').length === 7,
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量（公共六键后 spread）：页签集（tree 激活无禁用标记）+
+   #props 视图态 + 三形态分计 + 折叠行名单 + 可下钻行名单 */
+const wbTreeInv = page => page.evaluate(() => ({
+  wbTabs: [...document.querySelectorAll('#wb-tabs .wb-tab')]
+    .map(b => b.dataset.wb + (b.classList.contains('on') ? '*' : '') + (b.disabled ? '!' : '')),
+  propsShown: getComputedStyle(document.getElementById('props')).display !== 'none',
+  treeCounts: document.querySelectorAll('#workbench .wb-tree-dir').length + 'd/'
+    + document.querySelectorAll('#workbench .wb-tree-fold').length + 'f/'
+    + document.querySelectorAll('#workbench .wb-tree-file').length + 'w',
+  foldNames: [...document.querySelectorAll('#workbench .wb-tree-fold .wb-tree-name')].map(n => n.textContent),
+  drillNames: [...document.querySelectorAll('#workbench .wb-tree-dir:not(.open) .wb-tree-name')].map(n => n.textContent),
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -471,6 +518,8 @@ const SCENARIOS = [
     steps: [wbOpen], ready: wbReady, inv: wbInv },
   { id: 's17-workbench-diff-online', routes: WB_ROUTES, timezoneId: 'UTC',
     steps: [wbDiffOpen], ready: wbDiffReady, inv: wbDiffInv },
+  { id: 's18-workbench-tree-online', routes: WB_ROUTES, timezoneId: 'UTC',
+    steps: [wbTreeOpen], ready: wbTreeReady, inv: wbTreeInv },
 ];
 
 const runScenario = async (browser, sc) => {

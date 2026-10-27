@@ -8,6 +8,7 @@ import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refresh
          refreshCaps, onCapsArrive } from '../server-sync.js';
 import { refreshWorkbenchGit } from '../server-sync.js';
 import { refreshWorkbenchDiff } from '../server-sync.js';
+import { refreshWorkbenchTree, fetchWorkbenchTree } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -2953,11 +2954,12 @@ async function goalToggleList(){
  *  懒创建：#wb-tabs/#workbench 首次打开时动态创建（goalEnsure 先例），
  *  未打开前零新增可见 DOM（默认态像素 = 基线，s0~s11 零波及）；打开后
  *  页签条常驻至页面重载。#props 面零触碰（B 案核心承诺）：视图切换只靠
- *  #rightbar 类名（wb-page-git/wb-page-diff 时 #props display:none，
- *  renderProps 语义不受影响）。数据面 = server-sync refreshWorkbenchGit /
- *  refreshWorkbenchDiff（on-open fetch + 页内手动刷新，零轮询零 SSE，
- *  ADR-0016 §2.4）；git/diff 页已落地（0036/0054），tree 为禁用占位
- *  （后续批次 BK-0042）。
+ *  #rightbar 类名（wb-page-git/wb-page-diff/wb-page-tree 时 #props
+ *  display:none，renderProps 语义不受影响）。数据面 = server-sync
+ *  refreshWorkbenchGit / refreshWorkbenchDiff / refreshWorkbenchTree
+ *  （on-open fetch + 页内手动刷新，零轮询零 SSE，ADR-0016 §2.4）；
+ *  git/diff/tree 三页均已落地（0036/0054/0056），四页签全部启用
+ *  （容器基建收官）。
  * ================================================================ */
 const WB = { page:'props' };   /* 运行时页态（内存，不入 localStorage/undo，GOAL_BIND 先例） */
 
@@ -2969,7 +2971,7 @@ function wbEnsure(){
   const tabs = document.createElement('div');
   tabs.id = 'wb-tabs';
   tabs.innerHTML = mk('props','属性',false) + mk('git','仓库',false)
-                  + mk('diff','变更',false) + mk('tree','目录',true);
+                  + mk('diff','变更',false) + mk('tree','目录',false);
   tabs.addEventListener('click', e=>{
     const b = e.target.closest('.wb-tab'); if(!b || b.disabled) return;
     wbSwitch(b.dataset.wb);
@@ -2984,10 +2986,17 @@ function wbEnsure(){
     </div>
     <div class="wb-scroll"></div>`;
   wb.querySelector('.wb-refresh').addEventListener('click', async ()=>{
-    /* 按页派发（BK-0041）：diff 页刷新即「应用 ref 对/路径过滤」控件（右栏宽度
-       约束下不新增第二按钮，ADR-0016 §2.4 克制形态）；git 页保持既有两行 */
+    /* 按页派发（BK-0041/0042）：diff 页刷新即「应用 ref 对/路径过滤」控件（右栏宽度
+       约束下不新增第二按钮，ADR-0016 §2.4 克制形态）；tree 页重取当前根树整树重渲
+       （展开态重置为响应内嵌层级，诚实刷新语义）；git 页保持既有两行 */
     if(WB.page === 'diff'){ await refreshWorkbenchDiff(wbdQuery()); wbRenderDiff(); }
+    else if(WB.page === 'tree'){ await refreshWorkbenchTree(); wbRenderTree(); }
     else { await refreshWorkbenchGit(); wbRenderGit(); }
+  });
+  wb.querySelector('.wb-scroll').addEventListener('click', e=>{
+    /* 目录树行级下钻委托（BK-0042）：容器常驻一次注册，覆盖重渲与新插入子行 */
+    const row = e.target.closest('.wb-tree-dir');
+    if(row) wbTreeDrill(row);
   });
   bar.appendChild(wb);
 }
@@ -3003,8 +3012,10 @@ async function wbSwitch(page){
   WB.page = page;
   bar.classList.toggle('wb-page-git', page === 'git');
   bar.classList.toggle('wb-page-diff', page === 'diff');
+  bar.classList.toggle('wb-page-tree', page === 'tree');
   const title = $('.wb-title');   /* 顶栏标题随页态（首开即 wbSwitch，无中间态可见） */
-  if(title) title.textContent = page === 'diff' ? '变更对比' : page === 'git' ? '仓库信息' : '属性';
+  if(title) title.textContent = page === 'diff' ? '变更对比' : page === 'git' ? '仓库信息'
+    : page === 'tree' ? '项目目录' : '属性';
   $$('#wb-tabs .wb-tab').forEach(b=>b.classList.toggle('on', b.dataset.wb === page));
   if(page === 'git'){
     await refreshWorkbenchGit();   /* on-open fetch：打开/切回 git 页即取（REQ-0040-05） */
@@ -3012,6 +3023,9 @@ async function wbSwitch(page){
   }else if(page === 'diff'){
     await refreshWorkbenchDiff(wbdQuery());   /* on-open fetch：打开/切至 diff 页即取（REQ-0041-02） */
     wbRenderDiff();
+  }else if(page === 'tree'){
+    await refreshWorkbenchTree();   /* on-open fetch：打开/切至 tree 页即取（REQ-0042-02） */
+    wbRenderTree();
   }
 }
 
@@ -3051,7 +3065,7 @@ function wbRenderGit(){
    ref 对选择行（base/head/path 三输入，WBD 为唯一事实源——重渲染回填不丢值）+
    文件列表（状态码/路径/±行数）+ 选中文件等宽补丁视图；刷新 = on-open fetch +
    .wb-refresh 按页派发 + 输入 Enter 同径（零轮询零 SSE，ADR-0016 §2.4）。
-   tree 页签保持禁用占位（BK-0042 射程，禁用态像素零变化）。类名一律 wb-diff-/
+   tree 页签已随 BK-0042 解禁（目录树页见下，迭代 0056）。类名一律 wb-diff-/
    wb-ref 前缀（不触 .wtab/.wdg/.port/.node 计数面与 -- 自定义属性面）。 */
 const WBD = { base:'', head:'', path:'', sel:0 };   /* diff 页运行时态（内存，WB 先例） */
 const wbdQuery = () => {
@@ -3105,6 +3119,79 @@ function wbRenderDiff(){
       if(pre) pre.textContent = String(files[WBD.sel]?.patch ?? '');
     });
   });
+}
+
+/* ---------- 目录树页（BK-0042 / 迭代 0056 修宪轮 · ADR-0016 §2.2）----------
+   缩进树三形态分级（判据 = E3 契约二态）：dir 且 children 键缺席 = 未取可下钻
+   （chev-right + 行级 fetch 下钻）；dir 且 children 非空 = 已展开（chev-down +
+   子行随响应内嵌渲染，.open 类标态）；dir 且 children === [] = 折叠占位/空目录
+   统一置灰（无 chev 无点击——折叠占位不展开）；file 无 chev（size 不展示——右栏
+   宽度约束下的克制形态）。行级下钻逐次带 path 前缀请求 E3（fetchWorkbenchTree
+   行级直调，不占 SVR.wbTree 当前根树缓存——零全量预取，ADR-0016 §2.2）；收起后
+   再展开 = 重新 fetch 最新状态（零子树缓存）；缩进为内联 padding-left 动态值
+   （不触 cssVars 不变量）。类名一律 wb-tree- 前缀；图标只用既有 ICON_PATHS 键
+   （chev-right/chev-down）；chev 展开态由 DOM 自承载（.open 类 + 子行在场）。 */
+const wbTreeRows = (children, level, prefix) =>
+  (Array.isArray(children) ? children : []).map(n=>{
+    const tp = prefix + String(n.name ?? '');
+    const row = (cls, ic) => `<div class="wb-tree-row ${cls}" data-tp="${esc(tp)}" data-lv="${level}"`+
+      ` style="padding-left:${12 + level * 14}px">${ic}<span class="wb-tree-name">${esc(String(n.name||''))}</span></div>`;
+    if(n.type !== 'dir')
+      return row('wb-tree-file', '');
+    if(!Array.isArray(n.children))
+      return row('wb-tree-dir', I('chev-right'));          /* 未取可下钻 */
+    if(n.children.length === 0)
+      return row('wb-tree-fold', '');                      /* 折叠占位/空目录置灰 */
+    return row('wb-tree-dir open', I('chev-down')) + wbTreeRows(n.children, level + 1, tp + '/');
+  }).join('');
+
+const wbTreeChev = (row, icon) => {
+  const svg = row.querySelector('svg');
+  if(svg) svg.outerHTML = I(icon);
+};
+
+async function wbTreeDrill(row){
+  const lv = Number(row.dataset.lv) || 0;
+  if(row.classList.contains('open')){   /* 收起：移除后随更高 data-lv 相邻行 + chev 复位 */
+    let el = row.nextElementSibling;
+    while(el && el.classList.contains('wb-tree-row') && (Number(el.dataset.lv) || 0) > lv){
+      const nx = el.nextElementSibling;
+      el.remove();
+      el = nx;
+    }
+    row.classList.remove('open');
+    wbTreeChev(row, 'chev-right');
+    return;
+  }
+  /* 重试前清理旧失败行（上次下钻失败遗留的 .wb-empty） */
+  let dead = row.nextElementSibling;
+  while(dead && dead.classList.contains('wb-empty')){
+    const nx = dead.nextElementSibling;
+    dead.remove();
+    dead = nx;
+  }
+  try{
+    const sub = await fetchWorkbenchTree({ path: row.dataset.tp });   /* 行级下钻（零全量预取） */
+    if(!sub || !Array.isArray(sub.root?.children)) throw new Error('tree 形态非法');
+    row.insertAdjacentHTML('afterend', wbTreeRows(sub.root.children, lv + 1, row.dataset.tp + '/'));
+    row.classList.add('open');
+    wbTreeChev(row, 'chev-down');
+  }catch(_){
+    row.insertAdjacentHTML('afterend', `<div class="wb-empty">子目录拉取失败</div>`);   /* 不静默吞 */
+  }
+}
+
+function wbRenderTree(){
+  const box = $('#workbench .wb-scroll'); if(!box) return;
+  if(SVR.wbTreeErr || !SVR.wbTree){
+    box.innerHTML = `<div class="wb-empty">目录树拉取失败 · 点击刷新重试</div>`;
+    return;
+  }
+  const d = SVR.wbTree;
+  const kids = d.root && Array.isArray(d.root.children) ? d.root.children : [];
+  box.innerHTML = `
+    ${d.truncated ? `<div class="wb-empty">目录条目已截断 · 可下钻子目录收窄范围</div>` : ''}
+    ${wbTreeRows(kids, 0, '')}`;
 }
 
 }

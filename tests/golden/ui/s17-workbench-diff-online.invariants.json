@@ -58,7 +58,7 @@
   "props",
   "git",
   "diff*",
-  "tree!"
+  "tree"
  ],
  "propsShown": false,
  "diffCounts": "2f",
