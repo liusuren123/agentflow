@@ -682,3 +682,18 @@ body.running #float-bar{display:block}
 .wb-diff-pre{margin:0;padding:8px 10px;background:rgba(0,0,0,.45);border-left:2px solid #60a5fa;
   border-radius:5px;font-family:var(--mono);font-size:11px;line-height:1.5;color:#c7d6ee;
   white-space:pre-wrap;word-break:break-all;user-select:text}    /* 等宽补丁块，取值沿 .node-jtree（:609-611） */
+
+/* ===== 右栏工作台 · 目录树页（BK-0042 / 迭代 0056 修宪轮 · ADR-0016 §2.2）=====
+   纯插入（:623-684 既有行零改动，含 :634 .wb-tab:disabled 声明保留——全启用后
+   自然无命中对象）；值全取既有变量与既有字面量，零新增自定义属性。 */
+#rightbar.wb-page-tree #props{display:none}          /* 互斥视图切换（:636/:665 同型新选择器） */
+#rightbar.wb-page-tree #workbench{display:flex}
+.wb-tree-row{display:flex;align-items:center;gap:5px;height:20px;min-width:0}
+.wb-tree-row .ic{width:12px;height:12px;flex:none;color:var(--text3)}
+.wb-tree-name{font-family:var(--mono);font-size:10.5px;min-width:0;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}        /* 排版沿 .wb-path（:657-658） */
+.wb-tree-dir{cursor:pointer}
+.wb-tree-dir .wb-tree-name{color:var(--text2)}
+.wb-tree-dir:hover .wb-tree-name{color:var(--text)}  /* 交互色沿 .wb-tab（:632-633） */
+.wb-tree-file .wb-tree-name{color:var(--text3)}
+.wb-tree-fold .wb-tree-name{color:var(--text3)}      /* 折叠占位/空目录统一置灰 */

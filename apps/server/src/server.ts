@@ -21,6 +21,10 @@
  *    path 前缀 + stat 统计模式；git 只读白名单 diff 一命令子进程，ref 白名单与
  *    path 防越界 400 / 404 无仓库 / 500 超时，零出站零 env，ADR-0016 §3.2，
  *    迭代 0054 / BK-0041）
+ *  · GET  /api/v1/workbench/tree → 工作台目录树页数据源（path 子前缀 + depth 界值；
+ *    Node fs 只读遍历（readdir/lstat，零 git 子进程），.git 排除 + 生成目录折叠占位
+ *    + 条目上限 truncated；400 path 越界或 depth 非法 / 404 子路径不存在 / 500 遍历
+ *    异常，零出站零 env，ADR-0016 §3.3，迭代 0056 / BK-0042）
  *  · POST/GET /api/v1/pty/sessions · GET …/:id/stream · POST …/:id/write ·
  *    POST …/:id/stop → PTY 会话五端点（端点私有 SSE 帧零 shared 契约；pty_audits
  *    全量审计；三闸门生命周期与停机级联，ADR-0014，迭代 0055 / BK-0044）
@@ -55,6 +59,7 @@ import {
 import { capabilitiesHandler } from './capabilities.js';
 import { workbenchGitHandler } from './workbench/routes.js';
 import { workbenchDiffHandler } from './workbench/routes.js';
+import { workbenchTreeHandler } from './workbench/routes.js';
 import {
   ptyCreateHandler, ptyListHandler, ptyStreamHandler, ptyWriteHandler, ptyStopHandler,
 } from './pty/routes.js';
@@ -258,6 +263,8 @@ app.get('/api/v1/capabilities', capabilitiesHandler);
 app.get('/api/v1/workbench/git', workbenchGitHandler);
 /* 迭代 0054 / BK-0041 workbench diff 端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
 app.get('/api/v1/workbench/diff', workbenchDiffHandler);
+/* 迭代 0056 / BK-0042 workbench tree 端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
+app.get('/api/v1/workbench/tree', workbenchTreeHandler);
 /* 迭代 0055 / BK-0044 PTY 会话端点族：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
 app.post('/api/v1/pty/sessions', ptyCreateHandler);
 app.get('/api/v1/pty/sessions', ptyListHandler);

@@ -55,6 +55,17 @@ export const fetchWorkbenchDiff = (q = {}) => {
   const s = p.toString();
   return apiJson('/workbench/diff' + (s ? '?' + s : ''));
 };
+/* 工作台（BK-0042 / 迭代 0056）：目录树（E3，ADR-0016 §3.3）——仅数据层零 DOM；
+   path/depth 经 URLSearchParams 编码；空串省略 = 端点缺省语义（根 + depth 2）；
+   400/404/500 走非 2xx 抛错 → 面板错误态；行级下钻直调本函数（不占 SVR.wbTree
+   当前根树缓存，ADR-0006「fetch 封装」边界） */
+export const fetchWorkbenchTree = (q = {}) => {
+  const p = new URLSearchParams();
+  if(q.path) p.set('path', q.path);
+  if(q.depth) p.set('depth', String(q.depth));
+  const s = p.toString();
+  return apiJson('/workbench/tree' + (s ? '?' + s : ''));
+};
 
 /* 能力清单（BK-0049 / ADR-0018）：GET /api/v1/capabilities → 归一化 {servers,skills}
  * 数据层三件套：fetch（apiJson 8s 超时同口径）→ SVR.caps 缓存 → onCapsArrive 回调。
@@ -99,18 +110,22 @@ export const SVR = {
   wbGitErr: false,     // 最近一次 git 信息拉取失败 → 工作台错误空态
   wbDiff: null,        // E2 出参 | null：{files:[{path,status,adds,dels,patch}],truncated}（BK-0041 / 迭代 0054）
   wbDiffErr: false,    // 最近一次 diff 拉取失败 → diff 页错误空态
+  wbTree: null,        // E3 出参 | null：{root:{name,path,children},truncated}（BK-0042 / 迭代 0056）
+  wbTreeErr: false,    // 最近一次目录树拉取失败 → tree 页错误空态
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
 let wfArrive = null, runsArrive = null, sessionsArrive = null, capsArrive = null;
 let wbGitArrive = null;   // 工作台 git 信息到达回调（BK-0040）
 let wbDiffArrive = null;  // 工作台 diff 到达回调（BK-0041 / 迭代 0054）
+let wbTreeArrive = null;  // 工作台目录树到达回调（BK-0042 / 迭代 0056）
 export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
 export function onSessionsArrive(fn){ sessionsArrive = fn; }
 export function onCapsArrive(fn){ capsArrive = fn; }
 export function onWorkbenchGitArrive(fn){ wbGitArrive = fn; }
 export function onWorkbenchDiffArrive(fn){ wbDiffArrive = fn; }
+export function onWorkbenchTreeArrive(fn){ wbTreeArrive = fn; }
 
 export async function refreshWorkflows(){
   try{ SVR.wf = await fetchWorkflowList(); SVR.wfErr = false; }
@@ -143,6 +158,11 @@ export async function refreshWorkbenchDiff(q){
   try{ SVR.wbDiff = await fetchWorkbenchDiff(q); SVR.wbDiffErr = false; }
   catch(_){ SVR.wbDiffErr = true; }
   wbDiffArrive && wbDiffArrive();
+}
+export async function refreshWorkbenchTree(q){
+  try{ SVR.wbTree = await fetchWorkbenchTree(q); SVR.wbTreeErr = false; }
+  catch(_){ SVR.wbTreeErr = true; }
+  wbTreeArrive && wbTreeArrive();
 }
 
 /* 展开回放：成功/失败都写入缓存（null=获取失败），由回调重绘分组容器 */

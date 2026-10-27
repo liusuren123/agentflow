@@ -58,7 +58,7 @@
   "props",
   "git*",
   "diff",
-  "tree!"
+  "tree"
  ],
  "propsShown": false,
  "wbBranch": "main",
