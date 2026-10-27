@@ -17,6 +17,7 @@
     "start": "npm run build && npm run build:server && npm start -w @agentflow/server",
     "test": "npm run build:shared && npm run build:server && npm test -w @agentflow/shared",
     "smoke:server": "node tests/smoke/smoke-server.mjs",
+    "smoke:pty": "node tests/smoke/pty-sessions.mjs",
     "smoke:shutdown": "node tests/smoke/shutdown-sigterm.mjs",
     "smoke:mcp": "node tests/smoke/mcp-transport.mjs",
     "smoke:mcp:registry": "node tests/smoke/mcp-registry.mjs",
@@ -32,6 +33,7 @@
     "typescript": "^5.6.0"
   },
   "allowScripts": {
-    "better-sqlite3@12.11.1": true
+    "better-sqlite3@12.11.1": true,
+    "node-pty@1.1.0": true
   }
 }

@@ -21,6 +21,9 @@
  *    path 前缀 + stat 统计模式；git 只读白名单 diff 一命令子进程，ref 白名单与
  *    path 防越界 400 / 404 无仓库 / 500 超时，零出站零 env，ADR-0016 §3.2，
  *    迭代 0054 / BK-0041）
+ *  · POST/GET /api/v1/pty/sessions · GET …/:id/stream · POST …/:id/write ·
+ *    POST …/:id/stop → PTY 会话五端点（端点私有 SSE 帧零 shared 契约；pty_audits
+ *    全量审计；三闸门生命周期与停机级联，ADR-0014，迭代 0055 / BK-0044）
  *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
  *  （workflows/runs/sessions/capabilities/workbench 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
  *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
@@ -52,6 +55,11 @@ import {
 import { capabilitiesHandler } from './capabilities.js';
 import { workbenchGitHandler } from './workbench/routes.js';
 import { workbenchDiffHandler } from './workbench/routes.js';
+import {
+  ptyCreateHandler, ptyListHandler, ptyStreamHandler, ptyWriteHandler, ptyStopHandler,
+} from './pty/routes.js';
+import { initPtyAuditStore, closePtyAuditStore } from './pty/audit.js';
+import { abortActivePtySessions, activePtyCount, sweepStalePtySessions } from './pty/session.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -87,6 +95,15 @@ initStore();
 const swept = sweepDanglingRuns();
 if (swept.count > 0) {
   logger.warn({ count: swept.count, ids: swept.ids.slice(0, 20) }, '启动扫尾：遗留 running run 已标记 stopped');
+}
+
+/* PTY 审计存储（迭代 0055 / BK-0044，SPEC D1：同库第二连接，store.ts 零改动）+
+ * 启动扫尾（SPEC D8 审计对账式）：有 create 行、无终局行的遗留会话记录补
+ * close(sweep-stale) 行；孤儿进程检测 v1 不实现（PID 复用错杀风险，如实声明） */
+initPtyAuditStore();
+const ptySwept = sweepStalePtySessions();
+if (ptySwept.count > 0) {
+  logger.warn({ count: ptySwept.count, ids: ptySwept.ids.slice(0, 20) }, '启动扫尾：遗留开放 PTY 会话记录已标记 closed');
 }
 
 /* ---------- 状态 ---------- */
@@ -241,6 +258,12 @@ app.get('/api/v1/capabilities', capabilitiesHandler);
 app.get('/api/v1/workbench/git', workbenchGitHandler);
 /* 迭代 0054 / BK-0041 workbench diff 端点：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
 app.get('/api/v1/workbench/diff', workbenchDiffHandler);
+/* 迭代 0055 / BK-0044 PTY 会话端点族：仅注册 v1（沿 ADR-0005：新端点无旧别名） */
+app.post('/api/v1/pty/sessions', ptyCreateHandler);
+app.get('/api/v1/pty/sessions', ptyListHandler);
+app.get('/api/v1/pty/sessions/:id/stream', ptyStreamHandler);
+app.post('/api/v1/pty/sessions/:id/write', ptyWriteHandler);
+app.post('/api/v1/pty/sessions/:id/stop', ptyStopHandler);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{
@@ -257,20 +280,25 @@ async function shutdown(signal: string): Promise<void> {
   /* 会话活动 turn 与 run 同批中止（迭代 0015 / BK-0016）：各 turn 走停止路径
      （部分文本落库 → run:done(stopped) → finally 自清注册表），shutdown 只轮询不代删 */
   const sessionsAborted = abortActiveSessions();
-  logger.info({ signal, activeRuns: active.length, activeSessions: sessionsAborted }, '优雅停机开始');
+  /* PTY 会话同批中止（迭代 0055 / BK-0044）：各会话走 close(reason='shutdown')
+     （kill + wait 双确认 → exit 帧广播 → 审计行 → 自清注册表） */
+  const ptyAborted = abortActivePtySessions();
+  logger.info({ signal, activeRuns: active.length, activeSessions: sessionsAborted, activePty: ptyAborted }, '优雅停机开始');
   server.close();                                    /* ① 停止接受新请求 */
   for(const id of active){                           /* ② 中止活动 run：SSE 发 run:done(stopped) 后收尾 */
     try{ runsById[id]!.ac.abort(); }catch{ /* 已结束 */ }
   }
   const deadline = Date.now() + 5000;                /* 宽限上限 5s（Docker 默认 10s 窗口内） */
-  while(Object.keys(runsById).length + activeSessionCount() && Date.now() < deadline){
+  while(Object.keys(runsById).length + activeSessionCount() + activePtyCount() && Date.now() < deadline){
     await new Promise(r=>setTimeout(r, 100));
   }
-  if(Object.keys(runsById).length + activeSessionCount()){
-    logger.warn({ remaining: Object.keys(runsById).length, remainingSessions: activeSessionCount() },
+  const remainingPty = activePtyCount();
+  if(Object.keys(runsById).length + activeSessionCount() + remainingPty){
+    logger.warn({ remaining: Object.keys(runsById).length, remainingSessions: activeSessionCount(), remainingPty },
       '停机宽限期内 run 未收尾，强制退出');
   }
   logger.info('优雅停机完成');
+  closePtyAuditStore();                              /* PTY 审计先关（时序保证停机 close 审计行已落库） */
   closeStore();                                     /* SQLite 关闭（WAL checkpoint 落盘，ADR-0005） */
   process.exit(0);                                   /* ③ 退出码 0 */
 }
