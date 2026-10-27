@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { NODES } from '../dist/index.js';
 
-test('caps 固定序：llm/agent=[mcp,skill] / code=[mcp] / 其余 17 键无 caps 键', () => {
+test('caps 固定序：llm/agent=[mcp,skill] / code=[mcp] / 其余 18 键无 caps 键', () => {
   assert.deepEqual(NODES.llm.caps, ['mcp', 'skill']);
   assert.deepEqual(NODES.agent.caps, ['mcp', 'skill']);
   assert.deepEqual(NODES.code.caps, ['mcp']);
@@ -21,7 +21,7 @@ test('caps 固定序：llm/agent=[mcp,skill] / code=[mcp] / 其余 17 键无 cap
   assert.ok(!('caps' in NODES.webshow), 'webshow 不应含 caps 键（data 不进 caps 的回归锚）');
   for (const [type, def] of Object.entries(NODES)) {
     if (type === 'llm' || type === 'agent' || type === 'code') continue;
-    assert.ok(!('caps' in def), `${type} 不应含 caps 键（17 节点无 caps 的复现条件）`);
+    assert.ok(!('caps' in def), `${type} 不应含 caps 键（18 节点无 caps 的复现条件）`);
   }
 });
 
@@ -57,7 +57,7 @@ test('10 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即
     assert.deepEqual(NODES[type].params.map(p => p.k), ks, `${type} params 序漂移`);
 });
 
-test('快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，20 键全量）', () => {
+test('快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，21 键全量）', () => {
   const baseline = readFileSync(new URL('./nodes.baseline.json', import.meta.url)); // Buffer，零文本模式
   const actual = Buffer.from(JSON.stringify(NODES, null, 2) + '\n', 'utf8');
   let off = -1;

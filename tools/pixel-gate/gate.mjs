@@ -1,13 +1,14 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 19 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
- *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17/s18 在线态——Playwright 路由拦截 fixture 供数
+ *  · 20 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17/s18/s19 在线态——Playwright 路由拦截 fixture 供数
  *    （probe 的 /api/health + /api/v1 列表），其中 s4/s5（ADR-0009，issue#7 批准）
  *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039、s16 溯源迭代 0036（WB_ROUTES + UTC，
  *    原 s12 撞号改号，时序裁决）、s17 溯源迭代 0054（WB_ROUTES E2 mock + UTC，
  *    diff 审查页，BK-0041）、s18 溯源迭代 0056（WB_ROUTES E3 mock + UTC，
- *    目录树页，BK-0042）；其余 s6~s8、s10~s14 为离线扩展场景
+ *    目录树页，BK-0042）、s19 溯源迭代 0057（PTY_ROUTES mock + UTC，
+ *    终端面板，BK-0045）；其余 s6~s8、s10~s14 为离线扩展场景
  *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
@@ -484,6 +485,47 @@ const wbTreeInv = page => page.evaluate(() => ({
   drillNames: [...document.querySelectorAll('#workbench .wb-tree-dir:not(.open) .wb-tree-name')].map(n => n.textContent),
 }));
 
+/* ---------- s19 终端面板在线态场景基建（ADR-0014 §7 · 迭代 0057 / BK-0045 修宪轮）----------
+   触发形态 = localStorage 预置 trigger→terminal 最小工作流 + 双击 terminal 节点主体
+   （termOpen，goalOpen :227-228 同型）；在线态 = PTY_ROUTES fixture 供数：
+   create 201（固定 sessionId）→ 面板写回绑定 → stream SSE（ready + 两条固定回放
+   帧，ASCII 字面量，字形安全口径）→ xterm DOM 渲染定格。无 mock 则真实 shell
+   输出不定，像素不可复现（ADR-0016 §6 同理）；流为静态 body，读尽即本地 end 帧
+   （server-sync 合成）→ 状态行定格 '流已结束'，确定性终态。write/stop 零触发
+   （静态态不键入不停止）→ 两端点零 mock。注册序：stream 与 create 两 pattern
+   全串无重叠（glob 全匹配），序仅沿 SESSION_ROUTES :207 注记纪律。 */
+const PTY_FIX_SID = 'pty-term-fix-0001';
+const ptyStreamBody = [
+  'data: ' + JSON.stringify({ t: 'ready', sessionId: PTY_FIX_SID, replayBytes: 25 }),
+  'data: ' + JSON.stringify({ t: 'data', data: 'agentflow pty fixture\r\n' }),
+  'data: ' + JSON.stringify({ t: 'data', data: '$ ' }),
+].join('\n\n') + '\n\n';
+const PTY_ROUTES = [
+  { pattern: '**/api/health', handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/pty/sessions/*/stream', handler: route => route.fulfill({
+      headers: { 'Content-Type': 'text/event-stream; charset=utf-8' }, body: ptyStreamBody }) },
+  { pattern: '**/api/v1/pty/sessions', handler: route => route.fulfill({ status: 201, json: { sessionId: PTY_FIX_SID } }) },
+];
+const TERM_WF_SEED = JSON.stringify({ tabs: [{ name: '终端节点示例', nodes: [
+  { id: 1, type: 'trigger',  x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'terminal', x: 410, y: 250, title: '交互终端' },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+const termOpen = page => page.evaluate(() => document.querySelector('.node[data-id="2"]')
+  .dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+/* 就绪探针（状态量非时延量，wfReady 先例）：xterm 行容器已渲染 fixture 标记行
+   （建流→回放→DOM 三段全到达的复合判据）；超时红即 FAIL，不落伪基线 */
+const termReady = page => page.waitForFunction(
+  () => ((document.querySelector('#term-panel .xterm-rows') || {}).textContent || '').includes('agentflow pty fixture'),
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量（公共六键后 spread）：面板可见态 + 标题 + xterm 首行文本
+   （fixture 确定性）+ 节点 session 参数绑定值（D4 写回的机器证明） */
+const termInv = page => page.evaluate(() => ({
+  termShown: document.getElementById('term-panel').classList.contains('show'),
+  tpTitle: document.querySelector('#term-panel .tp-title').textContent,
+  xtermHead: ((document.querySelector('#term-panel .xterm-rows') || {}).textContent || '').slice(0, 40),
+  sessionParam: document.querySelector('.node[data-id="2"] input[data-k="session"]')?.value ?? null,
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -520,6 +562,9 @@ const SCENARIOS = [
     steps: [wbDiffOpen], ready: wbDiffReady, inv: wbDiffInv },
   { id: 's18-workbench-tree-online', routes: WB_ROUTES, timezoneId: 'UTC',
     steps: [wbTreeOpen], ready: wbTreeReady, inv: wbTreeInv },
+  { id: 's19-terminal-panel-online', routes: PTY_ROUTES, timezoneId: 'UTC',
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERM_WF_SEED),
+    steps: [termOpen], ready: termReady, inv: termInv },
 ];
 
 const runScenario = async (browser, sc) => {

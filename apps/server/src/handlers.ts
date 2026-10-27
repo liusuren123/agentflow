@@ -1,5 +1,5 @@
 /* ================================================================
- *  handlers.ts — 节点处理器（基础 18 种；LLM/agent 见 llm.ts · agent.ts）
+ *  handlers.ts — 节点处理器（基础 19 种；LLM/agent 见 llm.ts · agent.ts）
  *  自 engine.js 原文拆出，逻辑逐字保留（ADR-0004 TS 化拆分）。
  * ================================================================ */
 import { paramDefaultsOf } from '@agentflow/shared';
@@ -12,6 +12,8 @@ import { abortableSleep, preview, render, strInput, toStr, esc } from './util.js
 import { parseAgentRole, runAgentReview } from './approval-review.js';
 import type { AgentReviewResult } from './approval-review.js';
 import { recordApprovalAudit } from './store.js';
+import { config } from './config.js';
+import { activePtyCount, agentWrite, createPtySession, ptySessionActive } from './pty/session.js';
 import type { NodeHandler, NodeResult } from './types.js';
 
 export const BASIC_HANDLERS: Record<string, NodeHandler> = {
@@ -298,6 +300,48 @@ export const BASIC_HANDLERS: Record<string, NodeHandler> = {
       : text === '' ? '已呈现 JSON · 0 项'
       : `已呈现原文 · ${text.length} 字（非 JSON，前端原文降级）`;
     return { value: text, out };
+  },
+
+  /* terminal（迭代 0057 / BK-0045 修宪轮·链终轮，ADR-0014 §7）：交互式 PTY
+     终端节点——用户与 agent 共享同一 shell 会话（双写方）。PTY_ENABLED=0 →
+     warn 如实降级（webshow :251-258 先例：不挂 run、不伪造会话引用）；
+     =1 → session 参数绑定既有会话（ptySessionActive 判活）或新建——注意
+     createPtySession 内部通道不经 routes.ts:27 的 HTTP 429 闸门，此处自检
+     activePtyCount() ≥ 上限即降级（ADR-0014 §2.4 上限语义的内部通道兑现）；
+     注入文本 strInput 优先 / cmd 兜底参数兜底，末字符非 \n 补行（命令执行
+     语义），经 agentWrite 服务端通道（origin=agent 服务端权威填写，
+     session.ts:232；signal=ctx.ac.signal 透传——run 中止只断本次注入不断
+     会话，ADR §4.2）。零 pty 模块改动、零新端点、零新 env、零出站、零
+     shared 契约。注释措辞不写 p.<key> 字面（param-handler-guard 归属纪律）。 */
+  async terminal(ctx, { p, input, emit }): Promise<NodeResult> {
+    const degrade = (msg: string, out: string): NodeResult => {
+      emit('log', { lvl: 'warn', msg: 'terminal：' + msg + '，节点降级跳过（不挂运行、不伪造会话引用）' });
+      return { value: null, ports: [null], out };
+    };
+    if (!config.ptyEnabled)
+      return degrade('PTY 会话功能未启用（PTY_ENABLED=0）', '终端节点降级 · PTY 未启用');
+    let sid = String(p.session ?? '').trim();
+    if (sid && !ptySessionActive(sid)) sid = '';              /* 失活绑定不接管 → 新建 */
+    if (!sid) {
+      if (activePtyCount() >= config.ptyMaxSessions)
+        return degrade(`PTY 并发会话数已达上限（PTY_MAX_SESSIONS=${config.ptyMaxSessions}）`,
+          `终端节点降级 · 会话数已达上限（${config.ptyMaxSessions}）`);
+      const r = createPtySession();
+      if (!r.ok) return degrade(`PTY 会话创建失败（${r.error}）`, '终端节点降级 · 会话创建失败');
+      sid = r.sessionId;
+    }
+    const cand = [strInput(input, ''), String(p.cmd ?? '')]   /* 输入端口值优先，静态兜底参数兜底（webshow :252 同型） */
+      .map(s => s.trim()).find(s => s !== '') ?? '';
+    let injected = 0, danger = false, echoLen = 0;
+    if (cand) {
+      const w = await agentWrite(sid, cand.endsWith('\n') ? cand : cand + '\n',
+        { signal: ctx.ac.signal });
+      if (w.ok) { injected = 1; danger = w.danger; echoLen = w.echo.length; }
+      else emit('log', { lvl: 'warn', msg: `terminal：命令注入未完成（status=${w.status}），会话保持可用` });
+    }
+    const out = `终端会话就绪 · #${sid.slice(0, 8)}` +
+      (injected ? ` · 已注入命令${danger ? '（⚠ 危险警示已留痕）' : ''} · 回显 ${echoLen} 字` : ' · 未注入命令');
+    return { value: { sessionId: sid }, ports: [{ sessionId: sid }], out };
   },
 
   async approval(_ctx, { n, p, input, emit, approvalWaiters, byId, ctx: runCtx }): Promise<NodeResult> {

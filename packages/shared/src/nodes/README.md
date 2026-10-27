@@ -2,7 +2,7 @@
 
 # 节点总索引（NDP v0.2）
 
-20 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。
+21 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。
 生成器：仓库根执行 `npm run build:shared && node tools/gen-node-readmes.mjs`（幂等；**生成物勿手改**——人工文案持有于生成器 MANUAL_NOTES）。
 
 | type | 目录 | 名称 | 一句话用途 |
@@ -17,6 +17,7 @@
 | `http` | `nodes/http/` | HTTP 请求 | 调用外部 HTTP 接口获取或提交数据。 |
 | `code` | `nodes/code/` | 代码执行 | 运行自定义 Python / JavaScript 代码片段。 |
 | `notify` | `nodes/notify/` | 消息通知 | 通过邮件 / 短信 / IM 发送通知。 |
+| `terminal` | `nodes/terminal/` | 交互终端 | 双击打开终端面板：与 agent 共享同一 shell 会话（PTY）。 |
 | `condition` | `nodes/condition/` | 条件分支 | 按条件表达式将流程分流为 真 / 假 两路。 |
 | `loop` | `nodes/loop/` | 循环 | 遍历列表，逐项执行下游节点。 |
 | `delay` | `nodes/delay/` | 延时等待 | 等待指定时间后继续执行。 |

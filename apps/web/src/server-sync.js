@@ -67,6 +67,52 @@ export const fetchWorkbenchTree = (q = {}) => {
   return apiJson('/workbench/tree' + (s ? '?' + s : ''));
 };
 
+/* PTY 会话（BK-0045 / 迭代 0057）：仅数据层零 DOM（ADR 4.4）；create 201/503/429/500
+   与 write 404/400/403、stop 404 走非 2xx 抛错（HTTP 状态进 message），由面板态呈现；
+   SVR 缓存/arrive 回调零新增——v1 无 pty 列表 UI 消费面（sessions 数据面收窄，
+   SPEC D5）。 */
+export const createPtySessionOnServer = () => apiJson('/pty/sessions', { method: 'POST' });
+export const writePtySession = (id, data) => apiJson('/pty/sessions/' + encodeURIComponent(id) + '/write',
+  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data, origin: 'user' }) });
+export const stopPtySessionOnServer = id => apiJson('/pty/sessions/' + encodeURIComponent(id) + '/stop', { method: 'POST' });
+
+/* PTY 输出流（端点私有帧 ready/data/warn/exit，零 shared 契约，ADR-0014 §3.4）：
+   fetch + getReader 逐帧 JSON.parse（goalSendTurn SSE 同型）→ onFrame 回调分发；
+   body 耗尽时补发本地合成帧 {t:'end'}（客户端私有，非端点契约——gate mock 静态
+   body 的确定性终点）。消费循环整体 try/catch + 单帧回调隔离（BUG-0057-02
+   修复轮）：原形态任一瞬时读错或 onFrame 异常 = unhandled rejection 静默杀死
+   循环——此后所有帧（含 agent 注入回显）永不到达面板且零呈现；现在异常帧
+   跳过、读循环异常如实发 {t:'error'}（signal 主动中止除外）、close() 幂等。 */
+export async function openPtyStream(id, { signal, onFrame } = {}){
+  const resp = await fetch(V1 + '/pty/sessions/' + encodeURIComponent(id) + '/stream', { signal });
+  if(!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+  const reader = resp.body.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  void (async () => {
+    try{
+      for(;;){
+        const { done, value } = await reader.read();
+        if(done) break;
+        buf += dec.decode(value, { stream: true });
+        let idx;
+        while((idx = buf.indexOf('\n\n')) >= 0){
+          const chunk = buf.slice(0, idx); buf = buf.slice(idx + 2);
+          const line = chunk.split('\n').find(l => l.startsWith('data: '));
+          if(!line) continue;
+          let f; try{ f = JSON.parse(line.slice(6)); }catch(_){ continue; }
+          try{ onFrame && onFrame(f); }catch(_){ /* 单帧回调异常不杀循环（BUG-0057-02） */ }
+        }
+      }
+      onFrame && onFrame({ t: 'end' });
+    }catch(err){
+      if(signal && signal.aborted) return;   /* close()/dispose 的主动中止：非异常 */
+      onFrame && onFrame({ t: 'error', msg: String(err && err.message || err).slice(0, 60) });
+    }
+  })();
+  return { close(){ try{ reader.cancel(); }catch(_){ /* 已断 */ } } };
+}
+
 /* 能力清单（BK-0049 / ADR-0018）：GET /api/v1/capabilities → 归一化 {servers,skills}
  * 数据层三件套：fetch（apiJson 8s 超时同口径）→ SVR.caps 缓存 → onCapsArrive 回调。
  * capShapeOf 纯数据变换（零 DOM）：形态非法抛错 → refreshCaps 捕获 → 前端回退集

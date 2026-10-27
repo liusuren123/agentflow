@@ -9,6 +9,9 @@ import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refresh
 import { refreshWorkbenchGit } from '../server-sync.js';
 import { refreshWorkbenchDiff } from '../server-sync.js';
 import { refreshWorkbenchTree, fetchWorkbenchTree } from '../server-sync.js';
+import { Terminal } from '@xterm/xterm';
+import '@xterm/xterm/css/xterm.css';
+import { createPtySessionOnServer, writePtySession, stopPtySessionOnServer, openPtyStream } from '../server-sync.js';
 
 'use strict';
 let __af_booted = false;
@@ -3193,5 +3196,138 @@ function wbRenderTree(){
     ${d.truncated ? `<div class="wb-empty">目录条目已截断 · 可下钻子目录收窄范围</div>` : ''}
     ${wbTreeRows(kids, 0, '')}`;
 }
+
+/* ================================================================
+ *  终端面板（BK-0045 / 迭代 0057 修宪轮 · ADR-0014 §7 · goal panel 三要素同构）
+ *  动态单例 #term-panel（默认 display:none → 既有场景零波及）；入口 = terminal
+ *  节点主体双击（本文件第二个 nodesLayer dblclick 监听器——agent 监听器
+ *  :2793 零触碰，两监听器各自 type 判据早退）；会话绑定 = 节点参数 session
+ *  （画布侧单一事实源，D4：面板写回 + run 提交体透传，agent 经 handler 接管
+ *  同一会话——双写方共享）；SSE 消费 = openPtyStream 回调式（server-sync，
+ *  端点私有帧零 shared 契约）；xterm 每次打开新建（D8 确定性参数组：
+ *  cols 80/rows 24 与服务端 spawn 几何一致；Consolas 字体栈两端恒在；
+ *  cursorBlink 关——静止光标）。warn/exit/end 帧只进状态行不写入终端流
+ *  （D3：终端内只该有 shell 真实输出，警示与流内容分离）。
+ * ================================================================ */
+const TERM = { nodeId: null, sid: null, term: null, stream: null, abort: null };
+
+function termEnsure(){
+  let p = $('#term-panel');
+  if(p) return p;
+  p = document.createElement('div');
+  p.id = 'term-panel';
+  p.innerHTML = `
+    <div class="tp-head">
+      <span class="tp-title"></span>
+      <span class="tp-status"></span>
+      <button class="ibtn" data-tp="stop" title="停止会话">${I('stop')}</button>
+      <button class="ibtn" data-tp="close" title="关闭">${I('x')}</button>
+    </div>
+    <div class="tp-body"></div>`;
+  document.body.appendChild(p);
+  p.querySelector('[data-tp="close"]').addEventListener('click', ()=>{
+    p.classList.remove('show');
+    termDispose();                     /* 仅客户端拆链——会话存续（ADR §4.1） */
+  });
+  p.querySelector('[data-tp="stop"]').addEventListener('click', ()=>termStopSession());
+  return p;
+}
+function termSetStatus(text){
+  const el = $('#term-panel .tp-status');
+  if(el) el.textContent = text;        /* warn/exit/end/降级态唯一呈现面（D3） */
+}
+function termShowEmpty(html){
+  termDispose();                       /* 清 xterm 与流（降级态无终端可持） */
+  const body = $('#term-panel .tp-body');
+  if(body) body.innerHTML = '<div class="tp-empty">' + html + '</div>';
+}
+function termDispose(){
+  if(TERM.term){ try{ TERM.term.dispose(); }catch(_){ /* 已释放 */ } }
+  if(TERM.stream) TERM.stream.close();
+  if(TERM.abort) TERM.abort.abort();
+  TERM.term = null; TERM.stream = null; TERM.abort = null; TERM.sid = null; TERM.nodeId = null;
+}
+async function termAttach(sid){
+  const p = $('#term-panel'); if(!p) throw new Error('面板未就绪');
+  const body = p.querySelector('.tp-body');
+  body.innerHTML = '';
+  TERM.sid = sid;
+  TERM.abort = new AbortController();
+  TERM.term = new Terminal({ cols: 80, rows: 24,
+    fontFamily: 'Consolas, "Courier New", monospace', fontSize: 12,
+    cursorBlink: false, scrollback: 1000, convertEol: false, allowProposedApi: false });
+  TERM.term.open(body);
+  /* 键入透传（origin=user 通道，含控制序列）；写失败进状态行不进流 */
+  TERM.term.onData(data => {
+    writePtySession(sid, data).catch(err => termSetStatus('发送失败（' + String(err && err.message || err).slice(0, 30) + '）'));
+  });
+  TERM.stream = await openPtyStream(sid, { signal: TERM.abort.signal, onFrame: f => {
+    if(f.t === 'data'){ if(TERM.term) TERM.term.write(String(f.data ?? '')); }
+    else if(f.t === 'warn') termSetStatus('⚠ ' + String(f.msg ?? ''));
+    else if(f.t === 'exit') termSetStatus('会话已结束（' + String(f.reason ?? '-') + '）');
+    else if(f.t === 'end') termSetStatus('流已结束');
+    else if(f.t === 'error') termSetStatus('流中断（' + String(f.msg ?? '-') + '）· 重开面板可恢复回放');   /* BUG-0057-02 修复轮：读循环异常不再静默 */
+  }});
+  TERM.term.focus();
+}
+async function openTermPanel(n){
+  const p = termEnsure();
+  termDispose();                       /* 上一会话拆链（会话存续，重开重附流回放） */
+  p.querySelector('.tp-body').innerHTML = '';
+  TERM.nodeId = n.id;
+  p.classList.add('show');
+  p.querySelector('.tp-title').textContent = n.title || defOf(n).name;
+  termSetStatus('连接会话…');
+  /* ① 绑定解析（D4）：p.session 非空且建流成功 → 直接接管（重开恢复语义）；
+     失活绑定（404）→ 落新建分支 */
+  let sid = String(paramsOf(n).session || '').trim(), attached = false;
+  if(sid){ try{ await termAttach(sid); attached = true; }catch(_){ attached = false; } }
+  if(!attached){
+    /* ② 新建：503 → 「未启用」态（单次提示不刷屏）；429 → 「满员」态；其余如实态 */
+    try{ sid = (await createPtySessionOnServer()).sessionId; }
+    catch(err){
+      const s = String(err && err.message || '');
+      termShowEmpty(s.includes('503') ? 'PTY 会话功能未启用（PTY_ENABLED=0）<br>启用后面板即可交互'
+                   : s.includes('429') ? 'PTY 并发会话数已达上限<br>停止闲置会话后重试'
+                   : 'PTY 会话建立失败（' + esc(s.slice(0, 40)) + '）');
+      termSetStatus('');
+      return;
+    }
+    /* ③ 写回绑定（画布侧单一事实源）+ 节点级重渲（widget 呈现当前 session，
+       :1175-1177 makeNodeEl replaceWith 形态；几何不变 → portCache 零失效）+ 持久化 */
+    n.params = Object.assign({}, n.params, { session: sid });
+    const old = nodesLayer.querySelector('.node[data-id="' + n.id + '"]');
+    if(old) old.replaceWith(makeNodeEl(n));
+    saveLocal();
+    try{ await termAttach(sid); }
+    catch(err){
+      termShowEmpty('PTY 流建立失败（' + esc(String(err && err.message || err).slice(0, 40)) + '）');
+      termSetStatus('');
+    }
+  }
+}
+/* 停止会话：POST stop → 200 状态行提示（exit 帧随后到达收尾）；404 = 无活动会话 */
+async function termStopSession(){
+  if(!TERM.sid) return;
+  try{
+    await stopPtySessionOnServer(TERM.sid);
+    termSetStatus('已发送停止…');
+  }catch(err){
+    const s = String(err && err.message || '');
+    if(s.includes('404')) termSetStatus('无活动会话');
+    else termSetStatus('停止失败（' + s.slice(0, 40) + '）');
+  }
+}
+/* 入口：terminal 节点主体双击（再次双击同节点 = 收起）；.ntitle 重命名 / .wdg
+ * 输入 / .port 连线手势零触碰（与 goal panel :2793 同款判据，各自 type 早退） */
+nodesLayer.addEventListener('dblclick', e=>{
+  const nodeEl = e.target.closest('.node'); if(!nodeEl) return;
+  if(e.target.closest('.ntitle') || e.target.closest('.wdg') || e.target.closest('.port')) return;
+  const n = nodeById(+nodeEl.dataset.id);
+  if(!n || n.type !== 'terminal') return;
+  const p = $('#term-panel');
+  if(p && p.classList.contains('show') && TERM.nodeId === n.id){ p.classList.remove('show'); termDispose(); return; }
+  openTermPanel(n);
+});
 
 }

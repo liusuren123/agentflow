@@ -49,6 +49,7 @@ const MANUAL_NOTES = {
   http: '出站走 guardedFetch SSRF 守卫（handlers.ts http；guard.ts 拦私网/回环）。',
   code: '子进程 + 超时强杀（runUserCode）；JS 默认样例错配兜底（BUG-0012）；sqlite/browser MCP 工具 stub 如实降级（tools.ts:5/:82，BK-0008 在案）。',
   notify: '仅 Webhook 渠道实接（guardedFetch）；邮件/短信/企业微信未接入真实发送（handlers.ts notify）。',
+  terminal: 'PTY 共享会话节点（BK-0045 / 迭代 0057 修宪轮，ADR-0014）：双击打开终端面板，用户与 agent 双写方共享同一 shell 会话（origin 贯穿审计）；PTY_ENABLED=0 如实 warn 降级不挂 run；exec.mode=pty 为 ADR-0014 §2.2 定级（初始 cwd 锚定 + 全量审计 + 默认关三层缓解，非 safePath 同等强度）。',
   condition: 'cond 事件唯一发射点：engine 按 n.type===condition 求值 p.expr（engine.ts:128）。',
   loop: '并发批大小固定 3（CONC）；maxIter 引擎侧 clamp 1–100（handlers.ts loop）。',
   delay: '等待秒数引擎侧 clamp 0.1–60（handlers.ts delay）。',
@@ -105,7 +106,7 @@ function nodeReadme(def) {
 function indexReadme(types, defs) {
   const L = ['<!-- 生成物：tools/gen-node-readmes.mjs 生成，勿手改；重跑命令见下 -->', '',
     '# 节点总索引（NDP v0.2）', '',
-    '20 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。',
+    '21 种节点定义一节点一目录（`node.ts` 纯数据模块 + `README.md` 生成文档，NDP §3）。',
     '生成器：仓库根执行 `npm run build:shared && node tools/gen-node-readmes.mjs`（幂等；**生成物勿手改**——人工文案持有于生成器 MANUAL_NOTES）。', '',
     '| type | 目录 | 名称 | 一句话用途 |', '| --- | --- | --- | --- |'];
   for (const t of types) L.push(`| \`${t}\` | \`nodes/${t}/\` | ${defs[t].identity.name} | ${defs[t].identity.description} |`);
@@ -115,7 +116,7 @@ function indexReadme(types, defs) {
 /* ---------------- 主流程（读 dist → 生成 → 只写有变化文件） ---------------- */
 const { NODES } = await import(pathToFileURL(join(DIST, 'index.js')).href);
 const types = Object.keys(NODES); /* 声明序唯一来源 */
-if (types.length !== 20) throw new Error(`dist/index.js NODES 键数 ${types.length} ≠ 20（先 npm run build:shared？）`);
+if (types.length !== 21) throw new Error(`dist/index.js NODES 键数 ${types.length} ≠ 21（先 npm run build:shared？）`);
 const defs = {};
 for (const t of types) {
   defs[t] = (await import(pathToFileURL(join(DIST, 'nodes', t, 'node.js')).href)).default;

@@ -1,5 +1,5 @@
 /* ================================================================
- *  defs-drift.test.mjs — DEFS 默认值漂移防护（42/42 全量字面量断言）
+ *  defs-drift.test.mjs — DEFS 默认值漂移防护（44/44 全量字面量断言）
  *  期望值表源自 2026-10 定稿 DEFS（packages/shared/src/nodes.ts），宪法保护对象。
  *  本测试变红 = 出现未经 ADR 的契约变更——先走宪法第 3 条流程，再改本表。
  * ================================================================ */
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { NODES, paramDefaultsOf } from '../dist/index.js';
 
 /* 字面量期望表（SPEC §4.1 机器实测快照，BUILD 逐字抄录，禁手打重写防笔误）：
- * 20 种节点 × 42 参数 = nodes.ts 各 params[].d 的 2026-10 定稿值 */
+ * 21 种节点 × 44 参数 = nodes.ts 各 params[].d 的 2026-10 定稿值 */
 const EXPECTED_DEFAULTS = {
   trigger:    { mode: '手动触发', cron: '0 9 * * 1-5', path: '/api/run' },
   userinput:  { var: 'question', vtype: '文本', req: true, defv: '如何申请退货?' },
@@ -20,6 +20,7 @@ const EXPECTED_DEFAULTS = {
   http:       { m: 'GET', url: 'https://api.example.com/v1/orders', to: 30 },
   code:       { lang: 'Python', code: '# 处理输入后返回\nresult = input\nreturn result' },
   notify:     { ch: '邮件', to: 'support@team.com' },
+  terminal:   { cmd: '', session: '' },
   condition:  { expr: 'confidence > 0.7' },
   loop:       { max: 10, conc: false },
   delay:      { s: 2 },
@@ -32,20 +33,20 @@ const EXPECTED_DEFAULTS = {
   approval:   { role: '值班经理', to: '挂起' },
 };
 
-test('DEFS 默认值 42/42 全量断言（字面量期望，防未经 ADR 的漂移）', () => {
+test('DEFS 默认值 44/44 全量断言（字面量期望，防未经 ADR 的漂移）', () => {
   /* ① 全表计数自检：期望表自身被误删行时必须红，防止「抽样假绿」 */
   /* 计数护栏值变更（经批准的 DEFS 增删）时，测试名字面量须随改——BK-0053 */
   assert.equal(
     Object.values(EXPECTED_DEFAULTS).reduce((n, e) => n + Object.keys(e).length, 0),
-    42,
-    '期望表参数总数应为 42——表自身被误改',
+    44,
+    '期望表参数总数应为 44——表自身被误改',
   );
 
   /* ② 节点键集对表：新增/删除节点必须红 */
   assert.deepEqual(
     Object.keys(NODES).sort(),
     Object.keys(EXPECTED_DEFAULTS).sort(),
-    '节点注册表键集与定稿 20 种漂移（未经 ADR 的 DEFS 变更？）',
+    '节点注册表键集与定稿 21 种漂移（未经 ADR 的 DEFS 变更？）',
   );
 
   /* ③ 逐节点参数键集：抓参数新增/删除/改名 */
