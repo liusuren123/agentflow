@@ -647,8 +647,19 @@ if (finalState === "passed") {
   const changed = [...st.staged, ...st.unstaged, ...st.untracked];
   /* 只进 BUILD 申报的 productFiles 白名单（0021 实发：openspec/ 外部骨架曾被全量收口卷进产品提交） */
   const whitelist = builtProductFiles.filter((p) => p !== "" && !p.startsWith("docs/evolution/"));
-  const productPaths = whitelist.length > 0 ? whitelist.filter((p) => changed.includes(p)) : changed.filter((p) => !p.startsWith("docs/evolution/"));
+  let productPaths = whitelist.length > 0 ? whitelist.filter((p) => changed.includes(p)) : changed.filter((p) => !p.startsWith("docs/evolution/"));
   if (whitelist.length === 0) log("警告：BUILD 未返回 productFiles，退回全量非 docs/evolution 收口（可能混入外部文件）");
+  /* 2026-10-28 修复（0058 实发）：白名单与实际改动错配（申报路径不存在/实改文件未申报）
+     时交集为空，旧逻辑判「产品提交为空」blocked → 触发销毁式回滚，VERIFY 已通过的全部
+     成果被清除。交集为空但工作区确有非 docs/evolution 改动 → 退回全量收口（与白名单为空
+     同款回退，宁多收不毁证）；提交后完整性断言仍会核对白名单错配并如实标记。 */
+  if (productPaths.length === 0) {
+    const changedNonDocs = changed.filter((p) => !p.startsWith("docs/evolution/"));
+    if (changedNonDocs.length > 0) {
+      productPaths = changedNonDocs;
+      log(`警告：productFiles 白名单与实际改动零交集（疑似漏申报/错配，提交面缺陷家族 0034/0036/0055/0057/0058 第 5+ 发），退回全量非 docs/evolution 收口 ${changedNonDocs.length} 项（完整性断言将在提交后核对）`);
+    }
+  }
   const extras = changed.filter((p) => !p.startsWith("docs/evolution/") && !productPaths.includes(p));
   if (extras.length > 0) log(`白名单外改动不进产品提交（留在工作树）：${extras.join("、")}`);
   if (productPaths.length === 0) {
@@ -728,12 +739,47 @@ if (finalState === "passed") {
   }
 }
 if (finalState !== "passed") {
-  /* 回滚：工作树整体丢弃（隔离模型下无需逐文件清理——分支未提交，主干零影响） */
-  const resetOut = await runGit(["-C", WT, "reset", "--hard", "HEAD"], 120_000);
-  const cleanOut = await runGit(["-C", WT, "clean", "-fd"], 120_000);
-  if (resetOut.exitCode !== 0 || cleanOut.exitCode !== 0) {
-    log("警告：工作树清理未完全成功，需人工检查");
+  /* 2026-10-28 修复（0058 实发）：失败回滚不得销毁工作树。旧逻辑 reset --hard +
+     clean -fd 把提交阶段失败（白名单错配）时 VERIFY 已通过的全部成果（pty 修复 +
+     判别矩阵 10/0 闭环证据 + 迭代目录）连同未提交区一并清除，分支零提交、成果全失。
+     新策略：保全优先——全部未提交改动作「失败留档」提交到分支，工作树与分支保留
+     待下轮续用或人工处置（合并受阻同款语义）；绝不再 reset/clean。 */
+  const stRescue = parseJson<{ staged: string[]; unstaged: string[]; untracked: string[] }>(
+    (await runTool(["status", WT])).stdout,
+    { staged: [], unstaged: [], untracked: [] },
+  );
+  const pendingRescue = [...stRescue.staged, ...stRescue.unstaged, ...stRescue.untracked];
+  if (pendingRescue.length > 0) {
+    await runGit(["-C", WT, "add", "-A"], 120_000);
+    const rescueOut = await runGit(
+      ["-C", WT, "commit", "-m", `chore(evolution): 迭代 ${ITER} 失败留档（finalState=${finalState}）——全部未提交改动保全待处置（0058 教训：绝不销毁）`],
+      300_000,
+    );
+    log(rescueOut.exitCode === 0
+      ? `失败留档提交完成（${pendingRescue.length} 项保全在分支 ${BRANCH}，工作树保留待处置）`
+      : `警告：失败留档提交失败（${rescueOut.stderr.slice(0, 200)}），工作树保留原状待人工检查`);
+  } else {
+    log(`finalState=${finalState}，工作区无未提交改动，无需留档（分支/工作树保留）`);
   }
+  /* 2026-10-28 修复（0057/0058 两实发）：finalState≠passed 不得派发合并仲裁——
+     0057 带断言违例的 failed 照样合并（分支缺文件，主干靠事后补录兜底）；0058 更在
+     回滚销毁后带过期 commitMessage 空派（merge Already up to date 假象）。契约本意：
+     failed/blocked 不合并。失败收尾 = STATE 记账 + 成果留档在分支与工作树。 */
+  phase("失败收尾（成果保全，不派合并仲裁）");
+  await notewriter.ask(
+    `迭代 ${ITER} 终态 ${finalState}（${summary || "详见运行日志"}）。请把 docs/evolution/STATE.md 的 phase 改为 idle、iteration 保持 ${ITER}、item 填 ${plan.itemId}、last_result 写「迭代 ${ITER}（${plan.itemId}）终态 ${finalState}：${(summary || "").slice(0, 160)}；全部成果已留档在分支 ${BRANCH} 与工作树（绝不销毁），未并入主干，待下轮续用或人工处置」、updated 填当前时间；不要改其他字段。`,
+  );
+  const sweepFail = await git.status();
+  if (sweepFail.unstaged.length + sweepFail.untracked.length > 0) {
+    await world.run("git", ["add", "docs/evolution/STATE.md"]);
+    await world.run("git", ["commit", "-m", `chore(evolution): 归档迭代 ${ITER}（${finalState}，成果留档分支待处置）`]);
+  }
+  return {
+    conclusion: `迭代 ${ITER}（${plan.itemId} ${plan.title}）终态 ${finalState}：${summary || "详见运行日志"}；全部未提交改动已作失败留档提交保全在分支 ${BRANCH} 与工作树，待下轮续用或人工处置；finalState≠passed 未派发合并仲裁。`,
+    findings: [],
+    verified: ["工作树内门禁（build/gate/test）与验收由脚本与测试经理执行"],
+    notCovered: ["主干端到端复测未执行（finalState≠passed 不合并）"],
+  };
 }
 
 phase("合并仲裁（合并仲裁员合回主干）");
