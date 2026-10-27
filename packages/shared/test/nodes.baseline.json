@@ -453,6 +453,39 @@
     ],
     "kw": "notify message send 通知 邮件 短信"
   },
+  "terminal": {
+    "name": "交互终端",
+    "cat": "tools",
+    "icon": "keyboard",
+    "desc": "双击打开终端面板：与 agent 共享同一 shell 会话（PTY）。",
+    "inputs": [
+      {
+        "n": "上下文",
+        "t": "any"
+      }
+    ],
+    "outputs": [
+      {
+        "n": "会话引用",
+        "t": "object"
+      }
+    ],
+    "params": [
+      {
+        "k": "cmd",
+        "l": "兜底命令",
+        "t": "text",
+        "d": ""
+      },
+      {
+        "k": "session",
+        "l": "会话绑定",
+        "t": "text",
+        "d": ""
+      }
+    ],
+    "kw": "terminal 终端 交互 shell pty 会话 共享 接管"
+  },
   "condition": {
     "name": "条件分支",
     "cat": "logic",

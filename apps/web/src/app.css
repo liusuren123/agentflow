@@ -697,3 +697,22 @@ body.running #float-bar{display:block}
 .wb-tree-dir:hover .wb-tree-name{color:var(--text)}  /* 交互色沿 .wb-tab（:632-633） */
 .wb-tree-file .wb-tree-name{color:var(--text3)}
 .wb-tree-fold .wb-tree-name{color:var(--text3)}      /* 折叠占位/空目录统一置灰 */
+
+/* ===== 终端面板（BK-0045 / 迭代 0057 修宪轮 · ADR-0014 §7）=====
+   动态单例 #term-panel，默认 display:none（既有场景零波及）；盒体规格沿
+   #goal-panel（:561-563）转正式选择器；值全取既有变量，零新增自定义属性
+   （cssVars 不变量）；.tp-body 承载 xterm（自带 css 经 app.js import 引入，
+   .xterm* 作用域零命中既有面，D6）。 */
+#term-panel{display:none;position:fixed;right:18px;bottom:76px;width:560px;height:400px;
+  z-index:60;flex-direction:column;background:var(--panel2);border:1px solid var(--border2);
+  border-radius:14px;box-shadow:0 24px 80px rgba(0,0,0,.6);overflow:hidden}
+#term-panel.show{display:flex}
+#term-panel .tp-head{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;
+  border-bottom:1px solid var(--border2);flex:none}
+#term-panel .tp-title{flex:1;font-size:12px;font-weight:600;color:var(--text);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#term-panel .tp-status{flex:none;max-width:220px;font-size:10px;color:var(--text2);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#term-panel .tp-body{flex:1;min-height:0;overflow:hidden;background:rgba(0,0,0,.45);
+  display:flex}
+#term-panel .tp-empty{margin:auto;font-size:11px;color:var(--text2);text-align:center;line-height:1.8}

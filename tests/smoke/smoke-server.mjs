@@ -42,6 +42,13 @@
  * （含 .git 排除/FOLD 占位/先序/条目上限性质断言）/ path 前缀与 depth 语义 /
  * depth 界值 400 / 防越界矩阵双形态 / 404 与折叠恒空 / tree.ts 纪律源扫描
  * （零子进程 + fs 只读白名单）。
+ * PT01-PT06（迭代 0057 / BK-0045）terminal handler 契约（ADR-0014 §7）：
+ * ENABLED=0 降级 / ENABLED=1 建会话 + agentWrite 注入 + 审计 origin=agent /
+ * out-session 形状 + 下游消费 / run 正交存续 / 内部通道满员护栏 /
+ * 纪律源扫描与前端源锁（探针 A/B：lib.mjs startServer(port,{env}) 注入，
+ * pty-sessions.mjs 先例；run 中止级联半面 = PT06 源扫描 + 手动 E2E M5 承载，
+ * SPEC D9 定形；编号 PT 系 = BUG-0057-01 修复轮避让 0034 轮既有 termview
+ * T01-T03 撞号）。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -104,6 +111,20 @@ const wfShow = (defv, url) => ({
   ],
   edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }],
 });
+/* T 组夹具工厂（迭代 0057 / BK-0045 · SPEC §3.8）：prompt(tpl) → terminal；
+ * chain 形态追加 terminal → termview（out-session object → in any 下游消费链）。 */
+const wfTerm = (tpl, name, session, chain) => ({
+  name: name || 'smoke-terminal',
+  nodes: [
+    { id: 1, type: 'prompt', x: 100, y: 100, params: { tpl } },
+    { id: 2, type: 'terminal', x: 320, y: 100, params: { cmd: '', session: session || '' } },
+    ...(chain ? [{ id: 3, type: 'termview', x: 540, y: 100, params: { lines: 200, autoscroll: true } }] : []),
+  ],
+  edges: [
+    { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+    ...(chain ? [{ id: 2, fn: 2, fp: 0, tn: 3, tp: 0 }] : []),
+  ],
+});
 
 /* CAP 组期望字面量（迭代 0039 / BK-0049 · SPEC §4.1/§7）：builtin 工具名/描述自
  * TOOL_SPECS（tools.ts:145-158）逐条誊取、服务级描述与 skills 五条自 app.js:105-123
@@ -144,6 +165,8 @@ let mockSrv = null;     /* G 组：AI_BASE_URL 指向 mock 的第二实例 */
 let minimalSrv = null;  /* G 组：全密钥空串压制的第三实例（降级路径确定性） */
 let zSrv = null;        /* Z 组：启动扫尾专用实例（迭代 0019 / BK-0011，SIGKILL 后同端口重启） */
 let capSrv = null;      /* CAP 组：能力清单第二实例（迭代 0039 / BK-0049，env 注册外部 MCP 条目） */
+let tSrvA = null;       /* T 组探针 A：PTY_ENABLED=1 实例（迭代 0057 / BK-0045） */
+let tSrvB = null;       /* T 组探针 B：PTY_ENABLED=1 + PTY_MAX_SESSIONS=1 实例（T05 满员护栏） */
 let cleanupPromise = null;
 
 /* ---------- G 组基础设施（迭代 0015 / BK-0016 · SPEC §3.4-2/3） ---------- */
@@ -329,6 +352,20 @@ const wfReview = (title, to, reviewer = 'llm') => ({
 /* 单 approval 节点夹具（V04/V05：不存在审官 id / 普通文本 role 的人工对照） */
 const wfPlain = (name, role, to) => ({ name, nodes: [{ id: 1, type: 'approval', x: 100, y: 100, title: '人工审批', params: { role, to } }], edges: [] });
 
+/* ---------- T 组基础设施（迭代 0057 / BK-0045 · SPEC §3.8） ---------- */
+/* pty_audits 只读直查（V 组 auditsOf 同款窄口径例外：readonly/单表单 SELECT/
+ * finally close；表未建视 0 行，pty-sessions.mjs 先例）。 */
+function ptyAuditsOf(sessionId) {
+  const dbFile = path.join(REPO_ROOT, 'data', 'agentflow.db');
+  if (!existsSync(dbFile)) return [];
+  const db = new Database(dbFile, { readonly: true, fileMustExist: true });
+  try {
+    return db.prepare(
+      'SELECT id, session_id, origin, kind, summary, reason, danger, pid, created_at FROM pty_audits WHERE session_id = ? ORDER BY id ASC',
+    ).all(sessionId);
+  } finally { db.close(); }
+}
+
 /* ---------- C 组：自清理与零残留（finally 内；尽力而为 + 如实报告，不抛） ---------- */
 async function doCleanup() {
   if (!srv) {
@@ -373,8 +410,8 @@ async function doCleanup() {
   exited = await Promise.race([srv.exitPromise.then(() => true), sleep(1000).then(() => false)]);
   C.check(exited, 'C04', 'server 子进程已终止（kill → 3s → SIGKILL 兜底）',   /* C04 */
     { expected: 'exit 事件到达', actual: exited ? '已终止' : '未观察到退出' });
-  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组/CAP 组实例同批（迭代 0019/0039） */
-  for (const inst of [mockSrv, minimalSrv, zSrv, capSrv]) {
+  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组/CAP 组实例同批（迭代 0019/0039）；T 组探针同批（迭代 0057） */
+  for (const inst of [mockSrv, minimalSrv, zSrv, capSrv, tSrvA, tSrvB]) {
     if (!inst) continue;
     try { inst.child.kill(); } catch { /* 已退出 */ }
     let ex = await Promise.race([inst.exitPromise.then(() => true), sleep(3000).then(() => false)]);
@@ -1887,6 +1924,132 @@ async function main() {
       && t18.includes("'.git'") && foldWords18.every(w => t18.includes(w)),
       'B18', '源码扫描 tree.ts + routes.ts（扩后）+ root.ts（复扫）：/shell/i 零命中（含注释）；tree.ts \'spawn\' 零命中（零 git 子进程）；\'readdir\'/\'lstat\' 在场（fs 承载本体）；fs 写面禁词（调用形态）零命中（writeFile/appendFile/unlink/rename/mkdir/chmod/chown/truncate/rm——词表规避 truncated 字段子串误报）；\'.git\' 排除与 FOLD 四名字面量在场',
       { expected: 'shell/spawn/写面零命中 + readdir/lstat/.git/FOLD 四名在场', actual: JSON.stringify({ shell18, spawn18, write18, fsOk: t18.includes('readdir') && t18.includes('lstat'), gitExcl: t18.includes("'.git'"), foldOk: foldWords18.every(w => t18.includes(w)) }), ctx: 'apps/server/src/workbench/{tree,routes,root}.ts readFileSync 字面扫描' });
+  }
+
+  /* T 组（PT 系断言 ID，BUG-0057-01）：terminal 节点 handler 契约（PT01-PT06 · 迭代 0057 / BK-0045 · ADR-0014 §7
+   * · SPEC §3.8）——PT01 主实例（PTY_ENABLED 默认关，无 .env 即确定性禁用态）；
+   * PT02-PT04 探针 A（PTY_ENABLED=1）；PT05 探针 B（PTY_ENABLED=1 + PTY_MAX_SESSIONS=1，
+   * 内部通道满员护栏）；PT06 纪律源扫描 + 前端源锁。探针 env 全量钉值防开发者
+   * .env 泄入（pty-sessions.mjs ENV_ON 同款）；探针会话在断言内显式 stop
+   * （PTY_IDLE 默认 10min 内不清，防跨组泄漏，D9）。 */
+  let tSid = null;   /* T02 建立的会话（T03 绑定 / T04 存续与自清理共用） */
+  const tRunSse = async (base, wf, id, label) => {
+    let sse = null;
+    try { sse = await openSse(base, wf); }
+    catch (e) { C.fail(id, `${label}（openSse）`, { expected: 'SSE 200', actual: String(e?.message ?? e), ctx: `POST /api/v1/run（${wf.name}）` }); throw new SmokeFailError(id); }
+    let done = null;
+    try { done = await sse.waitFor((e) => e.type === 'run:done', 20000); }
+    catch (e) { C.fail(id, `${label}（waitFor run:done）`, { expected: 'run:done', actual: String(e?.message ?? e), ctx: `POST /api/v1/run（${wf.name}）` }); throw new SmokeFailError(id); }
+    await sse.waitEnd(10000);
+    return { done, events: sse.events };
+  };
+  { /* PT01 · ENABLED=0 降级契约（主实例）：run 含 terminal → log(warn) 固定子串 +
+       节点降级 out + run ok 不挂 + 不伪造会话（list 恒空集） */
+    const { done, events } = await tRunSse(srv.base, wfTerm('echo t01', 'smoke-terminal-degrade'), 'PT01', 'prompt→terminal（禁用态）');
+    const tDone = events.find((e) => e.type === 'node:done' && e.id === 2);
+    const tWarn = events.find((e) => e.type === 'log' && String(e.msg || '').includes('PTY 会话功能未启用'));
+    const list = await api(srv.base, 'GET', '/api/v1/pty/sessions');
+    C.ok(done.ok === true && !!tWarn && typeof tDone?.out === 'string' && tDone.out.includes('降级')
+      && list.status === 200 && Array.isArray(list.json?.sessions) && list.json.sessions.length === 0,
+      'PT01', 'PTY_ENABLED=0：run 含 terminal → log(warn) 固定子串「PTY 会话功能未启用」+ node:done out 含「降级」+ run:done{ok:true} 不挂；GET /pty/sessions → {"sessions":[]}（不伪造会话）',
+      { expected: 'warn 子串 + 降级 out + ok:true + 空列表', actual: JSON.stringify({ ok: done.ok, warn: !!tWarn, out: tDone?.out, list: list.json }), ctx: ctxOf(list) });
+  }
+  { /* PT02 · ENABLED=1 建会话 + agentWrite 注入 + 审计（探针 A）：node:done 就绪 out +
+       list 恰 1 会话 + pty_audits 该会话 create(origin=system) 与 write(origin=agent) 双行 */
+    try {
+      tSrvA = await startServer(await getFreePort(), {
+        env: { PTY_ENABLED: '1', PTY_IDLE_TIMEOUT_MS: '600000', PTY_MAX_SESSION_MS: '600000', PTY_MAX_SESSIONS: '4' },
+      });
+    } catch (e) {
+      C.fail('PT02', '探针 A 启动（PTY_ENABLED=1）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+      throw new SmokeFailError('PT02');
+    }
+    const { done, events } = await tRunSse(tSrvA.base, wfTerm('echo t02-inject', 'smoke-terminal-create'), 'PT02', 'prompt→terminal（探针 A）');
+    const tDone = events.find((e) => e.type === 'node:done' && e.id === 2);
+    const list = await api(tSrvA.base, 'GET', '/api/v1/pty/sessions');
+    tSid = list.json?.sessions?.[0]?.id ?? null;
+    const audits = tSid ? ptyAuditsOf(tSid) : [];
+    const createRow = audits.find((r) => r.origin === 'system' && r.kind === 'create');
+    const agentRow = audits.find((r) => r.origin === 'agent' && r.kind === 'write');
+    C.ok(done.ok === true && typeof tDone?.out === 'string' && tDone.out.includes('终端会话就绪 · #')
+      && list.status === 200 && list.json?.sessions?.length === 1 && !!tSid
+      && !!createRow && !!agentRow && String(agentRow.summary || '').includes('echo t02-inject'),
+      'PT02', 'PTY_ENABLED=1：run prompt→terminal → node:done out 含「终端会话就绪 · #」+ GET list 恰 1 会话 + pty_audits 该会话含 create(origin=system) 与 write(origin=agent，summary 含注入文本)（agentWrite 服务端通道审计留痕）',
+      { expected: '就绪 out + 1 会话 + create/agent 双审计行', actual: JSON.stringify({ ok: done.ok, out: tDone?.out, n: list.json?.sessions?.length, sid: tSid, createRow: !!createRow, agentRow: !!agentRow, agentSummary: agentRow?.summary }), ctx: ctxOf(list) });
+  }
+  { /* PT03 · out-session 形状 + 下游消费（探针 A）：terminal(session=PT02 会话)→termview；
+       output 事件文本 = termview toStr(ports[0]) = {"sessionId":"…"} 可 parse 且命中绑定
+       会话（接管不新建 → list 仍恰 1） */
+    const { done, events } = await tRunSse(tSrvA.base, wfTerm('echo t03-chain', 'smoke-terminal-chain', tSid, true), 'PT03', 'prompt→terminal(绑定)→termview');
+    const outEv = events.find((e) => e.type === 'output');
+    let sidOut = null;
+    try {
+      const v = JSON.parse(outEv?.text ?? '');
+      if (v && typeof v.sessionId === 'string') sidOut = v.sessionId;
+    } catch { /* 非 JSON → sidOut 保持 null，断言如实红 */ }
+    const list = await api(tSrvA.base, 'GET', '/api/v1/pty/sessions');
+    const ids = (list.json?.sessions ?? []).map((s) => s.id);
+    C.ok(done.ok === true && !!sidOut && sidOut === tSid && ids.includes(sidOut) && ids.length === 1,
+      'PT03', 'terminal(绑定 PT02 会话)→termview：output 事件文本 JSON.parse 得 {sessionId} 且 === 绑定会话（接管不新建）；list 仍恰 1 会话（out-session {sessionId} 形状 + 下游 toStr 消费链双断言）',
+      { expected: `{sessionId:"${tSid}"} + list 恰 1`, actual: JSON.stringify({ ok: done.ok, text: outEv?.text, sidOut, ids }), ctx: ctxOf(list) });
+  }
+  { /* PT04 · run 正交存续 + 自清理（探针 A）：run 结束会话仍 active（ADR-0014 §4.1）
+       → POST stop → 200 → list 收敛空（closePtySession 异步收尾 ≤CLOSE_WAIT_MS，
+       PY6 exit 帧同款时序：轮询等待注册表删除，非即时断言；防探针会话跨组泄漏） */
+    const g1 = await api(tSrvA.base, 'GET', '/api/v1/pty/sessions');
+    const still = (g1.json?.sessions ?? []).some((s) => s.id === tSid);
+    const st = await api(tSrvA.base, 'POST', `/api/v1/pty/sessions/${tSid}/stop`);
+    let after = -1;
+    for (let i = 0; i < 20 && after !== 0; i++) {   /* ≤5s：kill→exit 确认→删注册表 */
+      await sleep(250);
+      const g = await api(tSrvA.base, 'GET', '/api/v1/pty/sessions');
+      after = (g.json?.sessions ?? []).length;
+    }
+    C.ok(g1.status === 200 && still && st.status === 200 && st.json?.ok === true && after === 0,
+      'PT04', 'PT02/PT03 run 结束后 GET list 仍含该会话（run 与会话正交，ADR-0014 §4.1）→ POST stop → 200 {ok:true} → list 轮询收敛空（close 异步收尾，PY6 时序同款；探针 A 自清理）',
+      { expected: '存续 + stop 200 + 空 list', actual: JSON.stringify({ still, stop: `${st.status}:${st.json?.ok}`, after }), ctx: ctxOf(st) });
+  }
+  { /* PT05 · 内部通道满员护栏（探针 B：PTY_MAX_SESSIONS=1）：HTTP create 1 会话占满 →
+       run terminal → warn「并发会话数已达上限」+ run ok 不挂 + list 仍恰 1（内部
+       create 不经 routes.ts:27 的 HTTP 429 闸 → handler 自检护栏生效，D2）→ stop 清理 */
+    try {
+      tSrvB = await startServer(await getFreePort(), {
+        env: { PTY_ENABLED: '1', PTY_IDLE_TIMEOUT_MS: '600000', PTY_MAX_SESSION_MS: '600000', PTY_MAX_SESSIONS: '1' },
+      });
+    } catch (e) {
+      C.fail('PT05', '探针 B 启动（PTY_ENABLED=1 + PTY_MAX_SESSIONS=1）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+      throw new SmokeFailError('PT05');
+    }
+    const mk = await api(tSrvB.base, 'POST', '/api/v1/pty/sessions');
+    const { done, events } = await tRunSse(tSrvB.base, wfTerm('echo t05-full', 'smoke-terminal-full'), 'PT05', 'prompt→terminal（满员）');
+    const warn = events.find((e) => e.type === 'log' && String(e.msg || '').includes('并发会话数已达上限'));
+    const list = await api(tSrvB.base, 'GET', '/api/v1/pty/sessions');
+    const n = (list.json?.sessions ?? []).length;
+    const st = await api(tSrvB.base, 'POST', `/api/v1/pty/sessions/${mk.json?.sessionId}/stop`);
+    C.ok(mk.status === 201 && done.ok === true && !!warn && n === 1 && st.status === 200,
+      'PT05', 'PTY_MAX_SESSIONS=1：HTTP create 占满（201）→ run terminal → log(warn) 固定子串「并发会话数已达上限」+ run:done{ok:true} 不挂 + list 仍恰 1（内部通道护栏挡下第 2 会话，未偷偷新建）→ stop 200 清理',
+      { expected: '201 占满 + warn 子串 + ok:true + 恰 1 会话', actual: JSON.stringify({ mk: mk.status, ok: done.ok, warn: !!warn, n, stop: st.status }), ctx: ctxOf(list) });
+  }
+  { /* PT06 · 纪律源扫描 + 前端源锁（B05/B12/B18 同型）：handlers.ts terminal 段——
+       agentWrite 调用含 signal: ctx.ac.signal 透传形态（run 中止级联半面的源扫描
+       背书，D9）；ptySessionActive/activePtyCount/createPtySession 在场且无
+       userWrite/guardedFetch 混入（服务端不走 HTTP/出站通道）；「PTY 会话功能未启用」
+       降级字面量在场。前端源锁三件：app.js #term-panel + nodesLayer 双 dblclick
+       监听器形态 + ICON_PATHS 表无 'terminal': 键（零新增图标常量）；app.css tp- 家族 */
+    const h6 = readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'handlers.ts'), 'utf8');
+    const i6 = h6.indexOf('async terminal(');
+    const termSec6 = i6 >= 0 ? h6.slice(i6).split('\n  async ')[0] : '';
+    const appJs6 = readFileSync(path.join(REPO_ROOT, 'apps', 'web', 'src', 'legacy', 'app.js'), 'utf8');
+    const appCss6 = readFileSync(path.join(REPO_ROOT, 'apps', 'web', 'src', 'app.css'), 'utf8');
+    const dbl6 = (appJs6.match(/nodesLayer\.addEventListener\('dblclick'/g) ?? []).length;
+    C.ok(termSec6.includes('agentWrite(') && termSec6.includes('signal: ctx.ac.signal')
+      && ['ptySessionActive(', 'activePtyCount(', 'createPtySession('].every(s => termSec6.includes(s))
+      && !termSec6.includes('userWrite(') && !termSec6.includes('guardedFetch(')
+      && termSec6.includes('PTY 会话功能未启用')
+      && appJs6.includes('#term-panel') && dbl6 >= 2 && !appJs6.includes("'terminal':")
+      && appCss6.includes('#term-panel') && appCss6.includes('.tp-body'),
+      'PT06', '源码扫描 handlers.ts terminal 段：agentWrite(signal: ctx.ac.signal 透传) + ptySessionActive/activePtyCount/createPtySession 在场 + userWrite/guardedFetch 零混入 + 「PTY 会话功能未启用」字面量在场；前端源锁：app.js #term-panel + nodesLayer 双 dblclick 监听器 + ICON_PATHS 无 terminal 键；app.css tp- 家族在场',
+      { expected: 'signal 透传 + 内部 API 三件 + 零 HTTP/出站混入 + 前端三锁', actual: JSON.stringify({ sec: termSec6.length, sig: termSec6.includes('signal: ctx.ac.signal'), apis: ['ptySessionActive(', 'activePtyCount(', 'createPtySession('].every(s => termSec6.includes(s)), noHttp: !termSec6.includes('userWrite(') && !termSec6.includes('guardedFetch('), degrade: termSec6.includes('PTY 会话功能未启用'), panel: appJs6.includes('#term-panel'), dbl: dbl6, noIcon: !appJs6.includes("'terminal':"), css: appCss6.includes('.tp-body') }), ctx: 'apps/server/src/handlers.ts + apps/web/src/{legacy/app.js,app.css} readFileSync 字面扫描' });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例
