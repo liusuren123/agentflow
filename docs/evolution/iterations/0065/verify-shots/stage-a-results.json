@@ -1,0 +1,78 @@
+{
+  "results": [
+    {
+      "id": "T1a",
+      "name": "E1 面板 combo 选项=服务端清单",
+      "pass": true,
+      "detail": "panel=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\"] vs server=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\"]"
+    },
+    {
+      "id": "T1b",
+      "name": "E1 节点 widget combo 选项=服务端清单",
+      "pass": true,
+      "detail": "node=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\"]"
+    },
+    {
+      "id": "T1c",
+      "name": "E4 既有值保真（默认 产品手册 v2.3 选中态，面板+画布双面）",
+      "pass": true,
+      "detail": "panel=产品手册 v2.3 node=产品手册 v2.3"
+    },
+    {
+      "id": "T2a",
+      "name": "E2 上传全新库 e2e-verify-224125（数据准备，非被测行为）",
+      "pass": true,
+      "detail": "status=201 body={\"ok\":true,\"kb\":\"e2e-verify-224125\",\"filename\":\"doc.md\",\"bytes\":235,\"chunks\":1}"
+    },
+    {
+      "id": "T2b",
+      "name": "E2/AC1 不刷新页面重选后 combo 含新库且=最新服务端清单",
+      "pass": true,
+      "detail": "panel=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\",\"e2e-verify-224125\"] vs server=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\",\"e2e-verify-224125\"]"
+    },
+    {
+      "id": "T2c",
+      "name": "E2 节点 widget 同步含新库",
+      "pass": true,
+      "detail": "node=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\",\"e2e-verify-224125\"]"
+    },
+    {
+      "id": "T3",
+      "name": "E5 属性面板选值写回 → 节点 widget 选中态同步",
+      "pass": false,
+      "detail": "panel=产品手册 v2.3 node=产品手册 v2.3"
+    },
+    {
+      "id": "T4a",
+      "name": "E5 撤销(Ctrl+Z 等价按钮)后 combo 回退既有值",
+      "pass": false,
+      "detail": "after undo panel=node=null"
+    },
+    {
+      "id": "T4b",
+      "name": "E5 重做后 combo 恢复新库值",
+      "pass": false,
+      "detail": "after redo panel=null node=产品手册 v2.3"
+    },
+    {
+      "id": "T5",
+      "name": "E5 新建标签页并切回后 combo 选中态保持",
+      "pass": false,
+      "detail": "tabs=2 panel=产品手册 v2.3 node=产品手册 v2.3"
+    },
+    {
+      "id": "T6a",
+      "name": "AC4 预置工作流 kb=新库 在线选中态（面板+画布）",
+      "pass": true,
+      "detail": "panel=e2e-verify-224125 node=e2e-verify-224125 options=[\"FAQ-售前\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"e2e-verify-kb\",\"e2e-verify-224125\"]"
+    },
+    {
+      "id": "T6b",
+      "name": "AC4 GUI 运行 retrieval 命中新库入库片段",
+      "pass": false,
+      "detail": "ran=true prog=\"\" nodeOut=\"命中 0 条片段 · 最高相似度 0\" marker=false"
+    }
+  ],
+  "consoleErrors": [],
+  "newKb": "e2e-verify-224125"
+}

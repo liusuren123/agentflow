@@ -1,0 +1,84 @@
+{
+  "results": [
+    {
+      "id": "R1a",
+      "name": "复验① 对照节点(prompt)选中 3s kb 请求数=0",
+      "pass": true,
+      "detail": "count=0"
+    },
+    {
+      "id": "R1b",
+      "name": "复验① retrieval 选中 3s kb 请求数 ≤2（原 315）",
+      "pass": true,
+      "detail": "count=1"
+    },
+    {
+      "id": "R1c",
+      "name": "复验① 数据未变重选 retrieval 3s kb 请求数 ≤1 且无重绘风暴",
+      "pass": true,
+      "detail": "count=1"
+    },
+    {
+      "id": "R2",
+      "name": "复验③ T1 面板+画布 combo 选项=服务端清单",
+      "pass": true,
+      "detail": "panel=[\"FAQ-售前\",\"e2e-verify-224125\",\"e2e-verify-kb\",\"repair-verify-0065\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"r2-verify-001114\"] vs server=[\"FAQ-售前\",\"e2e-verify-224125\",\"e2e-verify-kb\",\"repair-verify-0065\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"r2-verify-001114\"]"
+    },
+    {
+      "id": "R4c",
+      "name": "复验② T4c 对照：非 kb 参数 undo 亦清空选中（既有撤销行为）且 redo 复原",
+      "pass": true,
+      "detail": "panel-cleared=true topk-after-redo=3 kb=产品手册 v2.3"
+    },
+    {
+      "id": "R3a",
+      "name": "复验② 上传新库 r2-verify-001416（数据准备）",
+      "pass": true,
+      "detail": "status=201"
+    },
+    {
+      "id": "R3b",
+      "name": "复验② T2 重选后 combo 含新库且=最新服务端清单",
+      "pass": true,
+      "detail": "panel=[\"FAQ-售前\",\"e2e-verify-224125\",\"e2e-verify-kb\",\"repair-verify-0065\",\"smoke-kb-chunk\",\"smoke-kb-main\",\"smoke-kb-upload\",\"产品手册 v2.3\",\"工单历史 2026\",\"r2-verify-001114\",\"r2-verify-001416\"]"
+    },
+    {
+      "id": "R3c",
+      "name": "复验② T3 属性面板选值写回→节点 widget 选中态同步（原作废点）",
+      "pass": true,
+      "detail": "panel=r2-verify-001416 node=r2-verify-001416"
+    },
+    {
+      "id": "R4a",
+      "name": "复验② T4a 撤销(重新选中)后 combo 回退既有值（原作废点）",
+      "pass": false,
+      "detail": "panel=r2-verify-001416"
+    },
+    {
+      "id": "R4b",
+      "name": "复验② T4b 重做(重新选中)后 combo 恢复新库值（原作废点）",
+      "pass": true,
+      "detail": "panel=r2-verify-001416 node=r2-verify-001416"
+    },
+    {
+      "id": "R5",
+      "name": "复验② T5 新建标签页并切回后 combo 选中态保持（原作废点）",
+      "pass": true,
+      "detail": "tabs=2 panel=r2-verify-001416 node=r2-verify-001416"
+    },
+    {
+      "id": "R6",
+      "name": "复验③ T6c GUI 运行新库命中片段（原通过点抽查）",
+      "pass": true,
+      "detail": "nodeOut=\"命中 1 条片段 · 最高相似度 0.99\" marker=true"
+    },
+    {
+      "id": "R7",
+      "name": "复验③ T6d2 既有库检索命中不回退（E4 抽查）",
+      "pass": true,
+      "detail": "nodeOut=\"命中 3 条片段 · 最高相似度 0.5\""
+    }
+  ],
+  "consoleErrors": [],
+  "newKb": "r2-verify-001416"
+}

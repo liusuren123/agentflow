@@ -1,0 +1,34 @@
+{
+  "results": [
+    {
+      "id": "B1",
+      "name": "E3/AC2 离线面板 combo=DEFS 三固定名回退集（声明序，非空白）",
+      "pass": true,
+      "detail": "panel=[\"产品手册 v2.3\",\"FAQ-售前\",\"工单历史 2026\"]"
+    },
+    {
+      "id": "B2",
+      "name": "E3/AC2 离线节点 widget combo=三固定名",
+      "pass": true,
+      "detail": "node=[\"产品手册 v2.3\",\"FAQ-售前\",\"工单历史 2026\"]"
+    },
+    {
+      "id": "B3",
+      "name": "E3/AC2 离线选中态=默认值 产品手册 v2.3",
+      "pass": true,
+      "detail": "panel=产品手册 v2.3 node=产品手册 v2.3"
+    },
+    {
+      "id": "B4",
+      "name": "E3/AC2 无报错弹窗/无 toast",
+      "pass": false,
+      "detail": "modal=true toasts=[]"
+    },
+    {
+      "id": "B5",
+      "name": "离线态无自反馈请求循环（对照在线 BUG-0065-01 的 315 次/3s）",
+      "pass": true,
+      "detail": "offline 3s kb 失败请求数=0"
+    }
+  ]
+}
