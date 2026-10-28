@@ -1,0 +1,192 @@
+
+> agentflow@1.0.0 test:pty-e2e
+> node tests/e2e/pty-echo-matrix.mjs
+
+== pty-echo-matrix（BUG-0057-02 判别矩阵 E2E）== mode=full
+PASS PE0-1 构建产物前置（npm run build && npm run build:server）
+PASS PE0-2 探针 server 健康（PTY_ENABLED=1 · http://127.0.0.1:55676）
+PASS PE0-3 会话基线数 0
+PASS PE2-A-r1-c1 ① create 写回 session 非空
+PASS PE2-A-r1-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-A-r1-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-A-r1-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-A-r1-c5 ⑤ run:done 收尾
+PASS PE2-A-r1-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-A-r1-topo 拓扑序 == [1,2]
+PASS PE1-A-r1-status 面板状态行无 error/end 异常
+PASS PE1-A-r1-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-A-r1-clean 会话纪律（本轮新建 1 个全停止）
+[round A-r1] GREEN · topo=[1,2] T.out="终端会话就绪 · #da6811e8 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE1-A-r1 A 形态第 1 轮全链绿
+PASS PE2-B-r1-c1 ① create 写回 session 非空
+PASS PE2-B-r1-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-B-r1-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-B-r1-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-B-r1-c5 ⑤ run:done 收尾
+PASS PE2-B-r1-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-B-r1-topo 拓扑序 == [1,2,3]
+PASS PE1-B-r1-status 面板状态行无 error/end 异常
+PASS PE1-B-r1-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-B-r1-clean 会话纪律（本轮新建 1 个全停止）
+[round B-r1] GREEN · topo=[1,2,3] T.out="终端会话就绪 · #61d93529 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE1-B-r1 B 形态第 1 轮全链绿
+PASS PE2-C-r1-c1 ① create 写回 session 非空
+PASS PE2-C-r1-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-r1-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-r1-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-r1-c5 ⑤ run:done 收尾
+PASS PE2-C-r1-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-r1-topo 拓扑序 == [1,3,2]
+PASS PE1-C-r1-status 面板状态行无 error/end 异常
+PASS PE1-C-r1-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-r1-clean 会话纪律（本轮新建 2 个全停止）
+[round C-r1] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #438588c7 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE1-C-r1 C 形态第 1 轮全链绿
+PASS PE2-C-r2-c1 ① create 写回 session 非空
+PASS PE2-C-r2-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-r2-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-r2-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-r2-c5 ⑤ run:done 收尾
+PASS PE2-C-r2-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-r2-topo 拓扑序 == [1,3,2]
+PASS PE1-C-r2-status 面板状态行无 error/end 异常
+PASS PE1-C-r2-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-r2-clean 会话纪律（本轮新建 2 个全停止）
+[round C-r2] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #d8c9f1a6 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE1-C-r2 C 形态第 2 轮全链绿
+PASS PE2-D-r1-c1 ① create 写回 session 非空
+PASS PE2-D-r1-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-D-r1-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-D-r1-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-D-r1-c5 ⑤ run:done 收尾
+PASS PE2-D-r1-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-D-r1-topo 拓扑序 == [1,2,3]
+PASS PE1-D-r1-status 面板状态行无 error/end 异常
+PASS PE1-D-r1-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-D-r1-clean 会话纪律（本轮新建 1 个全停止）
+[round D-r1] GREEN · topo=[1,2,3] T.out="终端会话就绪 · #f1b7cde5 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE1-D-r1 D 形态第 1 轮全链绿
+PASS PE2-D-r2-c1 ① create 写回 session 非空
+PASS PE2-D-r2-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-D-r2-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-D-r2-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-D-r2-c5 ⑤ run:done 收尾
+PASS PE2-D-r2-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-D-r2-topo 拓扑序 == [1,2,3]
+PASS PE1-D-r2-status 面板状态行无 error/end 异常
+PASS PE1-D-r2-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-D-r2-clean 会话纪律（本轮新建 1 个全停止）
+[round D-r2] GREEN · topo=[1,2,3] T.out="终端会话就绪 · #021cc931 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE1-D-r2 D 形态第 2 轮全链绿
+PASS PE2-C-s1-c1 ① create 写回 session 非空
+PASS PE2-C-s1-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s1-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s1-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s1-c5 ⑤ run:done 收尾
+PASS PE2-C-s1-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s1-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s1-status 面板状态行无 error/end 异常
+PASS PE1-C-s1-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s1-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s1] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #f683a0c3 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s2-c1 ① create 写回 session 非空
+PASS PE2-C-s2-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s2-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s2-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s2-c5 ⑤ run:done 收尾
+PASS PE2-C-s2-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s2-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s2-status 面板状态行无 error/end 异常
+PASS PE1-C-s2-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s2-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s2] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #19c9490d · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s3-c1 ① create 写回 session 非空
+PASS PE2-C-s3-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s3-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s3-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s3-c5 ⑤ run:done 收尾
+PASS PE2-C-s3-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s3-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s3-status 面板状态行无 error/end 异常
+PASS PE1-C-s3-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s3-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s3] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #fccd9ce8 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s4-c1 ① create 写回 session 非空
+PASS PE2-C-s4-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s4-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s4-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s4-c5 ⑤ run:done 收尾
+PASS PE2-C-s4-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s4-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s4-status 面板状态行无 error/end 异常
+PASS PE1-C-s4-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s4-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s4] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #7395b76e · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s5-c1 ① create 写回 session 非空
+PASS PE2-C-s5-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s5-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s5-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s5-c5 ⑤ run:done 收尾
+PASS PE2-C-s5-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s5-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s5-status 面板状态行无 error/end 异常
+PASS PE1-C-s5-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s5-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s5] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #aa86c1c6 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s6-c1 ① create 写回 session 非空
+PASS PE2-C-s6-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s6-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s6-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s6-c5 ⑤ run:done 收尾
+PASS PE2-C-s6-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s6-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s6-status 面板状态行无 error/end 异常
+PASS PE1-C-s6-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s6-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s6] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #97936038 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s7-c1 ① create 写回 session 非空
+PASS PE2-C-s7-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s7-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s7-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s7-c5 ⑤ run:done 收尾
+PASS PE2-C-s7-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s7-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s7-status 面板状态行无 error/end 异常
+PASS PE1-C-s7-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s7-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s7] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #d10d65be · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s8-c1 ① create 写回 session 非空
+PASS PE2-C-s8-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s8-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s8-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s8-c5 ⑤ run:done 收尾
+PASS PE2-C-s8-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s8-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s8-status 面板状态行无 error/end 异常
+PASS PE1-C-s8-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s8-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s8] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #c1e673e7 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s9-c1 ① create 写回 session 非空
+PASS PE2-C-s9-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s9-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s9-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s9-c5 ⑤ run:done 收尾
+PASS PE2-C-s9-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s9-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s9-status 面板状态行无 error/end 异常
+PASS PE1-C-s9-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s9-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s9] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #3e190df6 · 已注入命令 · 回显 12 字" status="连接会话…"
+PASS PE2-C-s10-c1 ① create 写回 session 非空
+PASS PE2-C-s10-c2 ② 订阅确立（xterm 已渲染回放）
+PASS PE2-C-s10-c3 ③ 注入计数（已注入命令 · 回显 N>0 字）
+PASS PE2-C-s10-c4 ④ 回显 marker 落面板 xterm
+PASS PE2-C-s10-c5 ⑤ run:done 收尾
+PASS PE2-C-s10-c6 ⑥ 重开回放恢复含 marker
+PASS PE1-C-s10-topo 拓扑序 == [1,3,2]
+PASS PE1-C-s10-status 面板状态行无 error/end 异常
+PASS PE1-C-s10-sid node:done #sid8 == 面板绑定 sid（P1 漂移判别）
+PASS PE1-C-s10-clean 会话纪律（本轮新建 2 个全停止）
+[round C-s10] GREEN · topo=[1,3,2] T.out="终端会话就绪 · #84b25e6d · 已注入命令 · 回显 13 字" status="连接会话…"
+PASS PE3-summary C 形态高频采样 10 轮失败率 0
+== 结果 PASS 170 / FAIL 0 ==

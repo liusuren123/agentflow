@@ -1,0 +1,11 @@
+== V6 手动五点位复测（0061 收口轮）==
+PASS V6-① 键入透传：真实键盘 echo v6hi 回显可见
+PASS V6-③a 关闭后会话存续（ADR-0014 §4.1）
+PASS V6-③b 关闭重开回放恢复（回放含 v6hi）
+PASS V6-② 会话停止终态=「会话已结束（stop）」且 1.3s 双采样稳定
+PASS V6-②b 停止后会话出表
+PASS V6-⑤a C 形态回显 marker 落面板且状态行无异常
+PASS V6-⑤b C 形态 node:done 注入计数 > 0
+PASS V6-④a 降级态面板「未启用」空态（503 → 单次提示）
+PASS V6-④b run 中 terminal out=降级文案如实
+== 结果 PASS 9 / FAIL 0 ==

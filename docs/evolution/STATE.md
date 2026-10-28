@@ -8,7 +8,7 @@ iteration: 0065      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-26 13:47  # 本次迭代开始时间
-updated: 2026-10-28 15:16  # 最近更新时间
+updated: 2026-10-28 17:05  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0064（BK-0019 KB 管道后端）终态 done（过程性 failed 后协调者授权 MERGE 收口，0033/0040 双层记录同径）：产品提交 1562a8c + 失败留档 59f3e31（补齐 kb/ 五模块，productFiles 第 6 发后收口规则已同日根治 9134cd6）+ 合并 5c1627c 零产品冲突 + VERIFY-2 PASS（BUG-0064-01 修复轮闭环）+ 主干复测四绿（gate 20 场景首跑全绿 · smoke 168/0 = 157+KB01-KB11），证据 iterations/0064/{MERGE.md,evidence/}（2c0c1b2）；BK-0019 置 done、BK-0047「kb 清单端点承载段落地」约束解除；BK-0045 熔断待裁仍在案（A/B/C）；主干健康，下一轮心跳可正常开工（ready 队列：BK-0061/0062 SPEC 项、BK-0047 待晋升修宪轮）
+last_result: 迭代 0061（BK-0045 PTY 交互终端节点 UI）经用户授权 A 案收口终态 done（账本更正，0033/0040 双层记录同径）：保全分支 feat/0061-iter 工作树重验六项全绿（门禁四件套 build/test 30·30/gate 20 场景 diffPx=0/smoke 157·0 + V5 矩阵 PASS 170/FAIL 0 + PE3 C×10 失败率 0 + V6 五点位 9/9）→ 合并 b0b2a19（冲突仅 STATE/BACKLOG 状态机文件取主干版，产品零冲突；app.js sessionEnded 守卫 + pty-echo-matrix.mjs + 0057/0061 机制件入主干）→ 主干复测四绿（gate 20 场景首跑全绿 · smoke 168/0），证据 iterations/0061/{MERGE.md,evidence/}；BK-0045 置 done、**BK-9005 链闭合**（issue#5/#14 关单回执已执）；熔断解除，主干健康，下一轮心跳可正常开工（ready 队列：BK-0061/0062 SPEC 项、BK-0047 待晋升修宪轮）
 ```
