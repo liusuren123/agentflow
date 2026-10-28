@@ -242,6 +242,25 @@ phase("工作树基线门禁（起点健康度）");
     }
   }
   if (!gatePassed) {
+    /* 2026-10-28 加固（0060/0062 两轮实发）：成串抖动裁定——工作树与主干同树（分配即
+       自主干 HEAD 零分叉），工作树 3 连红后在主干同树复跑 build+gate：主干绿 = 差异在
+       本机环境侧非内容侧（宪法第 2 条 CI 权威口径的本地同构；两轮实发均为「工作树红
+       ×3 → 数分钟后主干同树全绿」+ 同提交 CI 绿），按「CI 权威豁免」放行开工并全量
+       留档；主干也红 = 真起点损坏，维持熔断不动摇。豁免不弱化任何下游门禁：
+       BUILD/VERIFY 工作树门禁与主干复测照常强制。 */
+    log("工作树基线 3 连红——主干同树裁定（CI 权威豁免口径，0060/0062 实发形态）");
+    const waiverBuild = await runTool(["run", ".", "npm", "run", "build"], 900_000);
+    const waiverGate = waiverBuild.exitCode === 0
+      ? await runTool(["run", ".", "npm", "run", "gate"], 900_000)
+      : null;
+    if (waiverGate !== null && waiverGate.exitCode === 0) {
+      gatePassed = true;
+      log(`CI 权威豁免生效：主干同树门禁全绿（尾行 ${waiverGate.stdout.slice(-60).trim()}），工作树 3 连红判定为本机环境成串抖动（issue#12 形态加重），豁免开工——下游门禁不放宽`);
+    } else {
+      log(`主干同树门禁亦红（build exit=${waiverBuild.exitCode}，gate exit=${waiverGate ? waiverGate.exitCode : "未跑"}）——真起点损坏，维持熔断`);
+    }
+  }
+  if (!gatePassed) {
     await runTool(["remove", MAIN, WT, BRANCH], 120_000);
     await notewriter.ask(
       `工作树基线像素门禁连续 3 次红（迭代 ${ITER} 未开工；已按 issue #12 抖动口径重试 2 次，3 连红按系统性起点损坏处理）：${gateTail}。请把 docs/evolution/STATE.md 的 phase 改为 stuck、last_result 写明该原因。`,
