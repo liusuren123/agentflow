@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0063      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0064      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
-item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
+item: BK-0019       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-26 13:47  # 本次迭代开始时间
-updated: 2026-10-28 13:29  # 最近更新时间
+updated: 2026-10-28 15:01  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0063 未开工——并行路已占满 ready 队列，本轮空转（候选 BACKLOG 项已被并行工作流占位 BK-0062，重试后仍无可选项）
+last_result: 迭代 0064（BK-0019）终态 failed：提交面完整性断言违例——白名单未入提交：apps/server/src/kb/embed.ts、apps/server/src/kb/chunk.ts、apps/server/src/kb/store.ts、apps/server/src/kb/seed.ts、apps/server/src/kb/routes.ts；；全部成果已留档在分支 feat/0064-iter 与工作树（绝不销毁），未并入主干，待下轮续用或人工处置
 ```
