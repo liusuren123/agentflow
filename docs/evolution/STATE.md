@@ -8,7 +8,7 @@ iteration: 0064      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: BK-0019       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-26 13:47  # 本次迭代开始时间
-updated: 2026-10-28 15:01  # 最近更新时间
-repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0064（BK-0019）终态 failed：提交面完整性断言违例——白名单未入提交：apps/server/src/kb/embed.ts、apps/server/src/kb/chunk.ts、apps/server/src/kb/store.ts、apps/server/src/kb/seed.ts、apps/server/src/kb/routes.ts；；全部成果已留档在分支 feat/0064-iter 与工作树（绝不销毁），未并入主干，待下轮续用或人工处置
+updated: 2026-10-28 15:07  # 最近更新时间
+repair_round: 1     # VERIFY→BUILD 修复轮次（上限 2）
+last_result: 迭代 0064（BK-0019）MERGE 收口：前态 failed 系过程性（产品提交 1562a8c 漏申报 kb/ 五模块，留档提交 59f3e31 补齐提交面，成果完整），经协调者授权由 merge-arbiter 合并 feat/0064-iter 入主干；VERIFY-2 复验 PASS 在案（iterations/0064/REPORT.md：BUG-0064-01 修复轮 1 闭环、污染态背靠背两轮 smoke 168/0 幂等、九项 AC 全绿）；主干端到端复测结论与证据见 iterations/0064/MERGE.md——最终记账（iteration+1 / BACKLOG 终态 / metrics 行）归 CLOSE
 ```
