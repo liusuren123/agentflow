@@ -2,7 +2,7 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→B→Z→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→B→KB→Z→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
  * G 组（迭代 0015 / BK-0016）：三实例矩阵——主实例 G01-G04（CRUD/404/limit
@@ -49,6 +49,12 @@
  * pty-sessions.mjs 先例；run 中止级联半面 = PT06 源扫描 + 手动 E2E M5 承载，
  * SPEC D9 定形；编号 PT 系 = BUG-0057-01 修复轮避让 0034 轮既有 termview
  * T01-T03 撞号）。
+ * KB 组（迭代 0064 / BK-0019）：kb 管道后端（ADR-0020）——KB01-KB04 清单契约/
+ * seed 可见性/检索等价（pristine 时 KB_EQ_ANCHORS 基线 deepEqual 零漂移机器锁，
+ * output 事件 = retrieval→jsoncanvas 全保真 JSON 锚面）；KB05-KB11 上传管道
+ * 正负例（201 五键契约 / 切分参数行为锚 500·450·50 / 415·400·413·空文档负例）
+ * + 新语料可检索与同 filename 替换语义；主实例承载（零模型依赖零出站），
+ * 上传目标库名固定 smoke-kb-*（替换语义跨轮幂等；残留属 gitignore 运行时区）。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -125,6 +131,40 @@ const wfTerm = (tpl, name, session, chain) => ({
     ...(chain ? [{ id: 2, fn: 2, fp: 0, tn: 3, tp: 0 }] : []),
   ],
 });
+
+/* KB 组夹具工厂（迭代 0064 / BK-0019 · SPEC §6）：userinput(defv=q) →
+ * retrieval(kb,topk=3,th) → jsoncanvas——数组直 JSON.stringify 经 output 事件
+ * 全保真透出，KB03/KB11 的 hits 深比对锚面（node:done 只携带 out 摘要）。 */
+const wfKb = (kb, q, th, name) => ({
+  name: name || 'smoke-kb-run',
+  nodes: [
+    { id: 1, type: 'userinput', x: 100, y: 100, params: { var: 'question', defv: q } },
+    { id: 2, type: 'retrieval', x: 320, y: 100, params: { kb, topk: 3, th } },
+    { id: 3, type: 'jsoncanvas', x: 540, y: 100, params: {} },
+  ],
+  edges: [
+    { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+    { id: 2, fn: 2, fp: 0, tn: 3, tp: 0 },
+  ],
+});
+
+/* KB03 锚定字面量（SPEC §5 A/B 采集）：改造前基线 dist（2026-10-28 本轮 BUILD
+ * 亲采，18 组 diff 零差异）经 handler 同参映射（topK=20/th=0.02 → ×4 归一 →
+ * th 过滤 → topk=3）后的期望 hits——零漂移机器锁（pristine 分支 deepEqual 用）。 */
+const KB_EQ_ANCHORS = [
+  { kb: '产品手册 v2.3', q: '退货政策 7 天', hits: [
+    { score: 0.5, src: '退货政策 §2.1', text: '商品自签收之日起 7 天内可申请无理由退货，需保持商品及包装完好、不影响二次销售；定制类商品与贴身衣物不支持无理由退货。' },
+    { score: 0.3, src: '配送说明 §1', text: '现货商品 48 小时内发货，偏远地区追加 1-2 天；支持顺丰加急（补差价 15 元），大件商品由第三方物流配送并送上楼。' },
+    { score: 0.21, src: '退货政策 §2.5', text: '退货退款将在质检通过后 3 个工作日内原路退回；优惠券与积分抵扣部分将按原比例退回，运费险可抵扣首重运费。' },
+  ] },
+  { kb: 'FAQ-售前', q: '优惠 券', hits: [
+    { score: 0.37, src: 'FAQ-价格', text: '问：现在有什么优惠？答：新人首单立减 20 元，页面领券可叠加满 300 减 40；以商品详情页展示的活动为准。' },
+    { score: 0.34, src: 'FAQ-企业采购', text: '问：企业采购有优惠吗？答：企业认证后享批量阶梯价与月结账期，50 台以上可联系大客户经理定制方案。' },
+  ] },
+  { kb: '工单历史 2026', q: '退款多久到账', hits: [
+    { score: 0.82, src: '工单 #8842 · 已解决', text: '用户反馈退款未到账：云闪付渠道退款周期较长，财务核查后第 4 个工作日原路退回，已短信告知用户。' },
+  ] },
+];
 
 /* CAP 组期望字面量（迭代 0039 / BK-0049 · SPEC §4.1/§7）：builtin 工具名/描述自
  * TOOL_SPECS（tools.ts:145-158）逐条誊取、服务级描述与 skills 五条自 app.js:105-123
@@ -2050,6 +2090,215 @@ async function main() {
       && appCss6.includes('#term-panel') && appCss6.includes('.tp-body'),
       'PT06', '源码扫描 handlers.ts terminal 段：agentWrite(signal: ctx.ac.signal 透传) + ptySessionActive/activePtyCount/createPtySession 在场 + userWrite/guardedFetch 零混入 + 「PTY 会话功能未启用」字面量在场；前端源锁：app.js #term-panel + nodesLayer 双 dblclick 监听器 + ICON_PATHS 无 terminal 键；app.css tp- 家族在场',
       { expected: 'signal 透传 + 内部 API 三件 + 零 HTTP/出站混入 + 前端三锁', actual: JSON.stringify({ sec: termSec6.length, sig: termSec6.includes('signal: ctx.ac.signal'), apis: ['ptySessionActive(', 'activePtyCount(', 'createPtySession('].every(s => termSec6.includes(s)), noHttp: !termSec6.includes('userWrite(') && !termSec6.includes('guardedFetch('), degrade: termSec6.includes('PTY 会话功能未启用'), panel: appJs6.includes('#term-panel'), dbl: dbl6, noIcon: !appJs6.includes("'terminal':"), css: appCss6.includes('.tp-body') }), ctx: 'apps/server/src/handlers.ts + apps/web/src/{legacy/app.js,app.css} readFileSync 字面扫描' });
+  }
+
+  /* KB 组：知识库管理管道后端（KB01-KB11 · 迭代 0064 / BK-0019 · ADR-0020 ·
+   * SPEC §6）——主实例承载（零模型依赖、零出站、无 MCP env，CAP 组同条件）；
+   * 上传目标库名固定 smoke-kb-*（替换语义保证跨轮重跑幂等：同 (kb,filename)
+   * 重传即整替、计数不膨胀；残留可见于开发库/沙箱，属 gitignore 运行时区——
+   * 零删除端点系 ADR-0020 §8 射程外，SPEC §8.1 如实声明）。raw-text POST 走
+   * 本地 postText（lib.mjs api() 只封装 JSON——零改动，边界规则 :6-8 不破）。 */
+  let kbPristine = false;   /* KB02 判定（恰 12/8/6 时 KB03 收紧为逐位 deepEqual） */
+  const postText = async (urlPath, body, contentType = 'text/plain; charset=utf-8', timeoutMs = 30000) => {
+    const res = await fetch(`${srv.base}${urlPath}`, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* 非 JSON 体 */ }
+    return { status: res.status, json, text, method: 'POST', url: urlPath };
+  };
+  const kbList = () => api(srv.base, 'GET', '/api/v1/kb');
+  const kbOf = (r, name) => (r.json?.kbs ?? []).find((x) => x?.name === name);
+  /* 原生 path 直送（不走 fetch/URL 规范化）：`..` 形态经 fetch 会被 WHATWG
+   * URL 按双点段折叠成上级路径（路由 404，服务端白名单收不到）——http.request
+   * options.path 原样发送，验证服务端 NAME_RE 对字面 `..` 段的拒绝面。 */
+  const postTextRaw = (urlPath, body) => new Promise((resolve, reject) => {
+    const u = new URL(srv.base);
+    const req = http.request(
+      { hostname: u.hostname, port: u.port, path: urlPath, method: 'POST',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Length': Buffer.byteLength(body) } },
+      (res) => {
+        let text = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => { text += c; });
+        res.on('end', () => {
+          let json = null;
+          try { json = JSON.parse(text); } catch { /* 非 JSON 体 */ }
+          resolve({ status: res.statusCode, json, text, method: 'POST', url: urlPath });
+        });
+      });
+    req.on('error', reject);
+    req.end(body);
+  });
+  { /* KB01 · kb 清单契约：恒 200；顶层恰一键 {kbs}；每行恰四键（name 非空串 /
+       docs/chunks 非负整数 / updated_at 正整数）；两次调用 deepEqual（确定性）；
+       行序 name 码点升序（跨重启稳定，SPEC §4.2） */
+    const r1 = await kbList();
+    const r2 = await kbList();
+    const kbs1 = r1.json?.kbs;
+    const shapeOk = Array.isArray(kbs1) && kbs1.length > 0 && kbs1.every((x) =>
+      deepEqual(Object.keys(x).sort(), ['chunks', 'docs', 'name', 'updated_at'])
+      && typeof x.name === 'string' && x.name !== ''
+      && Number.isInteger(x.docs) && x.docs >= 0
+      && Number.isInteger(x.chunks) && x.chunks >= 0
+      && Number.isInteger(x.updated_at) && x.updated_at > 0);
+    const names = Array.isArray(kbs1) ? kbs1.map((x) => x.name) : [];
+    const sortedOk = names.every((n, i) => i === 0 || names[i - 1] <= n);
+    C.ok(r1.status === 200 && deepEqual(Object.keys(r1.json ?? {}), ['kbs']) && shapeOk
+      && deepEqual(r1.json, r2.json) && sortedOk,
+      'KB01', 'GET /api/v1/kb → 恒 200；顶层恰一键 {kbs}；每行恰四键 {name,docs,chunks,updated_at}（类型/非空如 SPEC §4.2）；两次调用 deepEqual；行序 name 码点升序',
+      { expected: '200 + 契约形状 + 确定性 + 升序', actual: `${r1.status} rows=${names.length} shape=${shapeOk} stable=${deepEqual(r1.json, r2.json)} sorted=${sortedOk}`, ctx: ctxOf(r1) });
+  }
+  { /* KB02 · seed 播种可见性：kbs 含三固定名且 docs/chunks ≥ 12/8/6（≥ 口径
+       容忍开发库用户追加；恰等时置 pristine 标记供 KB03 收紧，SPEC §6/§8.5） */
+    const r = await kbList();
+    const got = {};
+    for (const [name, min] of [['产品手册 v2.3', 12], ['FAQ-售前', 8], ['工单历史 2026', 6]]) {
+      const row = kbOf(r, name);
+      got[name] = row ? `${row.docs}/${row.chunks}` : 'absent';
+    }
+    kbPristine = got['产品手册 v2.3'] === '12/12' && got['FAQ-售前'] === '8/8' && got['工单历史 2026'] === '6/6';
+    C.ok(Object.values(got).every((v, i) => v !== 'absent' && Number(v.split('/')[0]) >= [12, 8, 6][i] && Number(v.split('/')[1]) >= [12, 8, 6][i]),
+      'KB02', 'seed 播种可见性：清单含三固定名（产品手册 v2.3/FAQ-售前/工单历史 2026）且 docs/chunks ≥ 12/8/6（恰等置 pristine 标记）',
+      { expected: '≥12/12 · ≥8/8 · ≥6/6', actual: JSON.stringify(got), ctx: ctxOf(r) });
+  }
+  { /* KB03 · seed 检索等价回归·命中（AC4 零漂移机器锁）：三库各一固定查询经
+       /api/v1/run（userinput→retrieval(kb,topk=3,th=0.1)→jsoncanvas，output
+       事件 = hits 全保真 JSON）；pristine 时与 KB_EQ_ANCHORS（SPEC §5 改造前
+       基线采集）deepEqual，污染时降级 src 锚（JOURNAL 记档分支） */
+    const results = [];
+    for (const a of KB_EQ_ANCHORS) {
+      const { done, events } = await tRunSse(srv.base, wfKb(a.kb, a.q, 0.1, `smoke-kb-eq`), 'KB03', `retrieval 等价（${a.kb}）`);
+      const output = events.find((e) => e.type === 'output');
+      let hits = null;
+      try { hits = JSON.parse(output?.text ?? 'null'); } catch { hits = null; }
+      results.push({ kb: a.kb, done: done?.ok, hits,
+        exact: deepEqual(hits, a.hits),
+        srcOk: Array.isArray(hits) && hits.length > 0 && a.hits.every((b) => hits.some((h) => h.src === b.src)) });
+    }
+    C.ok(results.every((x) => x.done === true && (kbPristine ? x.exact : x.srcOk)),
+      'KB03', `seed 检索等价回归·命中：三固定库检索输出（score/src/text）与改造前基线${kbPristine ? '逐位 deepEqual（pristine · 零漂移机器锁）' : 'src 集合一致（开发库已污染 · 降级锚，JOURNAL 记档）'}`,
+      { expected: '三库全部一致', actual: JSON.stringify(results.map((x) => ({ kb: x.kb, done: x.done, exact: x.exact, srcOk: x.srcOk }))), ctx: 'POST /api/v1/run（userinput→retrieval→jsoncanvas；output 事件 JSON.parse）' });
+  }
+  { /* KB04 · seed 检索等价回归·未命中：`zzzqqq 无关词` 三库 hits 空
+       （output='[]'）+ node:done out 含「命中 0 条」+ run:done vars.confidence='0' */
+    const results = [];
+    for (const a of KB_EQ_ANCHORS) {
+      const { done, events } = await tRunSse(srv.base, wfKb(a.kb, 'zzzqqq 无关词', 0.1, 'smoke-kb-miss'), 'KB04', `retrieval 未命中（${a.kb}）`);
+      const output = events.find((e) => e.type === 'output');
+      const nd = events.find((e) => e.type === 'node:done' && e.id === 2);
+      results.push({ kb: a.kb, ok: done?.ok, empty: output?.text === '[]',
+        out0: String(nd?.out ?? '').includes('命中 0 条'), conf0: done?.vars?.confidence === '0' });
+    }
+    C.ok(results.every((x) => x.ok === true && x.empty && x.out0 && x.conf0),
+      'KB04', 'seed 检索等价回归·未命中：`zzzqqq 无关词` 三库 hits 空（output="[]"）+ node:done out 含「命中 0 条片段」+ run:done vars.confidence=0',
+      { expected: '三库全空命中', actual: JSON.stringify(results), ctx: 'POST /api/v1/run（userinput→retrieval→jsoncanvas）' });
+  }
+  { /* KB05 · 上传正例：POST smoke-kb-upload filename=sample.md（两段中文正文）
+       → 201；出参恰五键 {ok,kb,filename,bytes,chunks}、chunks ≥ 1；清单含该库
+       且 docs=1、chunks=出参值（清单与入库实况一致性经端点面核，AC1）。
+       独占库名（BUG-0064-01 修复）：绝对计数断言要求本库全轮仅 KB05 触达——
+       原共用 smoke-kb-main 时 KB11 追加 rag.md，第二轮起 docs=2 必 FAIL
+       （fail-fast 连带 KB06-KB11 不执行）；独占 + 同 filename 替换语义 ⇒
+       docs 恒 1、跨轮重跑幂等（SPEC §6 自身声明的兑现）。 */
+    const body5 = '智能体工作流编辑器支持节点拖拽与连线编排，画布层保持命令式实现，静态骨架由 React 承载。\n\n执行后端提供拓扑执行引擎与 SSE 事件流，全部节点参数以 shared 契约为单一事实源。';
+    const up = await postText('/api/v1/kb/smoke-kb-upload/documents?filename=sample.md', body5);
+    const keys5 = up.json ? Object.keys(up.json).sort() : [];
+    const lst = await kbList();
+    const row = kbOf(lst, 'smoke-kb-upload');
+    C.ok(up.status === 201 && deepEqual(keys5, ['bytes', 'chunks', 'filename', 'kb', 'ok'])
+      && up.json?.ok === true && up.json?.kb === 'smoke-kb-upload' && up.json?.filename === 'sample.md'
+      && up.json?.bytes === Buffer.byteLength(body5, 'utf8') && Number.isInteger(up.json?.chunks) && up.json.chunks >= 1
+      && !!row && row.docs === 1 && row.chunks === up.json.chunks,
+      'KB05', '上传正例：POST /kb/smoke-kb-upload/documents?filename=sample.md → 201 出参恰五键 {ok,kb,filename,bytes,chunks}（bytes=UTF-8 字节数、chunks ≥ 1）；随后清单含该库 docs=1、chunks=出参值（独占库绝对计数，跨轮幂等）',
+      { expected: '201 + 五键契约 + 清单一致', actual: `${up.status} ${up.text.slice(0, 120)} | list=${JSON.stringify(row)}`, ctx: ctxOf(up) });
+  }
+  { /* KB06 · 切分参数行为锚（SPEC §3.2 边界例锁定 500/450/50）：①1200 字单段
+       （无空行）上传 long.txt → chunks===3（[0,500)/[450,950)/[900,1200)）；
+       ②两段各 200 字 short.txt → chunks===1（200+1+200=401 ≤ 500 贪心合并） */
+    const up1 = await postText('/api/v1/kb/smoke-kb-chunk/documents?filename=long.txt', '块'.repeat(1200));
+    const up2 = await postText('/api/v1/kb/smoke-kb-chunk/documents?filename=short.txt', '短'.repeat(200) + '\n\n' + '段'.repeat(200));
+    C.ok(up1.status === 201 && up1.json?.chunks === 3 && up2.status === 201 && up2.json?.chunks === 1,
+      'KB06', '切分参数行为锚：1200 字单段 → chunks=3（硬切步幅 450 / 窗 500 / 尾窗收尾）；两段各 200 字 → chunks=1（段落边界优先贪心合并 ≤500）',
+      { expected: 'chunks 3 / 1', actual: `long=${up1.status}:${up1.json?.chunks} short=${up2.status}:${up2.json?.chunks}`, ctx: ctxOf(up1) });
+  }
+  { /* KB07 · 上传负例 415 族：filename=spec.pdf / spec.docx（后缀白名单外）与
+       Content-Type=application/json（传输形态——全局 JSON 解析器消费）→ 各 415
+       且响应均 { error } 形态（AC2） */
+    const p1 = await postText('/api/v1/kb/smoke-kb-neg/documents?filename=spec.pdf', '内容');
+    const p2 = await postText('/api/v1/kb/smoke-kb-neg/documents?filename=spec.docx', '内容');
+    const p3 = await postText('/api/v1/kb/smoke-kb-neg/documents?filename=spec.txt', JSON.stringify({ a: 1 }), 'application/json');
+    C.ok(p1.status === 415 && p2.status === 415 && p3.status === 415
+      && typeof p1.json?.error === 'string' && typeof p2.json?.error === 'string' && typeof p3.json?.error === 'string',
+      'KB07', '上传负例 415 族：spec.pdf → 415「不支持的文件类型」；spec.docx → 415；Content-Type=application/json → 415 传输形态（附 text/* 直传指引）；响应均 {error} 形态',
+      { expected: '415×3 + {error} 形态', actual: JSON.stringify({ pdf: `${p1.status}:${p1.json?.error}`, docx: `${p2.status}:${p2.json?.error}`, json: `${p3.status}:${p3.json?.error}` }), ctx: ctxOf(p1) });
+  }
+  { /* KB08 · 上传负例 400 族：name 含 `/`（%2F 编码形态）、name=`..`（postTextRaw
+       原样直送——fetch 层会被 URL 规范化折叠，见上注）、name 超长（65 字）、
+       filename 缺失、filename=`../x.txt` 形态 → 各 400 {error}；随后清单零残留
+       （无新库出现——端点可见零残留证明） */
+    const bad = [
+      await postText('/api/v1/kb/a%2Fb/documents?filename=x.txt', '内容'),
+      await postTextRaw('/api/v1/kb/../documents?filename=x.txt', '内容'),
+      await postText(`/api/v1/kb/${'a'.repeat(65)}/documents?filename=x.txt`, '内容'),
+      await postText('/api/v1/kb/smoke-kb-neg/documents', '内容'),
+      await postText('/api/v1/kb/smoke-kb-neg/documents?filename=..%2Fx.txt', '内容'),
+    ];
+    const lst8 = await kbList();
+    const leaked = ['a/b', '..', 'a'.repeat(65), 'smoke-kb-neg'].filter((n) => kbOf(lst8, n));
+    C.ok(bad.every((r) => r.status === 400 && typeof r.json?.error === 'string') && leaked.length === 0,
+      'KB08', '上传负例 400 族：name 含 `/`、name=`..`、name 65 字、filename 缺失、filename=`../x.txt` 形态 → 各 400 {error}；清单零残留（无新库出现）',
+      { expected: '400×5 + 零残留', actual: JSON.stringify({ codes: bad.map((r) => r.status), leaked }), ctx: ctxOf(bad[0]) });
+  }
+  { /* KB09 · 上传负例 413（错误映射器路径）：5 MiB+1 KiB body（text/plain 直传）
+       → entity.too.large 映射 413 且 {error} 形态（AC2①） */
+    const big = 'x'.repeat(5 * 1024 * 1024 + 1024);
+    const p9 = await postText('/api/v1/kb/smoke-kb-big/documents?filename=big.txt', big);
+    C.ok(p9.status === 413 && typeof p9.json?.error === 'string' && p9.json.error.includes('5 MiB'),
+      'KB09', '上传负例 413：超 5 MiB body（text/plain 直传）→ 413「文件超限：单文件上限 5 MiB」（kbUploadErrorMapper 映射路径，{error} 形态）',
+      { expected: '413 + 超限字面量', actual: `${p9.status} ${p9.text.slice(0, 120)}`, ctx: ctxOf(p9) });
+  }
+  { /* KB10 · 空文档 400：空 body 与纯空白 body（"\n\n  \n"）→ 400「文档内容为
+       空或无可切分文本」（如实拒绝，不静默入库）+ 清单零残留 */
+    const e1 = await postText('/api/v1/kb/smoke-kb-empty/documents?filename=e.txt', '');
+    const e2 = await postText('/api/v1/kb/smoke-kb-empty/documents?filename=e.txt', '\n\n  \n');
+    const lst10 = await kbList();
+    C.ok(e1.status === 400 && e1.json?.error === '文档内容为空或无可切分文本'
+      && e2.status === 400 && e2.json?.error === '文档内容为空或无可切分文本'
+      && !kbOf(lst10, 'smoke-kb-empty'),
+      'KB10', '空文档 400：空 body 与纯空白 body → 400「文档内容为空或无可切分文本」；清单零残留（smoke-kb-empty 未出现）',
+      { expected: '400×2 同字面量 + 零残留', actual: JSON.stringify({ e1: `${e1.status}:${e1.json?.error}`, e2: `${e2.status}:${e2.json?.error}`, leaked: !!kbOf(lst10, 'smoke-kb-empty') }), ctx: ctxOf(e1) });
+  }
+  { /* KB11 · 新语料可检索 + 替换语义（AC5/US-1 全链）：上传 rag.md（特征串
+       「量子矩阵融霜冷却协议」）→ run 链 retrieval(kb='smoke-kb-main', th=0.05)
+       查特征串 → 命中 ≥1 且首条 src=`rag.md §1`（src 指向上传 filename）；重传
+       rag.md 为新特征串内容 → 201、清单 docs 不增（同 filename 替换）、旧特征串
+       不再命中、新特征串命中 */
+    const f1 = '量子矩阵融霜冷却协议采用环状液冷微通道设计，冷板覆盖全部计算单元，整机满载温升不超过八摄氏度。';
+    const up1 = await postText('/api/v1/kb/smoke-kb-main/documents?filename=rag.md', f1);
+    const run1 = await tRunSse(srv.base, wfKb('smoke-kb-main', '量子矩阵融霜冷却协议', 0.05, 'smoke-kb-rag'), 'KB11', 'retrieval 命中新语料');
+    let hits1 = null;
+    try { hits1 = JSON.parse(run1.events.find((e) => e.type === 'output')?.text ?? 'null'); } catch { hits1 = null; }
+    const lst1 = await kbList();
+    const docsBefore = kbOf(lst1, 'smoke-kb-main')?.docs;
+    const f2 = '磁悬浮石墨烯散热阵列通过磁悬浮风扇与石墨烯复合均热板实现被动散热，整机关闭状态下仍可快速降温。';
+    const up2 = await postText('/api/v1/kb/smoke-kb-main/documents?filename=rag.md', f2);
+    const lst2 = await kbList();
+    const docsAfter = kbOf(lst2, 'smoke-kb-main')?.docs;
+    const run2 = await tRunSse(srv.base, wfKb('smoke-kb-main', '量子矩阵融霜冷却协议', 0.05, 'smoke-kb-rag'), 'KB11', '旧特征串替换后不命中');
+    const run3 = await tRunSse(srv.base, wfKb('smoke-kb-main', '磁悬浮石墨烯散热阵列', 0.05, 'smoke-kb-rag'), 'KB11', '新特征串命中');
+    const text2 = run2.events.find((e) => e.type === 'output')?.text;
+    let hits3 = null;
+    try { hits3 = JSON.parse(run3.events.find((e) => e.type === 'output')?.text ?? 'null'); } catch { hits3 = null; }
+    C.ok(up1.status === 201 && Array.isArray(hits1) && hits1.length >= 1 && hits1[0]?.src === 'rag.md §1'
+      && up2.status === 201 && docsAfter === docsBefore && text2 === '[]'
+      && Array.isArray(hits3) && hits3.length >= 1 && hits3[0]?.src === 'rag.md §1',
+      'KB11', '新语料可检索 + 替换语义：上传 rag.md → retrieval(kb=smoke-kb-main) 查特征串命中 ≥1 且首条 src=`rag.md §1`；重传 rag.md（新特征串）→ 201、清单 docs 不增（同 filename 整替）、旧特征串零命中、新特征串命中（首条同 src）',
+      { expected: '命中+替换全链', actual: JSON.stringify({ up1: up1.status, n1: hits1?.length, src1: hits1?.[0]?.src, up2: up2.status, docs: `${docsBefore}→${docsAfter}`, oldMiss: text2, n3: hits3?.length, src3: hits3?.[0]?.src }), ctx: ctxOf(up1) });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例

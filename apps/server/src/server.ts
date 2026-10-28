@@ -28,6 +28,9 @@
  *  · POST/GET /api/v1/pty/sessions · GET …/:id/stream · POST …/:id/write ·
  *    POST …/:id/stop → PTY 会话五端点（端点私有 SSE 帧零 shared 契约；pty_audits
  *    全量审计；三闸门生命周期与停机级联，ADR-0014，迭代 0055 / BK-0044）
+ *  · GET  /api/v1/kb → kb 清单（恒 200 只读供数，BK-0047 供数源；索引派生）
+ *  · POST /api/v1/kb/:name/documents → 上传管道：上传→切分→嵌入→入库
+ *    （express.text 承载 raw body 零新依赖；ADR-0020，迭代 0064 / BK-0019）
  *  /api/v1/* 为正式命名空间（ADR-0004/0005），旧 /api/* 为等价别名
  *  （workflows/runs/sessions/capabilities/workbench 为新端点，仅 v1 命名空间）；前端本阶段仍用旧路径。
  *  持久化（ADR-0005）：SSE 事件在序列化单一出口 send() 处「先落库后写网」
@@ -65,6 +68,10 @@ import {
 } from './pty/routes.js';
 import { initPtyAuditStore, closePtyAuditStore } from './pty/audit.js';
 import { abortActivePtySessions, activePtyCount, sweepStalePtySessions } from './pty/session.js';
+import { kbListHandler, kbUploadHandler, kbUploadErrorMapper } from './kb/routes.js';
+import { initKbStore, closeKbStore } from './kb/store.js';
+import { seedKbs } from './kb/seed.js';
+import { initKbIndex } from './kb.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -110,6 +117,14 @@ const ptySwept = sweepStalePtySessions();
 if (ptySwept.count > 0) {
   logger.warn({ count: ptySwept.count, ids: ptySwept.ids.slice(0, 20) }, '启动扫尾：遗留开放 PTY 会话记录已标记 closed');
 }
+
+/* KB 知识库管道（迭代 0064 / BK-0019 · ADR-0020）：同库第二连接自有仓储
+ *（pty/audit.ts 先例，store.ts 主仓储零改动）→ 三固定名语料幂等播种
+ *（kb.ts 常量逐字迁移，既有工作流检索语义不变）→ 索引启动期自 DB 重建。
+ * seed 先于一切 HTTP 面 ⇒ 同进程内 seed 与 upload 无竞态；跨重启幂等。 */
+initKbStore();
+seedKbs();
+initKbIndex();
 
 /* ---------- 状态 ---------- */
 const healthHandler: RequestHandler = (_q, res)=>{
@@ -271,6 +286,12 @@ app.get('/api/v1/pty/sessions', ptyListHandler);
 app.get('/api/v1/pty/sessions/:id/stream', ptyStreamHandler);
 app.post('/api/v1/pty/sessions/:id/write', ptyWriteHandler);
 app.post('/api/v1/pty/sessions/:id/stop', ptyStopHandler);
+/* 迭代 0064 / BK-0019 kb 端点（ADR-0020）：仅注册 v1（沿 ADR-0005：新端点无旧别名）。
+ * 上传走 express.text 内置中间件（type 限 text/*、limit 5mb——零新依赖，
+ * multipart 不采）；错误映射器随路由同栈注册（不加全局错误器）。 */
+app.get('/api/v1/kb', kbListHandler);
+app.post('/api/v1/kb/:name/documents',
+  express.text({ limit: '5mb', type: 'text/*' }), kbUploadHandler, kbUploadErrorMapper);
 
 /* ---------- 优雅停机（ADR-0004：SIGINT/SIGTERM 同径） ---------- */
 const server = app.listen(PORT, ()=>{
@@ -306,6 +327,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   logger.info('优雅停机完成');
   closePtyAuditStore();                              /* PTY 审计先关（时序保证停机 close 审计行已落库） */
+  closeKbStore();                                   /* kb 自有仓储第二连接（PTY 审计同型，先于主仓储） */
   closeStore();                                     /* SQLite 关闭（WAL checkpoint 落盘，ADR-0005） */
   process.exit(0);                                   /* ③ 退出码 0 */
 }
