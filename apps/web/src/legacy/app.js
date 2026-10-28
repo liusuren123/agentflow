@@ -5,7 +5,7 @@ import { SVR, refreshWorkflows, refreshRuns, loadRunDetail, fetchWorkflow, saveW
          deleteWorkflowFromServer, deleteRunFromServer,
          onWorkflowsArrive, onRunsArrive, fmtTs, replayLines, runCardMeta } from '../server-sync.js';
 import { fetchSessionDetail, createSessionOnServer, stopSessionOnServer, refreshSessions,
-         refreshCaps, onCapsArrive } from '../server-sync.js';
+         refreshCaps, onCapsArrive, refreshKbs, onKbsArrive } from '../server-sync.js';
 import { refreshWorkbenchGit } from '../server-sync.js';
 import { refreshWorkbenchDiff } from '../server-sync.js';
 import { refreshWorkbenchTree, fetchWorkbenchTree } from '../server-sync.js';
@@ -661,6 +661,22 @@ onCapsArrive(()=>{
     }
   }
 });
+/* kb 清单到达（BK-0047 / ADR-0021）：回退集（DEFS 合成 o）→ 服务端供数；失败
+   （SVR.kbs=null）静默保持回退集（onCapsArrive 同口径）。重渲染面 = ① retrieval
+   节点 kb combo widget 行（rerenderNode 自带 measurePorts+updateEdgesOf，AGENTS
+   portCache 陷阱内建解）；② 属性面板（选中恰 1 个 retrieval 节点时，scrollTop
+   保持沿 onCapsArrive 先例）。 */
+onKbsArrive(()=>{
+  if(!SVR.kbs) return;
+  state.nodes.forEach(n=>{ if(n.type==='retrieval') rerenderNode(n); });
+  if(sel.nodes.size===1){
+    const n = nodeById([...sel.nodes][0]);
+    if(n && n.type==='retrieval'){
+      const st = $('#props').scrollTop;
+      renderProps(); $('#props').scrollTop = st;
+    }
+  }
+});
 
 /* ----- 设置侧栏 ----- */
 function renderSideSettings(body){
@@ -757,13 +773,18 @@ function renderAll(){
   $('#empty-hint').style.display = state.nodes.length ? 'none':'flex';
   saveLocal();
 }
+/* kb combo 在线供数（BK-0047 / ADR-0021）：SVR.kbs 到达即整表替换选项，
+ * null（离线/失败/未到达）= DEFS 回退集（p.o 原样，零拷贝零漂移）。
+ * 仅 (retrieval, kb) 命中；其余 combo 恒 p.o。 */
+const comboOptionsOf = (node, p) =>
+  (node.type==='retrieval' && p.k==='kb' && SVR.kbs) ? SVR.kbs.kbs.map(x=>x.name) : p.o;
 function widgetHtml(node, p){
   const v = paramsOf(node)[p.k];
   const val = v===undefined||v===null ? '' : v;
   switch(p.t){
     case 'combo':
       return `<div class="wdg"><label title="${esc(p.l)}">${esc(p.l)}</label><div class="ctl">
-        <select data-k="${p.k}">${p.o.map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join('')}</select></div></div>`;
+        <select data-k="${p.k}">${comboOptionsOf(node, p).map(o=>`<option ${o===val?'selected':''}>${esc(o)}</option>`).join('')}</select></div></div>`;
     case 'text':
       return `<div class="wdg"><label title="${esc(p.l)}">${esc(p.l)}</label><div class="ctl">
         <input type="text" data-k="${p.k}" value="${esc(val)}" spellcheck="false"></div></div>`;
@@ -954,9 +975,10 @@ function renderProps(){
   if(sel.nodes.size===1){
     const n = nodeById([...sel.nodes][0]); if(!n) return;
     const def = defOf(n), ps = paramsOf(n);
+    if(n.type==='retrieval') refreshKbs();   /* kb 清单随面板打开时机刷新（BK-0047：fire-and-forget，失败静默保持回退集，非轮询） */
     const rows = (def.params||[]).filter(p=>!p.if||p.if(ps)).map(p=>{
       const v = ps[p.k];
-      if(p.t==='combo') return `<div class="prow"><label>${esc(p.l)}</label><select data-k="${p.k}">${p.o.map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
+      if(p.t==='combo') return `<div class="prow"><label>${esc(p.l)}</label><select data-k="${p.k}">${comboOptionsOf(n, p).map(o=>`<option ${o===v?'selected':''}>${esc(o)}</option>`).join('')}</select></div>`;
       if(p.t==='toggle') return `<div class="prow"><div class="switchline"><label>${esc(p.l)}</label><label class="switch"><input type="checkbox" data-k="${p.k}" ${v?'checked':''}><i></i></label></div></div>`;
       if(p.t==='textarea') return `<div class="prow"><label>${esc(p.l)}</label><textarea data-k="${p.k}" spellcheck="false">${esc(v)}</textarea></div>`;
       if(p.t==='number') return `<div class="prow"><label class="drag-num" title="${esc(p.l)}（拖动调节）">${esc(p.l)}</label><span class="numwrap"><input type="number" data-k="${p.k}" value="${esc(v)}" min="${p.min??0}" max="${p.max??9999}" step="${p.step??1}"><span class="nspin" data-dir="1"><svg viewBox="0 0 8 5"><path d="M0 5l4-5 4 5z" fill="currentColor"/></svg></span><span class="nspin" data-dir="-1"><svg viewBox="0 0 8 5"><path d="M0 0l4 5 4-5z" fill="currentColor"/></svg></span></span></div>`;
@@ -2725,6 +2747,7 @@ viewport.addEventListener('mousemove', e=>{
   renderAll();
   ENGINE.probe();   /* 异步探测后端；成功后追加连接日志并刷新模型下拉 */
   refreshCaps();    /* 能力清单：fire-and-forget，失败静默保持回退集（ADR-0018 §6） */
+  refreshKbs();     /* kb 清单：fire-and-forget，失败静默保持回退集（BK-0047 / ADR-0021） */
   if(fresh){ try{ fitView(); renderAll(); }catch(e){ console.error(e); } }
   if(fresh) addLog('欢迎使用 AgentFlow · 点击画布顶部「▶ 运行」开始执行','sys');
 })();
