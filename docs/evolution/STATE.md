@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0058      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0060      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
-item: BK-0045       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
+item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-26 13:47  # 本次迭代开始时间
-updated: 2026-10-28 06:49  # 最近更新时间
+updated: 2026-10-28 09:05  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0058 成果留在分支 feat/0058-iter（合并对象不存在：feat/0058-iter 与 main 同点 5c9a428，分支 reflog 仅「Created from main」（2026-10-28 05:10:32 +0800）零提交；实跑 git merge --no-ff feat/0058-iter 输出 Already up to date.（exit 0），未产生合并提交；冲突为零、复测四项未跑（无合并产物可测，不伪造）。本轮成果曾实际完成且验收通过，但已被工作流脚本自身回滚销毁：BUILD（actor_5）改过产品代码 apps/server/src/pty/session.ts 与 apps/server/src/handlers.ts（工作树 mimosa 台账 touched 记录，05:45-06:09）；判别矩阵 E2E pty-echo-matrix 实跑 10 passed / 0 failed（A-D 全 echoed=true、C/D 各 2 轮、E6 停止语义正确，满足 0057 REPORT §4.3 的 ≥2 轮闭环要求）；VERIFY 判 PASS（派发词携带非空 commitMessage——脚本仅在验收通过时赋值，草稿 622-624 行）。随后提交阶段失败（分支零提交为证；具体失败子路径在 dwfrun-a7d55ccc 运行日志，本会话不可读），finalState != passed 触发脚本回滚 git reset --hard + git clean -fd（草稿 730-737 行，即工作树 HEAD reflog 06:20:56 条目），全部未提交成果连同 docs/evolution/iterations/0058/ 目录被清除，17 秒后脚本仍照常取锁并派发合并仲裁员且携带过期 commitMessage（草稿 739-783 行）。「成果保留在分支待合并」不成立——分支为空。下一轮须重做 BUILD→VERIFY→提交（productFiles 白名单必须覆盖全部实改文件——BUILD 实改的两个源文件与其仅复现脚本主题的提交信息不符，指向白名单与实际改动错配，系提交面缺陷家族第 5 发：0034/0036/0055/0057 后再现），或从 dwfrun-a7d55ccc 运行日志与 actor_5 会话转录找回实现后再走提交流程；工作流脚本本身需修（回滚不应销毁 VERIFY 已通过的工作；finalState != passed 时不应派发合并仲裁员）。merge.lock 内 pid 47840 已死属常态（wt.mjs 锁由短命工具子进程写入自身 pid），未动，编排者消费本结果后应自行解锁。），未并入主干
+last_result: 迭代 0059（BK-0060 BK-0019 拆分 SPEC 先行：KB 管道后端嵌入存储选型 + 上传/切分/嵌入/入库管道与 kb 清单端点定界 + ADR-0020 草案）终态 done：产品提交 acd3973（docs/adr/0020-kb-pipeline-embedding-storage.md +288/−0 恰 1 路径纯新增，推荐案=纯表扫描 + L1 本地词法嵌入 + 案甲 kb 自有仓储，ADR-0020 §8 明文无需批复）+ 机制件 b90f56f（BK-0019 定界回写 + iterations/0059/{PRD/JOURNAL/REPORT}）已并入主干（合并 dab1278 零冲突，merge-base 0327566 零分叉）；修复轮 1 零产品改动（工作树门禁唯一红 s3-library 经四步取证裁定 issue#12 已知本机渲染瞬态抖动非本轮缺陷，处置按 PRD AC6 预案 + issue#12 纪律交脚本 rerun，JOURNAL §6）；主干复测四项全绿 exit 0（merge-arbiter 实跑，MERGE.md §2）：build ✓ · gate 复跑 20 场景 diffPx=0（首跑 s3 diffPx=21 按口径双留档以复跑为准）· npm test 30/30 · smoke 157/0，证据 docs/evolution/iterations/0059/evidence/（4 PNG + 五日志 + manifest；REPORT PASS 零 BUG / MERGE.md）；BK-0060 置 done（来源 T5 无 issue 无回执义务）、BK-0019 维持 proposed 晋升条件兑现归下轮 PLAN、BK-0047 依赖链解阻、BK-0045（0058 成果被脚本销毁）仍 ready 待重做轮；STATE 复位 idle、iteration 推进 0060
 ```
