@@ -384,8 +384,18 @@ for (;;) {
   `按 WORKFLOW.md §4 的 PLAN 契约（v2）为迭代 ${ITER} 选题。**本轮在隔离工作树中进行，工作树根目录是 ${WT_REL}（分支 ${BRANCH}）——所有文件读写一律使用带 ${WT_REL}/ 前缀的完整路径（例如 PRD 写到 ${PRD_PATH}），绝不要用裸相对路径（那会落到主干），更不要碰主干目录**。先读 ${WT_REL}/docs/evolution/BACKLOG.md、ROADMAP.md、metrics.md 与最近 3 个 ${WT_REL}/docs/evolution/iterations/ 目录，再读下方档案：\n\n${dossier}${claimedNote}\n\n规则：\n① 档案 approved 的 issue：BACKLOG 已有「来源=issue#N」行的不重复建行，仅解除该行备注所载的转 ready 门槛；无行的建 ready 行（优先级 P0，来源=issue#N，备注「已获用户 issue 批复」）。优先选已获批的 ready 项为本轮项（返回 sourceIssue）；所选项即使来源列非 issue#N、但系某获批 issue 解阻的（备注含「issue#N 获批/解阻」字样），同样返回 sourceIssue=N，且该 issue 名下还有未竟姊妹子项时返回 itemContinues=true（迭代 done 只发进度回执、全部子项终轮才不设）；reconstitutional=true 仅当所选项触 UI/需重录 golden（ui-proposal 或触UI=是），纯后端/等价重组织的批复项一律 reconstitutional=false（批复只解除 POLICY 需批准面，不构成重录轮，禁止 gate:update 与 golden 重录）。\n② 档案中 user-request issue 且 BACKLOG 无「issue#N」来源行的：建 proposed 行（P1，来源=issue#N，大小按内容估）；其中触 UI 的不建行，返回 uiIssueNumbers 交脚本转待批准。选题时若选了来源为 issue#N 的项，同样返回 sourceIssue。\n③ 档案 rejected 的 issue：BACKLOG 对应行（若有）状态改 skipped、备注「用户 issue 驳回」。\n④ 常规选题：最高优先 ready 项（优先 S/M；类型 doc 本轮跳过——攒治理日批量处理，ready 全为 doc 时视同枯竭）；枯竭时仅可依侦察档案补题，每个新项必须挂可验证证据指针（文件:行 / 探针输出 / issue 链接），无证据不得立项；仍无候选则返回 outcome=noop（此时不写任何文件、不改 STATE）。\n⑤ 选题后：PRD 写入 ${PRD_PATH}（必含触UI 分类结论与 Given/When/Then 验收标准；S 项免 SPEC 时还须内嵌受影响文件清单与验收口径并返回 skipSpec=true）；把 ${STATE_PATH} 的 phase 改 PLAN、item 填所选 ID、started/updated 填当前时间。批次/分期编排未到终轮时返回 itemContinues=true 且 STATE.item 保持该 ID 跨迭代续填（终轮才置 done，来源 issue 才关单）。\n⑥ BACKLOG 常规项发现触 UI：状态改 pending-approval、备注「转 issue 待批准」，返回 outcome=ui_quarantined 与 uiReason（动机/影响面一句话）。`,
   );
   if (plan.outcome !== "selected") break;
-  const claimOut = await runTool(["claim-item", plan.itemId], 30_000);
-  if (claimOut.exitCode === 0) {
+  /* 2026-10-28 修复（0063 实发）：claim-item 退出码分类——exit 3 = claimed-busy
+     （真被并行路占位 → 重选题）；其他非零 = 工具错误（owner.json 写入瞬时失败等，
+     wt.mjs 已内置写入重试与自建目录撤销）→ 原项重试 claim 至多 3 次，不烧选题
+     重试、不误读为「并行冲突」（0063 三选题连撞空转根因之一）。 */
+  let claimExit = -1;
+  for (let claimTry = 1; claimTry <= 3; claimTry++) {
+    const claimOut = await runTool(["claim-item", plan.itemId], 30_000);
+    claimExit = claimOut.exitCode;
+    if (claimExit === 0 || claimExit === 3) break;
+    log(`claim-item 工具错误（exit=${claimExit}，第 ${claimTry}/3 次）：${claimOut.stderr.slice(0, 120)}`);
+  }
+  if (claimExit === 0) {
     log(`已占位 BACKLOG 项 ${plan.itemId}（并行互斥）`);
     break;
   }

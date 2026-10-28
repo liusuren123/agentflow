@@ -327,7 +327,26 @@ else if (mode === 'claim-item') {
   mkdirSync(path.dirname(dir), { recursive: true });
   try {
     mkdirSync(dir);            /* 原子：已存在则 EEXIST */
-    writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ itemId, at: new Date().toISOString(), pid: process.pid }));
+    /* 2026-10-28 修复（0063 实发）：mkdir 成功后 owner.json 写入在高负载机上可被
+       杀软/索引器瞬时占用抛非 EEXIST 错 → 旧逻辑直接 fail，空目录泄漏且调用方把
+       工具错误误读为「被他路占位」（三选题连撞空转）。修复：写入重试 ×3（60ms
+       间隔）；终败撤销自建目录（防自阻塞泄漏）后按工具错误退出——与 claimed-busy
+       的 exit 3 显式区分，供调用方分类处置。 */
+    let wrote = false;
+    let lastWriteErr = null;
+    for (let i = 0; i < 3 && !wrote; i++) {
+      try {
+        writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ itemId, at: new Date().toISOString(), pid: process.pid }));
+        wrote = true;
+      } catch (werr) {
+        lastWriteErr = werr;
+        if (i < 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60);
+      }
+    }
+    if (!wrote) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* 撤销失败留人工清理 */ }
+      fail(`claim-item owner.json 写入失败（重试 3 次终败，已撤销自建目录）：${lastWriteErr && lastWriteErr.message}`);
+    }
     console.log(`claimed ${itemId}`);
     process.exit(0);
   } catch (err) {
