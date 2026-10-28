@@ -3261,11 +3261,12 @@ async function termAttach(sid){
   TERM.term.onData(data => {
     writePtySession(sid, data).catch(err => termSetStatus('发送失败（' + String(err && err.message || err).slice(0, 30) + '）'));
   });
+  let sessionEnded = false;   /* BUG-0061-01：exit 终态文本不被本地合成 end 帧覆盖（六 reason 终态文本可达） */
   TERM.stream = await openPtyStream(sid, { signal: TERM.abort.signal, onFrame: f => {
     if(f.t === 'data'){ if(TERM.term) TERM.term.write(String(f.data ?? '')); }
     else if(f.t === 'warn') termSetStatus('⚠ ' + String(f.msg ?? ''));
-    else if(f.t === 'exit') termSetStatus('会话已结束（' + String(f.reason ?? '-') + '）');
-    else if(f.t === 'end') termSetStatus('流已结束');
+    else if(f.t === 'exit'){ sessionEnded = true; termSetStatus('会话已结束（' + String(f.reason ?? '-') + '）'); }
+    else if(f.t === 'end'){ if(!sessionEnded) termSetStatus('流已结束'); }
     else if(f.t === 'error') termSetStatus('流中断（' + String(f.msg ?? '-') + '）· 重开面板可恢复回放');   /* BUG-0057-02 修复轮：读循环异常不再静默 */
   }});
   TERM.term.focus();
