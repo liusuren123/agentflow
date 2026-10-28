@@ -8,7 +8,7 @@ iteration: 0060      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-26 13:47  # 本次迭代开始时间
-updated: 2026-10-28 09:05  # 最近更新时间
+updated: 2026-10-28 09:41  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0059（BK-0060 BK-0019 拆分 SPEC 先行：KB 管道后端嵌入存储选型 + 上传/切分/嵌入/入库管道与 kb 清单端点定界 + ADR-0020 草案）终态 done：产品提交 acd3973（docs/adr/0020-kb-pipeline-embedding-storage.md +288/−0 恰 1 路径纯新增，推荐案=纯表扫描 + L1 本地词法嵌入 + 案甲 kb 自有仓储，ADR-0020 §8 明文无需批复）+ 机制件 b90f56f（BK-0019 定界回写 + iterations/0059/{PRD/JOURNAL/REPORT}）已并入主干（合并 dab1278 零冲突，merge-base 0327566 零分叉）；修复轮 1 零产品改动（工作树门禁唯一红 s3-library 经四步取证裁定 issue#12 已知本机渲染瞬态抖动非本轮缺陷，处置按 PRD AC6 预案 + issue#12 纪律交脚本 rerun，JOURNAL §6）；主干复测四项全绿 exit 0（merge-arbiter 实跑，MERGE.md §2）：build ✓ · gate 复跑 20 场景 diffPx=0（首跑 s3 diffPx=21 按口径双留档以复跑为准）· npm test 30/30 · smoke 157/0，证据 docs/evolution/iterations/0059/evidence/（4 PNG + 五日志 + manifest；REPORT PASS 零 BUG / MERGE.md）；BK-0060 置 done（来源 T5 无 issue 无回执义务）、BK-0019 维持 proposed 晋升条件兑现归下轮 PLAN、BK-0047 依赖链解阻、BK-0045（0058 成果被脚本销毁）仍 ready 待重做轮；STATE 复位 idle、iteration 推进 0060
+last_result: 迭代 0060 预检曾熔断 stuck·未开工（无 iterations/0060/ 目录、metrics 无 0060 行；主干零代码改动）：工作树 feat/0060-iter 基线像素门禁 3 连红（含 issue#12 抖动重试 2 次）按系统性起点损坏中止。**协调者复核后复位 idle（stuck 前提证伪）**：①同一提交 c2b21f3 主干门禁 10 分钟后实跑 20/20 全 pass·diffPx=0（含 s3，本会话亲跑）；②同提交 CI run ui-constitution success（c2b21f3 推送亲核）——判本地环境**突发性抖动窗口**（0059 工作流收尾期机器高负载，亚像素栅格化成串劣化，issue#12 形态加重）而非起点损坏；工作树已清理、BK-0045 未被选题无锁，重启迭代即续（若再遭成串抖动拦截，将给基线策略加「CI 权威豁免」：同提交 CI 绿 + 单场景像素级 + DOM 不变量全过 → 放行并留档，周报提请用户）；待重试项 BK-0045（BUG-0057-02 收窄修复 + 矩阵 C/D ≥2 轮闭环 + 补全 0057/0058 机制件，熔断提示在案：再败即同项两连败置 stuck 交用户）
 ```
