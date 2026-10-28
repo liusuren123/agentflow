@@ -676,18 +676,18 @@ if (finalState === "passed") {
   const changed = [...st.staged, ...st.unstaged, ...st.untracked];
   /* 只进 BUILD 申报的 productFiles 白名单（0021 实发：openspec/ 外部骨架曾被全量收口卷进产品提交） */
   const whitelist = builtProductFiles.filter((p) => p !== "" && !p.startsWith("docs/evolution/"));
-  let productPaths = whitelist.length > 0 ? whitelist.filter((p) => changed.includes(p)) : changed.filter((p) => !p.startsWith("docs/evolution/"));
-  if (whitelist.length === 0) log("警告：BUILD 未返回 productFiles，退回全量非 docs/evolution 收口（可能混入外部文件）");
-  /* 2026-10-28 修复（0058 实发）：白名单与实际改动错配（申报路径不存在/实改文件未申报）
-     时交集为空，旧逻辑判「产品提交为空」blocked → 触发销毁式回滚，VERIFY 已通过的全部
-     成果被清除。交集为空但工作区确有非 docs/evolution 改动 → 退回全量收口（与白名单为空
-     同款回退，宁多收不毁证）；提交后完整性断言仍会核对白名单错配并如实标记。 */
-  if (productPaths.length === 0) {
-    const changedNonDocs = changed.filter((p) => !p.startsWith("docs/evolution/"));
-    if (changedNonDocs.length > 0) {
-      productPaths = changedNonDocs;
-      log(`警告：productFiles 白名单与实际改动零交集（疑似漏申报/错配，提交面缺陷家族 0034/0036/0055/0057/0058 第 5+ 发），退回全量非 docs/evolution 收口 ${changedNonDocs.length} 项（完整性断言将在提交后核对）`);
-    }
+  /* 2026-10-28 根治（productFiles 漏申报第 6 发：0034/0036/0055/0057/0058/0064——靠
+     BUILD 申报过滤必漏）：产品提交收口规则改为「产品树文件一律入提交」——changed 中
+     非 docs/evolution 且位于 apps/ packages/ tools/ tests/、根 package*.json、或白名单
+     内的文件全部提交；白名单降级为记录核对用途（完整性断言仍兜底路径错配告警）。
+     外部骨架（openspec/ 等仓库根杂项，0021 实发形态）在产品树外不会被卷入。 */
+  const productPaths = changed.filter((p) =>
+    !p.startsWith("docs/evolution/") &&
+    (/^(apps|packages|tools|tests)\//.test(p) || /^package(-lock)?\.json$/.test(p) || whitelist.includes(p)),
+  );
+  const wlMissed = whitelist.filter((p) => !changed.includes(p));
+  if (wlMissed.length > 0) {
+    log(`提示：productFiles 白名单 ${wlMissed.length} 项在工作区无对应改动（申报笔误或已回退，不影响产品树收口）：${wlMissed.join("、").slice(0, 200)}`);
   }
   const extras = changed.filter((p) => !p.startsWith("docs/evolution/") && !productPaths.includes(p));
   if (extras.length > 0) log(`白名单外改动不进产品提交（留在工作树）：${extras.join("、")}`);
@@ -713,7 +713,9 @@ if (finalState === "passed") {
               openspec/ 等外部骨架在产品树外不受影响）。任一违例即 failed，修复轮补申报重跑。 */
         const lsOut = await runGit(["-C", WT, "ls-tree", "-r", "--name-only", "HEAD"]);
         const committed = new Set(lsOut.stdout.split("\n").map(s => s.trim()).filter(Boolean));
-        const onDiskMissing = whitelist.filter(p => !committed.has(p));
+        /* 2026-10-28 随收口规则根治调整：白名单中确有工作区改动的项必须进了提交
+           （路径错配/大小写/反斜杠兜底）；申报但无实改的项不追（笔误归 wlMissed 提示）。 */
+        const onDiskMissing = whitelist.filter(p => changed.includes(p) && !committed.has(p));
         const st3 = parseJson<{ staged: string[]; unstaged: string[]; untracked: string[] }>(
           (await runTool(["status", WT])).stdout,
           { staged: [], unstaged: [], untracked: [] },
