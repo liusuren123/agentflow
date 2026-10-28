@@ -1,14 +1,15 @@
 /* ================================================================
  *  gate.mjs — UI 宪法门禁（CONSTITUTION.md 第 2 条的执行器）
  *  · 静态托管当前应用（离线模式，天然确定性；不依赖后端）
- *  · 20 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
- *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17/s18/s19 在线态——Playwright 路由拦截 fixture 供数
+ *  · 21 个 golden 场景，双重复核：像素 0 容差 diff + DOM 不变量
+ *    s0~s3 离线静态态；s4/s5/s9/s15/s16/s17/s18/s19/s20 在线态——Playwright 路由拦截 fixture 供数
  *    （probe 的 /api/health + /api/v1 列表），其中 s4/s5（ADR-0009，issue#7 批准）
  *    时区钉死 UTC、s9/s15 溯源迭代 0032/0039、s16 溯源迭代 0036（WB_ROUTES + UTC，
  *    原 s12 撞号改号，时序裁决）、s17 溯源迭代 0054（WB_ROUTES E2 mock + UTC，
  *    diff 审查页，BK-0041）、s18 溯源迭代 0056（WB_ROUTES E3 mock + UTC，
  *    目录树页，BK-0042）、s19 溯源迭代 0057（PTY_ROUTES mock + UTC，
- *    终端面板，BK-0045）；其余 s6~s8、s10~s14 为离线扩展场景
+ *    终端面板，BK-0045）、s20 溯源迭代 0065（KB_ROUTES mock + UTC，retrieval kb
+ *    combo 在线供数，BK-0047 / ADR-0021）；其余 s6~s8、s10~s14 为离线扩展场景
  *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
@@ -526,6 +527,49 @@ const termInv = page => page.evaluate(() => ({
   sessionParam: document.querySelector('.node[data-id="2"] input[data-k="session"]')?.value ?? null,
 }));
 
+/* ---------- s20 retrieval kb combo 在线态场景基建（ADR-0021 · 迭代 0065 / BK-0047 修宪轮） ----------
+   触发形态 = localStorage 预置 trigger→retrieval 最小工作流 + 选中 retrieval 节点
+   （selectNode，s15 caps 同型）；在线态 = KB_ROUTES 路由 fixture 供数（GET /api/v1/kb
+   契约逐键 {kbs:[{name,docs,chunks,updated_at}]}，ADR-0020 §5）。fixture 四行 =
+   seed 三固定名 + kb-gate-ext（fixture 独有名，s15 external caps-ext 先例同型：
+   「供数链到达」的确定性判据——回退集三固定名 ⊄ 判据，多出的第 4 项即到达证明），
+   行序 = 服务端 ORDER BY name UTF-8 码点升序（kb/store.ts listKbStats 确定性口径：
+   FAQ-售前 < kb-gate-ext < 产品手册 v2.3 < 工单历史 2026）。seed 的 kb 参数值刻意取
+   fixture 独有名：回退集渲染期该值无匹配（selectedIndex=-1 闭合空白，既有行为）
+   → 到达后重绘 selected 命中显示「kb-gate-ext」→ 闭合态像素直接呈现「服务端清单
+   可供新库被选中」。updated_at 取 2026-01 整点毫秒配合 timezoneId:'UTC'（WF_ROUTES
+   fixture 字面量纪律；combo 消费面只取 name，四键全形校验仍在）。注册序：health 与
+   kb 两 pattern 全串无重叠，序沿 SESSION_ROUTES 注记纪律。 */
+const KB_FIXTURE = { kbs: [
+  { name: 'FAQ-售前',      docs: 2, chunks: 18, updated_at: 1767225600000 },
+  { name: 'kb-gate-ext',   docs: 1, chunks: 6,  updated_at: 1767312000000 },
+  { name: '产品手册 v2.3', docs: 3, chunks: 42, updated_at: 1767398400000 },
+  { name: '工单历史 2026', docs: 2, chunks: 30, updated_at: 1767225600000 },
+] };
+const KB_ROUTES = [
+  { pattern: '**/api/health', handler: route => route.fulfill({ json: HEALTH_FIXTURE }) },
+  { pattern: '**/api/v1/kb',  handler: route => route.fulfill({ json: KB_FIXTURE }) },
+];
+const KB_WF_SEED = JSON.stringify({ tabs: [{ name: '知识库检索示例', nodes: [
+  { id: 1, type: 'trigger',   x: 40,  y: 330, title: '手动触发' },
+  { id: 2, type: 'retrieval', x: 410, y: 250, title: '知识库检索', params: { kb: 'kb-gate-ext' } },
+], edges: [{ id: 1, fn: 1, fp: 0, tn: 2, tp: 0 }], nextId: 3, view: { x: 60, y: 40, scale: 1 } }], activeTab: 0 });
+/* 就绪探针（状态量非时延量，capsReady 同型）：面板 option 数 === 4 且面板/节点
+   widget 双 select 选中值 === fixture 独有名（面板 + 画布双落 DOM）；超时红即
+   FAIL，不落伪基线 */
+const kbReady = page => page.waitForFunction(
+  () => document.querySelectorAll('#props select[data-k="kb"] option').length === 4
+     && document.querySelector('#props select[data-k="kb"]')?.value === 'kb-gate-ext'
+     && document.querySelector('.node[data-id="2"] select[data-k="kb"]')?.value === 'kb-gate-ext',
+  undefined, { timeout: 10000, polling: 100 });
+/* per-scenario 不变量（公共六键后 spread，s20 唯一新增键组）：面板 option 全文本
+   清单（序 = fixture 序）+ 面板选中值 + widget 行选中值 */
+const kbInv = page => page.evaluate(() => ({
+  kbOptions: [...document.querySelectorAll('#props select[data-k="kb"] option')].map(o => o.textContent),
+  kbSelected: document.querySelector('#props select[data-k="kb"]')?.value ?? null,
+  nodeKbSelected: document.querySelector('.node[data-id="2"] select[data-k="kb"]')?.value ?? null,
+}));
+
 const SCENARIOS = [
   { id: 's0-initial',  steps: [] },
   { id: 's1-select-node', steps: [selectNode('.node[data-id="3"]')] },
@@ -565,6 +609,9 @@ const SCENARIOS = [
   { id: 's19-terminal-panel-online', routes: PTY_ROUTES, timezoneId: 'UTC',
     seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), TERM_WF_SEED),
     steps: [termOpen], ready: termReady, inv: termInv },
+  { id: 's20-retrieval-kb-online', routes: KB_ROUTES, timezoneId: 'UTC',
+    seed: async page => page.evaluate(v => localStorage.setItem('agentflow.v2', v), KB_WF_SEED),
+    steps: [selectNode('.node[data-id="2"]')], ready: kbReady, inv: kbInv },
 ];
 
 const runScenario = async (browser, sc) => {

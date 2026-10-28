@@ -140,6 +140,23 @@ function capShapeOf(j){
 }
 export const fetchCapabilities = () => apiJson('/capabilities').then(capShapeOf);
 
+/* kb 清单（BK-0047 / ADR-0021）：GET /api/v1/kb → { kbs:[{name,docs,chunks,updated_at}] }
+ * 数据层三件套（capabilities 同构）：fetch（apiJson 8s 超时同口径）→ SVR.kbs 缓存
+ * → onKbsArrive 回调。kbShapeOf 纯数据变换（零 DOM，ADR-0006 边界）：契约全字段
+ * 校验，非法抛错 → refreshKbs 捕获 → 前端回退集保持（回退集 = shared DEFS 合成 o
+ * 的既有渲染，app.js 不持字面量，ADR-0003 单一来源）。结构全量缓存：消费面当前只取
+ * name，全形为链末项 BK-0048 与未来 kb 管理面留档。 */
+function kbShapeOf(j){
+  const bad = () => { throw new Error('kb 清单形态非法'); };
+  if(!j || typeof j !== 'object' || !Array.isArray(j.kbs)) bad();
+  for(const kb of j.kbs){
+    if(typeof kb.name !== 'string' || typeof kb.docs !== 'number'
+       || typeof kb.chunks !== 'number' || typeof kb.updated_at !== 'number') bad();
+  }
+  return { kbs: j.kbs.map(kb => ({ name: kb.name, docs: kb.docs, chunks: kb.chunks, updated_at: kb.updated_at })) };
+}
+export const fetchKbList = () => apiJson('/kb').then(kbShapeOf);
+
 /* ---------- 服务端缓存（内存态 —— ADR 4.4；null = 尚未成功拉取过） ---------- */
 export const SVR = {
   wf: null,            // WorkflowSummary[] | null：{id,name,updated_at}
@@ -152,6 +169,8 @@ export const SVR = {
   sessionsErr: false,  // 最近一次会话列表拉取失败 → 恢复列表错误空态
   caps: null,          // {servers,skills} | null：能力清单（BK-0049 / ADR-0018；null=未成功拉取过，前端保持回退集）
   capsErr: false,      // 最近一次能力清单拉取失败（静默降级，无 toast/日志行）
+  kbs: null,           // {kbs:[{name,docs,chunks,updated_at}]} | null：kb 清单（BK-0047 / ADR-0021；null=未成功拉取过，前端保持 DEFS 回退集）
+  kbsErr: false,       // 最近一次 kb 清单拉取失败（静默降级，无 toast/日志行，capsErr 同口径）
   wbGit: null,         // E1 出参 | null：{branch,head,changes,commits}（BK-0040）
   wbGitErr: false,     // 最近一次 git 信息拉取失败 → 工作台错误空态
   wbDiff: null,        // E2 出参 | null：{files:[{path,status,adds,dels,patch}],truncated}（BK-0041 / 迭代 0054）
@@ -161,7 +180,7 @@ export const SVR = {
 };
 
 /* ---------- 按需刷新回调（app.js 注册；容器不在 DOM 时回调自行 no-op） ---------- */
-let wfArrive = null, runsArrive = null, sessionsArrive = null, capsArrive = null;
+let wfArrive = null, runsArrive = null, sessionsArrive = null, capsArrive = null, kbsArrive = null;
 let wbGitArrive = null;   // 工作台 git 信息到达回调（BK-0040）
 let wbDiffArrive = null;  // 工作台 diff 到达回调（BK-0041 / 迭代 0054）
 let wbTreeArrive = null;  // 工作台目录树到达回调（BK-0042 / 迭代 0056）
@@ -169,6 +188,7 @@ export function onWorkflowsArrive(fn){ wfArrive = fn; }
 export function onRunsArrive(fn){ runsArrive = fn; }
 export function onSessionsArrive(fn){ sessionsArrive = fn; }
 export function onCapsArrive(fn){ capsArrive = fn; }
+export function onKbsArrive(fn){ kbsArrive = fn; }
 export function onWorkbenchGitArrive(fn){ wbGitArrive = fn; }
 export function onWorkbenchDiffArrive(fn){ wbDiffArrive = fn; }
 export function onWorkbenchTreeArrive(fn){ wbTreeArrive = fn; }
@@ -194,6 +214,23 @@ export async function refreshCaps(){
   try{ SVR.caps = await fetchCapabilities(); SVR.capsErr = false; }
   catch(_){ SVR.capsErr = true; }
   capsArrive && capsArrive();
+}
+/* kb 清单刷新：fire-and-forget（app.js init / 选中 retrieval 节点时调用）；失败
+ * 静默——SVR.kbs 保持原值、回调不触发（数据未变，无需重绘）。成功且内容有变
+ * （含 null→数据首达）才发 kbsArrive：「仅变更到达」是渲染⇄拉取环的唯一断点
+ * （BUG-0065-01 修复轮）——到达回调 renderProps → renderProps 内又刷新本清单，
+ * 原无条件回调即成 renderProps⇄refreshKbs⇄onKbsArrive 死循环（在线态选中
+ * retrieval 实测 315 次 GET /3s，REPORT §1）；内容比对基于 kbShapeOf 归一化
+ * 输出（键序固定，stringify 比对确定）。不变则不重绘：环必终止，且「数据
+ * 真实变化才重绘」与 ADR-0018 §6 到达语义一致。 */
+export async function refreshKbs(){
+  try{
+    const next = await fetchKbList();
+    const changed = !SVR.kbs || JSON.stringify(SVR.kbs) !== JSON.stringify(next);
+    SVR.kbs = next; SVR.kbsErr = false;
+    if(changed) kbsArrive && kbsArrive();
+  }
+  catch(_){ SVR.kbsErr = true; }
 }
 export async function refreshWorkbenchGit(limit = 20){
   try{ SVR.wbGit = await fetchWorkbenchGit(limit); SVR.wbGitErr = false; }
