@@ -11,6 +11,7 @@
 import type { RequestHandler } from 'express';
 import { TOOL_SPECS } from './tools.js';
 import { BUILTIN_MCP_IDS, buildMcpRegistry, envLoader } from './mcp/registry.js';
+import { composeSources } from './mcp/discovery.js';   /* BK-0014：env 源 + 发现快照组合器（与 inject.ts:37 同型一处替换） */
 
 /* 服务级描述（自 app.js MCP_SERVERS 各条 desc 逐字迁移） */
 const BUILTIN_SERVER_DESC: Record<string, string> = {
@@ -36,7 +37,7 @@ const SKILLS: ReadonlyArray<{ id: string; name: string; desc: string }> = [
  * 一致）。buildMcpRegistry 纯解析零 IO；warn 传 no-op——内置 id 冲突 warn 已由
  * inject 单例在启动期发出（ADR-0012 §6.3），此处静默防双份日志噪音（冲突条目
  * 两侧行为一致：均拒条）。 */
-const registry = buildMcpRegistry(envLoader(), { warn: () => {} });
+const registry = buildMcpRegistry(composeSources(envLoader), { warn: () => {} });
 
 /* builtin 派生：序 = BUILTIN_MCP_IDS 声明序；每服务 tools = TOOL_SPECS 键前缀
  * `${id}.` 的条目按声明序过滤（n=去前缀键名，d=ToolSpec.desc）。 */

@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { logger } from './logger.js';
 import { parseHttpServersSpec, parseStdioServersSpec } from './mcp/registry.js';
+import { parseDiscoverySourcesSpec, parseDiscoveryAllowSpec } from './mcp/discovery.js';
 
 const PKG_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');   // dist/ → apps/server
 
@@ -31,6 +32,7 @@ for(const key of [
   'PORT', 'ALLOW_PRIVATE_NET', 'BOCHA_API_KEY', 'SEARXNG_URL',
   'DEEPSEEK_API_KEY', 'ZHIPU_API_KEY', 'OPENAI_API_KEY', 'MOONSHOT_API_KEY',
   'MCP_HTTP_SERVERS', 'MCP_STDIO_SERVERS',
+  'MCP_DISCOVERY_SOURCES', 'MCP_DISCOVERY_ALLOW',
   'PTY_ENABLED', 'PTY_IDLE_TIMEOUT_MS', 'PTY_MAX_SESSION_MS', 'PTY_MAX_SESSIONS',
   'ON_ERROR', 'ON_ERROR_RETRIES', 'ON_ERROR_RETRY_DELAY_MS',
 ]){
@@ -72,6 +74,16 @@ const EnvSchema = z.object({
   }).optional(),
   MCP_STDIO_SERVERS: z.string().superRefine((v, ctx) => {
     for (const p of parseStdioServersSpec(v).problems) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p });
+  }).optional(),
+  /* 扩展发现器（BK-0014 / ADR-0023 §2.4/§3.2 · issue#16 批复）：扫描源开关与
+   * 激活白名单的静态格式校验（解析实现 = mcp/discovery.ts 两纯函数，复用零
+   * 漂移）；扫描本体在 mcp/discovery.ts 扫描层 fail-open（解析失败不退进程，
+   * 与本层 fail-fast 分层）。未配置 = 零扫描零行为（现状逐位不变）。 */
+  MCP_DISCOVERY_SOURCES: z.string().superRefine((v, ctx) => {
+    for (const p of parseDiscoverySourcesSpec(v).problems) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p });
+  }).optional(),
+  MCP_DISCOVERY_ALLOW: z.string().superRefine((v, ctx) => {
+    for (const p of parseDiscoveryAllowSpec(v).problems) ctx.addIssue({ code: z.ZodIssueCode.custom, message: p });
   }).optional(),
   /* PTY 会话运行时（ADR-0014 §5.5 / 迭代 0055 BK-0044；issue#14 批复）：
    * ENABLED 默认关（ALLOW_PRIVATE_NET 同款 TRUTHY/FALSY 词形）；IDLE 下限
