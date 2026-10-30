@@ -35,7 +35,7 @@ export interface ToolSession {
 const DISCOVER_FAIL_WARN = '外部 MCP server 工具发现失败，已降级为 stub';
 
 /* 全局注册表单例（模块级即建）；httpFetch 注入缝保证发现路径同经 guard 收口。
- * BK-0014：源 = composeSources(envLoader())——env 两源 + 发现快照（零 env 配置
+ * BK-0014：源 = composeSources(envLoader)——env 两源 + 发现快照（零 env 配置
  * 时 composeSources 短路，与现状逐位一致；两 env 未配置 = 空解析零 IO 零副作用）。 */
 const registry: McpRegistry = buildMcpRegistry(composeSources(envLoader), { httpFetch: mcpFetch });
 

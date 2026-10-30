@@ -34,7 +34,8 @@ const SKILLS: ReadonlyArray<{ id: string; name: string; desc: string }> = [
 
 /* 第二注册表实例：mcp/inject.ts:37 单例未导出且 ADR-0018 钦定 mcp/ 目录零改动
  * → 本模块自建同源实例（同一 envLoader()，env 在进程内只读，两实例数据必然
- * 一致）。buildMcpRegistry 纯解析零 IO；warn 传 no-op——内置 id 冲突 warn 已由
+ * 一致）。buildMcpRegistry 本体纯解析零 IO（传入 sources 经 composeSources 含
+ * 启动期一次发现扫描 IO，BK-0014）；warn 传 no-op——内置 id 冲突 warn 已由
  * inject 单例在启动期发出（ADR-0012 §6.3），此处静默防双份日志噪音（冲突条目
  * 两侧行为一致：均拒条）。 */
 const registry = buildMcpRegistry(composeSources(envLoader), { warn: () => {} });
