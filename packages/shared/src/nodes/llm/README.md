@@ -22,6 +22,8 @@
 | 2 | `sys` | 系统提示词 | textarea | 你是智能客服助手，回答需准确、简洁、友好。 | — | 已实现 |
 | 3 | `temp` | 温度 | number | 0.7 | [0–2] step 0.1 | 已实现 |
 | 4 | `max` | 最大 Tokens | number | 2048 | [64–32768] step 64 | 已实现 |
+| 5 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 6 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

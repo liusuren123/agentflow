@@ -19,6 +19,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `lang` | 语言 | combo | Python | Python / JavaScript | 已实现 |
 | 2 | `code` | 代码 | textarea | # 处理输入后返回\nresult = input\nreturn result | — | 已实现 |
+| 3 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 4 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

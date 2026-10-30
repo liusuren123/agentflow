@@ -9,7 +9,8 @@
  *    5s 超时强杀，JSON over stdio 交换数据，服务进程内存不与用户代码共享）
  *  · HTTP / 知识库检索(TF-IDF) / 网页搜索 / Webhook 通知均为真实调用
  *  · 节点失败 on-error 策略：skip（默认，= 下游失活形态）/ retry（指数退避重试）/
- *    abort（run 级 fail-fast）——env 全局承载（BK-0020 / ADR-0022）
+ *    abort（run 级 fail-fast）——env 全局承载（BK-0020 / ADR-0022）+ 节点参数覆盖
+ *    （BK-0048 / ADR-0025，优先序：节点参数（若设）> env 全局默认 > 内建缺省）
  * ================================================================ */
 import { NODE_NAMES, paramDefaultsOf } from '@agentflow/shared';
 import { ABORT_MSG, abortableSleep, isAbort, preview } from './util.js';
@@ -73,20 +74,39 @@ export async function executeWorkflow(ctx: RunCtx): Promise<WorkflowRunResult> {
 
   const mainScope: Scope = { results:new Map(), executed:new Set(), firedEdges:new Set() };
 
-  /* ---- on-error 策略（BK-0020 / ADR-0022 §2/§5）：本层承载「env 全局默认 > 内建
-   * 缺省」两层（节点参数层归 BK-0048，零预写）。三 env 全未配置时 onError='skip' +
-   * retries=0 ≡ 现状行为逐位一致（零强制漂移，硬护栏）。 ---- */
+  /* ---- on-error 策略（BK-0020 / ADR-0022 §2/§5 + BK-0048 / ADR-0025）：本层承载
+   * 「env 全局默认 > 内建缺省」两层，节点参数层由 runNode 内 resolveOnError 逐调用
+   * 解析（优先序写死：节点参数（若设）> env 全局默认 > 内建缺省 skip+0）。三 env
+   * 全未配置 + 全节点哨兵默认时 onError='skip' + retries=0 ≡ 现状行为逐位一致
+   * （零强制漂移，硬护栏）。 ---- */
   const onErrorStrategy = config.onError;   // 'skip' | 'retry' | 'abort'（未配置默认 skip）
   const onErrorRetries = onErrorStrategy === 'retry' ? config.onErrorRetries : 0;   // 重试次数仅 retry 策略消费（ADR-0022 §3）
   const onErrorRetryDelayMs = config.onErrorRetryDelayMs;
   let onErrorAborted = false;   /* abort 策略 run 级独立标志位：不调 ac.abort，stopped 恒保持「用户/停机中止」独占语义（§2.3） */
 
+  /* 节点级 on-error 解析（BK-0048 / ADR-0025 · ADR-0022 §5 优先序写死）：
+   * 节点参数（若设，非哨兵）> env 全局默认 > 内建缺省 skip+0。哨兵/非法值 → env 承接
+   * （fail-safe，不 fail-fast——导入工作流的手改垃圾值亦不中断）；重试次数仅 retry
+   * 语义消费：节点 retry 取节点参数（默认 2，陷阱破解——env=0 不使之退化），env 承接
+   * 取 env 次数；退避基值恒 env-only。 */
+  const ON_ERROR_NODE_MAP: Record<string, 'skip'|'retry'|'abort'> = { '跳过': 'skip', '重试': 'retry', '中止': 'abort' };
+  const clampRetries = (v: unknown) => Math.max(0, Math.min(5, Math.trunc(Number(v) || 0)));
+  function resolveOnError(p: Record<string, unknown>): { strategy: 'skip'|'retry'|'abort'; retries: number } {
+    const nodeStrategy = ON_ERROR_NODE_MAP[String(p.onError ?? '')];   /* noUncheckedIndexedAccess：未知键自然 undefined → 哨兵承接 */
+    const strategy = nodeStrategy ?? onErrorStrategy;
+    const retries = strategy !== 'retry' ? 0
+      : nodeStrategy ? clampRetries(p.onErrorRetries)
+      : onErrorRetries;
+    return { strategy, retries };
+  }
+
   /* 重试宿主（ADR-0022 §4.2）：仅包裹 handler 调用的循环——args 在 runNode 内重建
    * （入参快照不变），不重跑 bypass / node:start；过程经既有 log 事件 lvl:'warn'
    * 通报（零新事件类型）；退避 = abortable sleep 竞速 ac.signal（stop 端点与优雅
-   * 停机在等待期内即时中断，不等待到期）；中止一律原样上抛（策略不截获中止）。 */
-  async function callHandlerWithRetry(handler: NodeHandler, args: HandlerArgs, title: string): Promise<NodeResult> {
-    const maxAttempts = 1 + onErrorRetries;
+   * 停机在等待期内即时中断，不等待到期）；中止一律原样上抛（策略不截获中止）。
+   * retries 由调用点按节点级解析传入（BK-0048 / ADR-0025：env 承接或节点参数）。 */
+  async function callHandlerWithRetry(handler: NodeHandler, args: HandlerArgs, title: string, retries: number): Promise<NodeResult> {
+    const maxAttempts = 1 + retries;
     let lastErr: unknown;
     for(let attempt = 1; attempt <= maxAttempts; attempt++){
       if(ac.signal.aborted) throw Object.assign(new Error(ABORT_MSG), { name:'AbortError' });   // 每次尝试前复查
@@ -124,6 +144,7 @@ export async function executeWorkflow(ctx: RunCtx): Promise<WorkflowRunResult> {
     const p = P(n);
     const title = n.title || meta.name || n.type;
     const effVars = varsOverride || vars;
+    const oe = resolveOnError(p);   /* 节点级 on-error 本节点解析一次（BK-0048）：循环子节点经 sub() 逐调用独立解析（ADR-0022 §2.4） */
     if(n.bypass){
       scope.executed.add(id);
       emit('node:bypass', { id, title });
@@ -138,7 +159,7 @@ export async function executeWorkflow(ctx: RunCtx): Promise<WorkflowRunResult> {
       const args: HandlerArgs = { n, p, def: meta, input, inVals, vars: effVars, scope, emit, iteration,
         approvalWaiters, byId, edges, outEs, inEs, ctx,
         sub: (cid, s2, v2, idx) => runNode(cid, s2, idx, v2) };
-      r = await callHandlerWithRetry((HANDLERS[n.type] || HANDLERS.__pass)!, args, title);
+      r = await callHandlerWithRetry((HANDLERS[n.type] || HANDLERS.__pass)!, args, title, oe.retries);
     }catch(e){
       scope.executed.add(id);
       prog.done++; progress();
@@ -146,13 +167,14 @@ export async function executeWorkflow(ctx: RunCtx): Promise<WorkflowRunResult> {
         emit('node:error', { id, title, message:'已中止' });
         throw e;
       }
-      /* 策略分派点（ADR-0022 §4.1）：skip（默认；retry 耗尽同径）= 既有失活形态
-       * named 化，序列零搬移零行为差；abort = 同一终态序列 + run 级标志位（主循环
-       * 同位检查，失败后停止调度全部后续节点，stopped 语义不被污染，§2.3）。 */
+      /* 策略分派点（ADR-0022 §4.1 + BK-0048 / ADR-0025 节点级解析）：skip（默认；
+       * retry 耗尽同径）= 既有失活形态 named 化，序列零搬移零行为差；abort = 同一
+       * 终态序列 + run 级标志位（主循环同位检查，失败后停止调度全部后续节点，
+       * stopped 语义不被污染，§2.3）。 */
       const message = String((e as Error).message || e);
       emit('node:error', { id, title, message });
       ctx.log.warn({ nodeId: id, title, err: message }, '节点执行失败');
-      if(onErrorStrategy === 'abort') onErrorAborted = true;
+      if(oe.strategy === 'abort') onErrorAborted = true;
       return;
     }
     scope.executed.add(id);

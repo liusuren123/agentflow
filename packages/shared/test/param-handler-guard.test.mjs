@@ -4,7 +4,8 @@
  *  静态提取 apps/server/src/{handlers,llm,agent}.ts 与 engine.ts 的 p.<key>：
  *  handlers.ts 按最近前导 `async <name>(` 方法项归属（无名箭头不匹配，
  *  闭包内 p. 归宿主 handler）；llm.ts / agent.ts 全文件各归 llm / agent；
- *  engine.ts 仅含 `n.type === 'condition'` 守卫的行归 condition。
+ *  engine.ts 仅含 `n.type === 'condition'` 守卫的行归 condition，engine-wide
+ *  跨节点参数键集行（onError/onErrorRetries）归属全部节点类型（迭代 0070）。
  *  正向：提取键 ∈ NODES[owner].params[].k（改名即红）；反向：有而无引用
  *  的键集合恰等于僵尸清单（NDP §6.4）。不硬编码行数/处数/键数。
  *  跨包读源先例：contract.test.mjs:66。
@@ -71,7 +72,11 @@ function extractAgent() {
   return { refs, unattributed };
 }
 
-/* engine.ts：仅含 `n.type === 'condition'` 守卫的行归 condition（唯一 p. 引用 = engine.ts:128） */
+/* engine.ts：仅含 `n.type === 'condition'` 守卫的行归 condition；engine-wide 跨节点
+ * 参数（迭代 0070 / BK-0048 / ADR-0025）：全 21 类统一声明、engine.ts 统一消费——
+ * 行内 p. 引用全属该键集时归属全部节点类型（正向=逐类型存在性断言，漏改任一
+ * node.ts 即红；反向=自然豁免僵尸清单）；混入其他键仍落 unattributed（不静默）。 */
+const ENGINE_WIDE_PARAMS = ['onError', 'onErrorRetries'];
 function extractEngine() {
   const refs = new Map();
   const unattributed = [];
@@ -79,6 +84,8 @@ function extractEngine() {
     const keys = pKeysOf(raw);
     if (!keys.length) continue;
     if (/n\.type === 'condition'/.test(raw)) addRefs(refs, 'condition', keys);
+    else if (keys.every(k => ENGINE_WIDE_PARAMS.includes(k)))
+      for (const type of Object.keys(NODES)) addRefs(refs, type, keys);
     else unattributed.push(raw.trim());
   }
   return { refs, unattributed };
@@ -139,9 +146,11 @@ test('守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反�
   /* 两数分开（AC3）：44 已定义 / 34 已实现 = 总数 − 僵尸数（由清单推导，不硬编码）
      合并自 0033(webshow)+0034(termview) 两路并行：总数 38+2=40，僵尸 6+2=8 → 已实现 32
      0035(jsoncanvas)：总数 40+2=42，僵尸 8+2=10 → 已实现 32 不变
-     0057(terminal)：总数 42+2=44，僵尸 10 不变 → 已实现 34 */
+     0057(terminal)：总数 42+2=44，僵尸 10 不变 → 已实现 34
+     0070(onError/onErrorRetries)：总数 44+21×2=86，僵尸 8 不变 → 已实现 78
+     （engine-wide 双参数经 ENGINE_WIDE_PARAMS 归属全部 21 类型——ADR-0025） */
   const total = Object.values(NODES).reduce((n, d) => n + d.params.length, 0);
-  assert.equal(total, 44, '已定义参数总数应为 44（结构信号，非质量信号）');
+  assert.equal(total, 86, '已定义参数总数应为 86（结构信号，非质量信号）');
   const zombieCount = EXPECTED_ZOMBIES.reduce((n, [, ks]) => n + ks.length, 0);
   const refCount = [...refs.values()].reduce((n, s) => n + s.size, 0);
   assert.equal(

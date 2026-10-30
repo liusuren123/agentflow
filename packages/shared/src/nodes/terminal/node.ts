@@ -25,6 +25,14 @@ export default {
   params: [
     { id: 'cmd', label: '兜底命令', widget: 'text', default: '' },
     { id: 'session', label: '会话绑定', widget: 'text', default: '' },
+    { id: 'onError', label: '失败策略', widget: 'combo',
+      options: [
+        { value: '跟随全局', label: '跟随全局' },
+        { value: '跳过',     label: '跳过' },
+        { value: '重试',     label: '重试' },
+        { value: '中止',     label: '中止' },
+      ], default: '跟随全局' },
+    { id: 'onErrorRetries', label: '重试次数', widget: 'number', default: 2, min: 0, max: 5, step: 1 },
   ],
   binding: { handler: 'terminal', capabilities: { exec: { mode: 'pty' } } },
 } satisfies NodeDefJson;

@@ -17,6 +17,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `eng` | 搜索引擎 | combo | Bing | Bing / Google / 博查 / SearXNG | 已实现 |
 | 2 | `max` | 结果数量 | number | 5 | [1–20] step 1 | 已实现 |
+| 3 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 4 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

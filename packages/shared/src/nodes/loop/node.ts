@@ -17,6 +17,14 @@ export default {
   params: [
     { id: 'max', label: '最大迭代', widget: 'number', default: 10, min: 1, max: 100, step: 1 },
     { id: 'conc', label: '并发执行', widget: 'toggle', default: false },
+    { id: 'onError', label: '失败策略', widget: 'combo',
+      options: [
+        { value: '跟随全局', label: '跟随全局' },
+        { value: '跳过',     label: '跳过' },
+        { value: '重试',     label: '重试' },
+        { value: '中止',     label: '中止' },
+      ], default: '跟随全局' },
+    { id: 'onErrorRetries', label: '重试次数', widget: 'number', default: 2, min: 0, max: 5, step: 1 },
   ],
   binding: { handler: 'loop', capabilities: { data: true } },
 } satisfies NodeDefJson;

@@ -2,8 +2,8 @@
  "view": "translate(60px, 40px) scale(1)",
  "zoom": "100%",
  "nodes": [
-  "1:149,407,300x94",
-  "2:519,327,300x313"
+  "1:149,407,300x147",
+  "2:519,327,300x366"
  ],
  "cssVars": {
   "--bg": "#171718",
@@ -43,7 +43,7 @@
  "counts": {
   "nodes": 2,
   "edges": 1,
-  "widgets": 5,
+  "widgets": 9,
   "ports": 4,
   "tabs": 1
  },

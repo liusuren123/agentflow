@@ -22,6 +22,8 @@ goal 模式智能体：自主工具循环 + 持久会话，可点开进入流式
 | 1 | `model` | 模型 | combo | GLM-4.7 | GLM-4.7 / GLM-4.7-Air / GLM-4.6-Flash / DeepSeek-V4 / GPT-5 / Claude Sonnet 4.5 | 已实现 |
 | 2 | `sys` | 系统提示词 | textarea | 你是通用智能体，围绕用户目标自主推进，工具调用前评估必要性。 | — | 已实现 |
 | 3 | `maxSteps` | 最大步数 | number | 32 | [1–256] step 1 | 已实现 |
+| 4 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 5 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 
