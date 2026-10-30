@@ -15,6 +15,18 @@ export interface NodeResult {
   firePort?: number | null;
 }
 
+/* executeWorkflow 返回值（server.ts runHandler outcome 的数据源）。
+ * ok 语义见 ADR-0022 §4.4（issue#15 批复知悉）：未被中止且未因节点失败中止——
+ * 仅显式配置 ON_ERROR=abort 时节点失败可使 ok=false；未配置/skip/retry 路径
+ * 恒等于 !stopped（既有消费链路 store.ts:302 status 派生自然承接，零改动）。 */
+export interface WorkflowRunResult {
+  ms: number;
+  done: number;
+  outputs: string[];
+  stopped: boolean;
+  ok: boolean;
+}
+
 /* 画布节点 / 边（与 POST /api/run body 同构；宽松形状，未知字段透传） */
 export interface WFNode {
   id: number;
