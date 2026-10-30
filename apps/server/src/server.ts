@@ -67,6 +67,7 @@ import {
   ptyCreateHandler, ptyListHandler, ptyStreamHandler, ptyWriteHandler, ptyStopHandler,
 } from './pty/routes.js';
 import { initPtyAuditStore, closePtyAuditStore } from './pty/audit.js';
+import { initDiscoveryAuditStore, closeDiscoveryAuditStore } from './mcp/discovery-audit.js';   /* BK-0014：扩展发现审计仓储（同库自有连接，store.ts 零改动） */
 import { abortActivePtySessions, activePtyCount, sweepStalePtySessions } from './pty/session.js';
 import { kbListHandler, kbUploadHandler, kbUploadErrorMapper } from './kb/routes.js';
 import { initKbStore, closeKbStore } from './kb/store.js';
@@ -117,6 +118,12 @@ const ptySwept = sweepStalePtySessions();
 if (ptySwept.count > 0) {
   logger.warn({ count: ptySwept.count, ids: ptySwept.ids.slice(0, 20) }, '启动扫尾：遗留开放 PTY 会话记录已标记 closed');
 }
+
+/* 扩展发现审计存储（迭代 0071 / BK-0014 · ADR-0023 §4）：同库自有连接
+ * （pty/audit 同型，store.ts 零改动）。发现扫描本身发生在 mcp/inject.js 模块
+ * 装载期（早于本行），扫描期审计行由 discovery-audit 懒自启兜底先行落库；
+ * 此处显式 init 幂等（DDL IF NOT EXISTS，任意序安全）。 */
+initDiscoveryAuditStore();
 
 /* KB 知识库管道（迭代 0064 / BK-0019 · ADR-0020）：同库第二连接自有仓储
  *（pty/audit.ts 先例，store.ts 主仓储零改动）→ 三固定名语料幂等播种
@@ -327,6 +334,7 @@ async function shutdown(signal: string): Promise<void> {
   }
   logger.info('优雅停机完成');
   closePtyAuditStore();                              /* PTY 审计先关（时序保证停机 close 审计行已落库） */
+  closeDiscoveryAuditStore();                        /* 扩展发现审计连接（先于主仓储，同 PTY 时序不变式） */
   closeKbStore();                                   /* kb 自有仓储第二连接（PTY 审计同型，先于主仓储） */
   closeStore();                                     /* SQLite 关闭（WAL checkpoint 落盘，ADR-0005） */
   process.exit(0);                                   /* ③ 退出码 0 */

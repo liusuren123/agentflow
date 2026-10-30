@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { getModel, providerInfo } from './providers.js';
 import { isStubImpl, TOOL_SPECS } from './tools.js';
 import { buildToolSession } from './mcp/inject.js';
+import { discoveredSysExtension } from './mcp/discovery.js';   /* BK-0014：ALLOW 命中技能/规则正文注入（纯追加，零命中 = ''） */
 import { createSession, appendMessage } from './store.js';
 import { preview, renderIfTemplate, strInput, toStr } from './util.js';
 import type { NodeHandler, WFNode } from './types.js';
@@ -38,7 +39,9 @@ export const agentHandler: NodeHandler = async (ctx, args) => {
   if(contextText) userMsg += `\n\n【参考资料】\n${contextText.slice(0, 6000)}`;
 
   const skills = (n.skills || []) as string[];
-  const sys = (p.sys || '') + (skills.length ? `\n\n你装配了以下技能，可按需运用其方法：${skills.join('、')}` : '');
+  /* BK-0014：尾部纯追加发现技能/规则正文（llm.ts 同型；快照零命中 = ''）。
+   * :48 createSession 落库仍存原始 sys——发现正文不落跨会话存储（ADR-0023 §9.3）。 */
+  const sys = (p.sys || '') + (skills.length ? `\n\n你装配了以下技能，可按需运用其方法：${skills.join('、')}` : '') + discoveredSysExtension();
   const temperature = 0.7;
   const maxOutputTokens = 2048;
   const maxSteps = Math.min(256, Math.max(1, Math.round(Number(p.maxSteps) || 32)));

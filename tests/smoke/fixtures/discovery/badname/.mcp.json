@@ -1,0 +1,6 @@
+{
+  "mcpServers": {
+    "bad.name": { "url": "http://127.0.0.1:9/mcp" },
+    "good-entry": { "url": "http://127.0.0.1:9/mcp" }
+  }
+}

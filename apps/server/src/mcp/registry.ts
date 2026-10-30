@@ -13,6 +13,10 @@
  *  成员 envLoader，不设抽象基类/注册机制。零生产消费方（唯一消费者 =
  *  tests/smoke/mcp-registry.mjs 与 config.ts 纯函数引用）；零生产出站
  *  路径（真实 endpoint 出站收口归 BK-0030 的 guard mcpFetch 注入）。
+ *  BK-0014（迭代 0071 / ADR-0023 §6）：McpRegistrySources v2 append-only
+ *  追加三可选成员（两 raw env 串 + discoveredEntries），envLoader 同步追读
+ *  两 key；buildMcpRegistry 追加 discovery 合并臂（重名/非法条目 warn+拒该
+ *  条、永不走抛错通道——扫描层 fail-open 分层）。v1 成员与既有语义零改动。
  * ================================================================ */
 import { createHttpMcpConnection } from './http.js';
 import { createStdioMcpConnection } from './stdio.js';
@@ -33,8 +37,14 @@ export const BUILTIN_MCP_IDS: readonly string[] = ['filesystem', 'fetch', 'sqlit
 /* 冲突 warn 固定子串锚 = 前 14 字「外部 MCP 注册名与内置 id 冲突」（SPEC §2.2；冒烟 MR05/MR06 断言面） */
 const CONFLICT_WARN = '外部 MCP 注册名与内置 id 冲突，已拒绝该注册（内置 id 保留给画布内置 server）';
 
-/* name 合法字符：字母/数字/_/-（覆盖内置 web-search 连字符形态，SPEC §2.1） */
-const NAME_RE = /^[A-Za-z0-9_-]+$/;
+/* discovery 条重名/非法拒绝 warn 固定子串锚 =「已拒绝该 discovery 条」（SPEC §5.8；
+ * 沿 CONFLICT_WARN 固定子串锚先例，冒烟 MC16/MC17 断言面） */
+const DISCOVERY_REJECT_WARN = '发现 MCP 注册条目重名或非法，已拒绝该 discovery 条（保留既有 env/内置条目）';
+
+/* name 合法字符：字母/数字/_/-（覆盖内置 web-search 连字符形态，SPEC §2.1）。
+ * BK-0014：转 export 供 mcp/discovery.ts 扫描层复用同一名称域（唯一字面变化，
+ * 零行为差——本模块内使用处不变）。 */
+export const NAME_RE = /^[A-Za-z0-9_-]+$/;
 
 /* ---- 纯解析（零 IO；config.ts zod 与冒烟直测共用同一实现，SPEC §3.1） ----
  * 规则从窄不猜测（SPEC §2.1）：整值 trim 后为空 = 未配置；逗号分割条目并逐条
@@ -96,16 +106,49 @@ export function parseStdioServersSpec(spec: string): ParseResult<StdioServerEntr
   });
 }
 
-/* ---- BK-0014 loaders 扩展点（ADR §9）：仅函数签名 + v1 唯一成员，不做抽象设施 ---- */
-export interface McpRegistrySources { mcpHttpServers?: string; mcpStdioServers?: string }
+/* ---- BK-0014 loaders 扩展点（ADR §9）：仅函数签名 + 成员 append-only，不做抽象设施 ----
+ * v2（迭代 0071 / ADR-0023 §6.1）追加三可选成员：discoverySources /
+ * discoveryAllow = 两 raw env 串（envLoader 供）；discoveredEntries = 已过
+ * MCP_DISCOVERY_ALLOW 确认的发现条目（mcp/discovery.ts 供，envLoader 不供）。 */
+export interface McpRegistrySources {
+  mcpHttpServers?: string;
+  mcpStdioServers?: string;
+  discoverySources?: string;
+  discoveryAllow?: string;
+  discoveredEntries?: readonly McpServerEntry[];
+}
 export type McpServersLoader = () => McpRegistrySources;
 
-/* v1 loader = env 解析器：读两 key，空串归一为未配置（config.ts rawEnv 同语义）。
- * 后续 .mcp.json / ~/.agents 扫描 loader（BK-0014）届时以新成员加入本签名。 */
+/* v1 loader = env 解析器：读 key，空串归一为未配置（config.ts rawEnv 同语义）。
+ * v2 追加读 MCP_DISCOVERY_SOURCES / MCP_DISCOVERY_ALLOW 两 key（BK-0014；
+ * 既有两行语义零改动）。发现扫描本体在 mcp/discovery.ts（composeSources
+ * 组合器把快照填入 discoveredEntries——本 loader 恒不供该成员）。 */
 export const envLoader: McpServersLoader = () => ({
   mcpHttpServers: process.env.MCP_HTTP_SERVERS || undefined,
   mcpStdioServers: process.env.MCP_STDIO_SERVERS || undefined,
+  discoverySources: process.env.MCP_DISCOVERY_SOURCES || undefined,
+  discoveryAllow: process.env.MCP_DISCOVERY_ALLOW || undefined,
 });
+
+/* discovery 条形状防御校验（BK-0014 · MC17「理论不可达」防御面）：发现条目
+ * 已在扫描层构造合法（mcp/discovery.ts），此处从窄复核——kind 非法 / http
+ * URL 非 http(s) / stdio command 缺失或 args 非 string[] 即拒该条（warn，
+ * 永不抛错：discovery 臂不适用 :122 附近的「理论不可达」抛错通道，SPEC §5.6）。 */
+function discoveredEntryProblem(e: McpServerEntry): string | null {
+  if (e.kind === 'http') {
+    if (!e.serverId || typeof e.url !== 'string') return '字段缺失或类型不符';
+    let u: URL | null = null;
+    try { u = new URL(e.url); } catch { /* 非法 URL */ }
+    if (!u || (u.protocol !== 'http:' && u.protocol !== 'https:')) return 'URL 非法或协议非 http/https';
+    return null;
+  }
+  if (e.kind === 'stdio') {
+    if (!e.serverId || typeof e.command !== 'string' || !e.command.trim()) return 'command 缺失';
+    if (!Array.isArray(e.args) || e.args.some((a) => typeof a !== 'string')) return 'args 须为 string[]';
+    return null;
+  }
+  return 'kind 非法（仅 http|stdio）';
+}
 
 /* ---- 注册表构建（语义层：内置 id 冲突 warn+拒绝该条；格式合法性由 config 前置保证） ---- */
 export interface BuildRegistryOptions {
@@ -126,6 +169,20 @@ export function buildMcpRegistry(sources: McpRegistrySources, opts?: BuildRegist
       warn({ serverId: e.serverId, kind: e.kind }, CONFLICT_WARN);   /* 拒绝该条，进程继续 */
       continue;
     }
+    entries.push(e);
+  }
+  /* BK-0014 discovery 合并臂（ADR-0023 §6.4）：env 条目优先、快照序遍历
+   * discoveredEntries 次之；serverId 与「已接受条目 ∪ BUILTIN_MCP_IDS」重复
+   * 或条目形状非法 → warn + 拒该条、进程不退（AC6/MC16/MC17）。本臂永不走
+   * 上方抛错通道——候选失败已在扫描层消化为空集 + parse-fail 审计行。 */
+  const taken = new Set<string>([...BUILTIN_MCP_IDS, ...entries.map((e) => e.serverId)]);
+  for (const e of sources.discoveredEntries ?? []) {
+    const why = discoveredEntryProblem(e);
+    if (why || taken.has(e.serverId)) {
+      warn({ serverId: e.serverId, kind: e.kind }, DISCOVERY_REJECT_WARN + (why ? `：${why}` : ''));
+      continue;
+    }
+    taken.add(e.serverId);
     entries.push(e);
   }
   return new McpRegistry(entries, opts?.httpFetch);
