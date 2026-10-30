@@ -1,0 +1,38 @@
+{
+  "capturedAt": "2026-10-30T21:29:32.384Z",
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "distDir": "D:\\Projects\\CodeRepo\\agent-workflow\\apps\\web\\dist",
+  "scenes": [
+    {
+      "scene": "01-initial",
+      "file": "01-initial.png",
+      "bytes": 92168,
+      "renderedNodes": 35,
+      "sha256": "45e9f11e35eb8f22705ee7f3601cad462ecc23b6d56b11d459c937ccc750b001"
+    },
+    {
+      "scene": "02-node-selected",
+      "file": "02-node-selected.png",
+      "bytes": 109109,
+      "renderedNodes": 35,
+      "sha256": "5565daa6837e41565f8716edf09d07b017cef397498aeb72cc63b30dfd7c1c5f"
+    },
+    {
+      "scene": "03-settings",
+      "file": "03-settings.png",
+      "bytes": 107251,
+      "renderedNodes": 35,
+      "sha256": "c16db80cc39c22b2979f53888ca6cf868c3bc251ef9a50b6f375ad89fb49f0de"
+    },
+    {
+      "scene": "04-library",
+      "file": "04-library.png",
+      "bytes": 132182,
+      "renderedNodes": 35,
+      "sha256": "cbcfa809581110a048483e842b65a3880753de8ea947e2b77a2d427dab92704f"
+    }
+  ]
+}
