@@ -2,7 +2,7 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→B→KB→Z→OE→OEN→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→B→KB→MEM→Z→OE→OEN→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
  * G 组（迭代 0015 / BK-0016）：三实例矩阵——主实例 G01-G04（CRUD/404/limit
@@ -55,6 +55,19 @@
  * 正负例（201 五键契约 / 切分参数行为锚 500·450·50 / 415·400·413·空文档负例）
  * + 新语料可检索与同 filename 替换语义；主实例承载（零模型依赖零出站），
  * 上传目标库名固定 smoke-kb-*（替换语义跨轮幂等；残留属 gitignore 运行时区）。
+ * MEM 组（迭代 0068 / BK-0018 · ADR-0024 §4.4）：跨 run 记忆工具组——MEM01
+ * 默认关零漂移（mock 实例 MEMORY_ENABLED='' 钉空串 = 未配置语义，防开发者
+ * .env 泄入；请求体 tools 键集零 memory_* + 无 🧠 注入 log + 本轮 token 命名域
+ * 零写入）；MEM02-MEM05 开启实例（MEMORY_ENABLED=1 专用实例，MCP 两 env 空串
+ * 钉值防泄漏；mock 端点 tool_call 两步循环 A02 同通道）：恰三键注入 + 🧠 sys
+ * 锚 + 工具循环形态（node:delta 一次性）/ 跨 run 持久化 + SQLite 直查对账
+ * （memoryRowsOf 只读直查，auditsOf 同款窄口径）/ list 前缀过滤-字典序-分页-
+ * truncated / 负例不崩 run（BUG-0068-05 对齐现实：AI SDK 7 把 execute 异常转为
+ * error tool-result 回灌模型、不传播至 llm catch——3 轮预算耗尽收束，安全核
+ * ok:true/零落库/不截断如实锚定，可观测性缺口另立 backlog）；MEM06
+ * capabilities 零污染（默认关与开启实例双 deepEqual，plain key 前缀派生零命中
+ * 的机器证明）；MEM07 env fail-fast（MEMORY_ENABLED=abc 启动终止退出码 1 且
+ * fatal 日志指明变量名与合法词形，PTY env fail-fast 先例形态）。
  * OE 组（迭代 0069 / BK-0020）：引擎 on-error 策略（ADR-0022 · issue#15 批复）——
  * OE01/OE02 未配置零漂移与 skip 显式等价（主实例 + skip 探针实例：node:error 恰 1
  * 终态、下游失活、run:done ok 不反映失败）；OE03/OE04 retry 耗尽降级与第 3 次成功
@@ -249,6 +262,7 @@ let zSrv = null;        /* Z 组：启动扫尾专用实例（迭代 0019 / BK-0
 let capSrv = null;      /* CAP 组：能力清单第二实例（迭代 0039 / BK-0049，env 注册外部 MCP 条目） */
 let tSrvA = null;       /* T 组探针 A：PTY_ENABLED=1 实例（迭代 0057 / BK-0045） */
 let tSrvB = null;       /* T 组探针 B：PTY_ENABLED=1 + PTY_MAX_SESSIONS=1 实例（T05 满员护栏） */
+let memSrv = null;      /* MEM 组探针：MEMORY_ENABLED=1 实例（迭代 0068 / BK-0018） */
 let oeSrvSkip = null;   /* OE 组探针：ON_ERROR=skip 实例（迭代 0069 / BK-0020，OE02） */
 let oeSrvRetry = null;  /* OE 组探针：ON_ERROR=retry + 计数 mock 实例（OE03/OE04） */
 let oeSrvAbort = null;  /* OE 组探针：ON_ERROR=abort 实例（OE05） */
@@ -314,6 +328,89 @@ function startMockModel() {
           }
           if (c.includes('智能体慢轮')) {            /* 应答前留 4s 中止窗口（A04 stop 竞速） */
             await sleep(4000);                       /* 中止后写失败容忍（与流式支同语义） */
+          }
+          /* MEM 组路由（迭代 0068 / BK-0018 · ADR-0024 §4.4）：标记词与互审/智能体
+           * 路由正交；记忆键以 mem:smoke:<token>: 命名域隔离（token 取自标记词，
+           * 跨轮重跑幂等——upsert 覆盖不膨胀）。tool_call 形状与 A02 同款
+           * （OpenAI chat.completion 标准）；count 参数 = zod 数值（llm.ts
+           * /数量|count/i 派生），offset = 字符串（与 TOOL_SPECS schema 声明一致）。 */
+          const memTokOf = (s) => (s.match(/mem:smoke:([a-z0-9]+):/) ?? [])[1] ?? '';
+          const memToolCall = (name, argsObj) => ({ role: 'assistant', content: null, tool_calls: [
+            { id: 'call_mem', type: 'function', function: { name, arguments: JSON.stringify(argsObj) } },
+          ] });
+          const memToolMsgs = () => (body?.messages ?? []).filter((m) => m?.role === 'tool');
+          const memToolVal = (m) => {   /* 工具结果载值提取（字符串 JSON 或分段数组两形态容忍） */
+            const raw = m?.content;
+            const txt = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw.map((p) => p?.text ?? '').join('') : '';
+            try { return JSON.parse(txt); } catch { return txt; }
+          };
+          if (c.includes('mem03 写入')) {
+            const tok = memTokOf(c);
+            agentJson(hasToolMsg ? { role: 'assistant', content: `记忆写入完成 mem:smoke:${tok}` }
+              : memToolCall('memory_set', { key: `mem:smoke:${tok}:alpha`, value: '跨run记忆值' }),
+              hasToolMsg ? 'stop' : 'tool_calls');
+            return;
+          }
+          if (c.includes('mem03 读取')) {
+            const tok = memTokOf(c);
+            if (hasToolMsg) {
+              const j = memToolVal(memToolMsgs()[memToolMsgs().length - 1]);
+              agentJson({ role: 'assistant', content: `读回:${j && j.found ? j.value : '(未命中)'}` }, 'stop');
+            } else {
+              agentJson(memToolCall('memory_get', { key: `mem:smoke:${tok}:alpha` }), 'tool_calls');
+            }
+            return;
+          }
+          if (c.includes('mem04 备列表')) {
+            const tok = memTokOf(c);
+            const n = memToolMsgs().length;          /* 第 1 轮 set l1 → 第 2 轮 set 域外键 → 第 3 轮终文本（llm 3 轮预算内） */
+            const calls = [
+              memToolCall('memory_set', { key: `mem:smoke:${tok}:l1`, value: '列表甲' }),
+              memToolCall('memory_set', { key: `zz${tok}other`, value: '外域' }),
+            ];
+            agentJson(n < calls.length ? calls[n] : { role: 'assistant', content: '列表备齐' },
+              n < calls.length ? 'tool_calls' : 'stop');
+            return;
+          }
+          if (c.includes('mem04 查列表')) {          /* 两页：offset 0 → offset 1 → 终文本汇总 */
+            const tok = memTokOf(c);
+            const n = memToolMsgs().length;
+            if (n < 2) {
+              agentJson(memToolCall('memory_list', { prefix: `mem:smoke:${tok}:`, count: 1, offset: String(n) }), 'tool_calls');
+            } else {
+              const pages = memToolMsgs().map((m) => {
+                const j = memToolVal(m);
+                return `${(j?.entries ?? []).map((e) => e.key).join(',')}|trunc=${j?.truncated}`;
+              });
+              agentJson({ role: 'assistant', content: `列表页:${pages.join(' ; ')}` }, 'stop');
+            }
+            return;
+          }
+          if (c.includes('mem04 翻页')) {            /* 第三页：offset 2 → 空页 + truncated=false → 终文本 */
+            const tok = memTokOf(c);
+            if (hasToolMsg) {
+              const j = memToolVal(memToolMsgs()[memToolMsgs().length - 1]);
+              agentJson({ role: 'assistant', content: `列表页:${(j?.entries ?? []).map((e) => e.key).join(',')}|trunc=${j?.truncated}` }, 'stop');
+            } else {
+              agentJson(memToolCall('memory_list', { prefix: `mem:smoke:${tok}:`, count: 1, offset: '2' }), 'tool_calls');
+            }
+            return;
+          }
+          const hasTools = Array.isArray(body?.tools) ? body.tools.length > 0   /* BUG-0068-03：AI SDK 7 数组形态，防空数组 truthy 陷阱 */
+            : !!(body?.tools && typeof body.tools === 'object');
+          if (c.includes('mem05 负键')) {            /* 非法 key：恒返 tool_call——AI SDK 7 把 execute 异常转为
+             error tool-result 回灌模型继续循环（不传播至 llm.ts catch 降级通道，BUG-0068-05 探针实证），3 轮预算耗尽 */
+            agentJson(hasTools
+              ? memToolCall('memory_set', { key: 'bad key!', value: 'x' })
+              : { role: 'assistant', content: '负键降级完成' }, hasTools ? 'tool_calls' : 'stop');
+            return;
+          }
+          if (c.includes('mem05 负值')) {            /* value 超 4096 字节：同上，如实 throw 不截断 */
+            const tok = memTokOf(c);
+            agentJson(hasTools
+              ? memToolCall('memory_set', { key: `mem:smoke:${tok}:big`, value: 'x'.repeat(4097) })
+              : { role: 'assistant', content: '负值降级完成' }, hasTools ? 'tool_calls' : 'stop');
+            return;
           }
           let content = '{"verdict":"allow","reason":"mock 允许：符合规范"}';
           if (c.includes('互审驳回')) content = '{"verdict":"deny","reason":"mock 拒绝：内容不合规"}';
@@ -458,6 +555,33 @@ function ptyAuditsOf(sessionId) {
   } finally { db.close(); }
 }
 
+/* ---------- MEM 组基础设施（迭代 0068 / BK-0018 · ADR-0024 §4.4）----------
+ * memory_entries 只读直查（auditsOf/ptyAuditsOf 同款窄口径例外：readonly/
+ * 单表单 SELECT/finally close；表未建视 0 行——默认关实例不建表，先于开启
+ * 实例启动的直查必须容忍表缺失）。LIKE 前缀转义与服务端 likePrefixOf 同构。 */
+function memoryRowsOf(keyPrefix) {
+  const dbFile = path.join(REPO_ROOT, 'data', 'agentflow.db');
+  if (!existsSync(dbFile)) return [];
+  let db = null;
+  try {
+    db = new Database(dbFile, { readonly: true, fileMustExist: true });
+    const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_entries'").get();
+    if (!has) return [];
+    return db.prepare(
+      "SELECT key, value, bytes, created_at, updated_at FROM memory_entries WHERE key LIKE ? ESCAPE '\\' ORDER BY key",
+    ).all(keyPrefix.replace(/[\\%_]/g, (c) => '\\' + c) + '%');
+  } finally { try { if (db) db.close(); } catch { /* 已关闭 */ } }
+}
+function memoryTableExists() {
+  const dbFile = path.join(REPO_ROOT, 'data', 'agentflow.db');
+  if (!existsSync(dbFile)) return false;
+  let db = null;
+  try {
+    db = new Database(dbFile, { readonly: true, fileMustExist: true });
+    return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_entries'").get();
+  } finally { try { if (db) db.close(); } catch { /* 已关闭 */ } }
+}
+
 /* ---------- OE 组基础设施（迭代 0069 / BK-0020 · ADR-0022） ----------
  * 进程内计数 mock 端点：/oe-fail-always 恒失败、/oe-fail-twice 前两次失败第三次
  * 成功；「失败」= 销毁连接（req.socket.destroy()）而非 5xx——http 节点 handler
@@ -527,8 +651,8 @@ async function doCleanup() {
   exited = await Promise.race([srv.exitPromise.then(() => true), sleep(1000).then(() => false)]);
   C.check(exited, 'C04', 'server 子进程已终止（kill → 3s → SIGKILL 兜底）',   /* C04 */
     { expected: 'exit 事件到达', actual: exited ? '已终止' : '未观察到退出' });
-  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组/CAP 组实例同批（迭代 0019/0039）；T 组探针同批（迭代 0057）；OE 组探针同批（迭代 0069） */
-  for (const inst of [mockSrv, minimalSrv, zSrv, capSrv, tSrvA, tSrvB, oeSrvSkip, oeSrvRetry, oeSrvAbort, oeSrvStop, oeSrvB1, oeSrvB2]) {
+  /* G 组实例收尾（迭代 0015；沿 C04 kill 模式，尽力而为不计断言）；Z 组/CAP 组实例同批（迭代 0019/0039）；T 组探针同批（迭代 0057）；OE 组探针同批（迭代 0069）；MEM 探针同批（迭代 0068） */
+  for (const inst of [mockSrv, minimalSrv, zSrv, capSrv, tSrvA, tSrvB, oeSrvSkip, oeSrvRetry, oeSrvAbort, oeSrvStop, oeSrvB1, oeSrvB2, memSrv]) {
     if (!inst) continue;
     try { inst.child.kill(); } catch { /* 已退出 */ }
     let ex = await Promise.race([inst.exitPromise.then(() => true), sleep(3000).then(() => false)]);
@@ -920,11 +1044,13 @@ async function main() {
       'G04', 'POST /sessions/:id/stop（无活动 turn）→ 404 {error:"session turn not found"}',
       { expected: '404 session turn not found', actual: `${g4.status} ${g4.text.slice(0, 80)}`, ctx: ctxOf(g4) });
   }
-  /* mock 实例：AI_BASE_URL 注入显式配置分支（providers.ts 显式优先），宿主密钥不影响 */
+  /* mock 实例：AI_BASE_URL 注入显式配置分支（providers.ts 显式优先），宿主密钥不影响；
+   * MEMORY_ENABLED 钉空串 = 未配置语义（config 空串归一，G09 同款压制先例——防开发者
+   * apps/server/.env 携 MEMORY_ENABLED=1 泄入后 G05 流式正则与 MEM01 默认关断言双红） */
   mockModel = await startMockModel();
   try {
     mockSrv = await startServer(await getFreePort(), {
-      env: { AI_BASE_URL: mockModel.url, AI_API_KEY: 'smoke-mock-key', AI_MODELS: 'MockChat:mock-model', AI_MODEL: 'mock-model' },
+      env: { AI_BASE_URL: mockModel.url, AI_API_KEY: 'smoke-mock-key', AI_MODELS: 'MockChat:mock-model', AI_MODEL: 'mock-model', MEMORY_ENABLED: '' },
     });
   } catch (e) {
     C.fail('G05', 'mock 实例启动（AI_BASE_URL 显式注入）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
@@ -2380,6 +2506,168 @@ async function main() {
       && Array.isArray(hits3) && hits3.length >= 1 && hits3[0]?.src === 'rag.md §1',
       'KB11', '新语料可检索 + 替换语义：上传 rag.md → retrieval(kb=smoke-kb-main) 查特征串命中 ≥1 且首条 src=`rag.md §1`；重传 rag.md（新特征串）→ 201、清单 docs 不增（同 filename 整替）、旧特征串零命中、新特征串命中（首条同 src）',
       { expected: '命中+替换全链', actual: JSON.stringify({ up1: up1.status, n1: hits1?.length, src1: hits1?.[0]?.src, up2: up2.status, docs: `${docsBefore}→${docsAfter}`, oldMiss: text2, n3: hits3?.length, src3: hits3?.[0]?.src }), ctx: ctxOf(up1) });
+  }
+
+  /* MEM 组：跨 run 记忆工具组（MEM01-MEM07 · 迭代 0068 / BK-0018 · ADR-0024 §4.4）
+   * ——MEM01 mock 实例（MEMORY_ENABLED='' 钉未配置语义）；MEM02-MEM05 开启探针
+   * 实例（memSrv）；MEM06 双实例对照；MEM07 env fail-fast 探针（快速退出自清，
+   * 无实例收尾）。记忆键命名域 mem:smoke:<token>:（token 进程内生成）跨轮幂等。 */
+  const memTok = Date.now().toString(36);
+  const wfMem = (marker, name) => ({
+    name: name || `smoke-mem-${marker.replace(/\s+/g, '-').slice(0, 24)}`,
+    nodes: [{ id: 1, type: 'llm', x: 100, y: 100, title: '记忆冒烟', params: { model: 'MockChat' } }],
+    edges: [],
+    inputs: { question: marker },
+  });
+  const memRun = async (base, wf, id, label) => {
+    let sse = null;
+    try { sse = await openSse(base, wf); }
+    catch (e) { C.fail(id, `${label}（openSse）`, { expected: 'SSE 200', actual: String(e?.message ?? e), ctx: `POST /api/v1/run（${wf.name}）` }); throw new SmokeFailError(id); }
+    let done = null;
+    try { done = await sse.waitFor((e) => e.type === 'run:done', 30000); }
+    catch (e) { C.fail(id, `${label}（waitFor run:done）`, { expected: 'run:done', actual: String(e?.message ?? e), ctx: `POST /api/v1/run（${wf.name}）` }); throw new SmokeFailError(id); }
+    await sse.waitEnd(10000);
+    return { sse, done, events: sse.events };
+  };
+  /* 请求 tools 键集提取（BUG-0068-03）：AI SDK 7（ai@^7.0.0）OpenAI 兼容线上
+   * 形态为数组 [{type:'function',function:{name,…}}]（VERIFY 探针实证
+   * toolsIsArray:true、toolsNames 恰三），兼容 object 映射旧形态（防空数组
+   * truthy 陷阱交由调用方语义）。标记词查找扫全消息（BUG-0068-02）：
+   * messages[0] 为 providers 默认 system 提示词，用户标记在 user 消息。 */
+  const memToolsOf = (req) => {
+    const t = req?.tools;
+    if (Array.isArray(t)) return t.map((x) => x?.function?.name ?? x?.name ?? '').filter(Boolean);
+    if (t && typeof t === 'object') return Object.keys(t);
+    return [];
+  };
+  const memReqOf = (requests, from, marker) => requests.slice(from)
+    .find((r) => (r?.messages ?? []).some((m) => String(m?.content ?? '').includes(marker)));
+  { /* MEM01 · 默认关零漂移（AC1）：请求体 tools 键集零 memory_* + 无 🧠 注入 log
+       + 本轮 token 命名域零写入；表存在态只记录不判（共享库跨轮残留属环境态，
+       断言取 token 命名域写入口径——默认关不写任何行） */
+    const reqBefore = mockModel.requests.length;
+    const { done, events } = await memRun(mockSrv.base, wfMem(`mem01 默认关 ${memTok}`, 'smoke-mem-default-off'), 'MEM01', 'llm（默认关实例）');
+    const req = memReqOf(mockModel.requests, reqBefore, 'mem01 默认关');
+    const toolKeys = memToolsOf(req);
+    const memKeys = toolKeys.filter((k) => k.startsWith('memory_'));
+    const injectLog = events.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🧠'));
+    const tokRows = memoryRowsOf(`mem:smoke:${memTok}:`);
+    C.ok(done.ok === true && !!req && toolKeys.length === 0 && memKeys.length === 0
+      && !injectLog && tokRows.length === 0,
+      'MEM01', 'MEMORY_ENABLED 未配置：单 llm 节点 run:done{ok:true}；mock 端点请求体无 tools 键（更无 memory_*）；事件流无 🧠 注入 log；SQLite 直查本轮 token 命名域零写入（零强制漂移：不建表由 server.ts 门控接线承载，表存在态见 actual 记录）',
+      { expected: 'ok:true + tools 零 memory_* + 无 🧠 log + token 域零写入', actual: JSON.stringify({ ok: done.ok, reqFound: !!req, toolKeys, injectLog, tokRows: tokRows.length, tableExists: memoryTableExists() }), ctx: 'mock 实例（MEMORY_ENABLED=\'\' 钉未配置，防开发者 .env 泄入）' });
+  }
+  { /* MEM02 · 开启注入恰三键（AC2）：专用实例 MEMORY_ENABLED=1 → 请求体 tools
+       恰含 memory_get/memory_list/memory_set 三键 + 🧠 sys log 锚 + 工具循环
+       形态（node:delta 一次性，ADR-0024 §4.1 行为特征如实锚定）+ 启动即建表 */
+    try {
+      memSrv = await startServer(await getFreePort(), {
+        env: {
+          AI_BASE_URL: mockModel.url, AI_API_KEY: 'smoke-mock-key', AI_MODELS: 'MockChat:mock-model', AI_MODEL: 'mock-model',
+          MEMORY_ENABLED: '1', MCP_HTTP_SERVERS: '', MCP_STDIO_SERVERS: '',
+        },
+      });
+    } catch (e) {
+      C.fail('MEM02', 'MEM 探针启动（MEMORY_ENABLED=1，MCP 两 env 空串钉值防泄漏）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
+      throw new SmokeFailError('MEM02');
+    }
+    const reqBefore = mockModel.requests.length;
+    const { done, events } = await memRun(memSrv.base, wfMem(`mem02 注入面 mem:smoke:${memTok}:`, 'smoke-mem-inject'), 'MEM02', 'llm（开启实例）');
+    const req = memReqOf(mockModel.requests, reqBefore, 'mem02 注入面');
+    const toolKeys = memToolsOf(req).sort();
+    const injectLog = events.find((e) => e.type === 'log' && e.lvl === 'sys' && String(e.msg ?? '').includes('🧠'));
+    const deltas = events.filter((e) => e.type === 'node:delta');
+    C.ok(done.ok === true && deepEqual(toolKeys, ['memory_get', 'memory_list', 'memory_set'])
+      && !!injectLog && String(injectLog.msg).includes('🧠 跨 run 记忆 ×3 已注入')
+      && deltas.length === 1 && memoryTableExists(),
+      'MEM02', 'MEMORY_ENABLED=1：mock 请求体 tools 键集恰 [memory_get,memory_list,memory_set]（零 mcp 选择时注入即全部工具面）；注入 sys log「🧠 跨 run 记忆 ×3 已注入」出现在 run 事件流；node:delta 恰 1 条（工具循环形态，纯流式打字机不再——ADR-0024 §4.1 声明行为）；开启实例启动后 memory_entries 表在库（门控建表）',
+      { expected: '恰三键 + 🧠 锚 + delta×1 + 表已建', actual: JSON.stringify({ ok: done.ok, toolKeys, inject: injectLog?.msg, deltas: deltas.length, tableExists: memoryTableExists() }), ctx: `memSrv（MEMORY_ENABLED=1）POST /api/v1/run` });
+  }
+  { /* MEM03 · 跨 run 持久化 + SQLite 直查对账（AC3）：run1 memory_set → run2
+       memory_get 读回同值（不同工作流）；memory_entries 行键值对账 */
+    const { done: wDone, events: wEvents } = await memRun(memSrv.base, wfMem(`mem03 写入 mem:smoke:${memTok}:`, 'smoke-mem-write'), 'MEM03', 'run1 memory_set');
+    const rows1 = memoryRowsOf(`mem:smoke:${memTok}:`);
+    const alpha1 = rows1.find((r) => r.key === `mem:smoke:${memTok}:alpha`);
+    const valBytes = Buffer.byteLength('跨run记忆值');
+    const { done: rDone, events: rEvents } = await memRun(memSrv.base, wfMem(`mem03 读取 mem:smoke:${memTok}:`, 'smoke-mem-read'), 'MEM03', 'run2 memory_get');
+    const outR = String(rEvents.find((e) => e.type === 'node:done')?.out ?? '');
+    C.ok(wDone.ok === true && rDone.ok === true
+      && wEvents.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🔧 工具调用 memory_set'))
+      && rEvents.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🔧 工具调用 memory_get'))
+      && rows1.length === 1 && !!alpha1 && alpha1.value === '跨run记忆值' && alpha1.bytes === valBytes
+      && typeof alpha1.created_at === 'number' && typeof alpha1.updated_at === 'number'
+      && outR.includes('读回:跨run记忆值'),
+      'MEM03', '跨 run 持久化：run1（smoke-mem-write）模型调 memory_set(mem:smoke:<tok>:alpha, 跨run记忆值) → 工具 log「🔧 工具调用 memory_set」；run2（smoke-mem-read，不同工作流）memory_get 读回同值（out 含「读回:跨run记忆值」）；SQLite 直查 memory_entries 恰 1 行且 key/value/bytes(UTF-8)/created_at/updated_at 对账一致',
+      { expected: '读回同值 + 直查 1 行对账', actual: JSON.stringify({ wOk: wDone.ok, rOk: rDone.ok, rows: rows1.map((r) => ({ key: r.key, value: r.value, bytes: r.bytes })), out: outR.slice(0, 60) }), ctx: `memSrv 两次 run（token=${memTok}；memoryRowsOf 只读直查共享库）` });
+  }
+  { /* MEM04 · list 语义（AC4）：前缀过滤 + key 字典序 + count=1/offset 翻页 +
+       truncated 标记如实（域外键 zz<tok>other 不入前缀结果） */
+    const { done: pDone } = await memRun(memSrv.base, wfMem(`mem04 备列表 mem:smoke:${memTok}:`, 'smoke-mem-seed'), 'MEM04', 'memory_set ×2 备列表');
+    const rows = memoryRowsOf(`mem:smoke:${memTok}:`);
+    const { done: lDone, events: lEvents } = await memRun(memSrv.base, wfMem(`mem04 查列表 mem:smoke:${memTok}:`, 'smoke-mem-list'), 'MEM04', 'list 前两页');
+    const outL = String(lEvents.find((e) => e.type === 'node:done')?.out ?? '');
+    /* truncated 公式 = offset+limit < total（ADR-0024 §2.2）：首页 0+1<2=true、
+     * 次页 1+1<2=false（BUG-0068-04：原期望 true 系断言笔误，产品实现正确——
+     * VERIFY 探针 S4 实证 page2 l1|trunc=false）、第三页 2+1<2=false */
+    const page12 = `列表页:mem:smoke:${memTok}:alpha|trunc=true ; mem:smoke:${memTok}:l1|trunc=false`;
+    const { done: oDone, events: oEvents } = await memRun(memSrv.base, wfMem(`mem04 翻页 mem:smoke:${memTok}:`, 'smoke-mem-page3'), 'MEM04', 'list 第三页');
+    const outO = String(oEvents.find((e) => e.type === 'node:done')?.out ?? '');
+    const page3 = '列表页:|trunc=false';
+    C.ok(pDone.ok === true && lDone.ok === true && oDone.ok === true
+      && rows.length === 2 && rows[0]?.key === `mem:smoke:${memTok}:alpha` && rows[1]?.key === `mem:smoke:${memTok}:l1`
+      && outL === page12 && outO === page3,
+      'MEM04', 'list 语义：count=1 + offset 0/1/2 三页——首页恰 1 条（字典序 alpha）且 truncated=true、次页恰 l1 且 truncated=false（offset+limit=total 公式如实）、第三页空且 truncated=false（终文本逐字对账）；域外键 zz<tok>other 被 prefix=mem:smoke:<tok>: 过滤；SQLite 直查恰 2 行且 key BINARY 升序',
+      { expected: `rows=[alpha,l1] 字典序 + 「${page12}」+「${page3}」`, actual: JSON.stringify({ pOk: pDone.ok, rows: rows.map((r) => r.key), outL, outO }), ctx: `memSrv 三次 run（token=${memTok}）` });
+  }
+  { /* MEM05 · 负例不崩 run（AC5 安全核；BUG-0068-05 对齐现实）：非法 key /
+       value 超 4097 字节 → execute 异常被 AI SDK 7 转为 error tool-result 回灌
+       模型继续循环（未传播至 llm.ts 工具循环 catch 降级通道——VERIFY 探针 S5
+       请求流实证），3 轮预算耗尽自然收束 → run:done ok:true；库零污染 */
+    const reqBefore = mockModel.requests.length;
+    const { done: kDone, events: kEvents } = await memRun(memSrv.base, wfMem(`mem05 负键 mem:smoke:${memTok}:`, 'smoke-mem-negkey'), 'MEM05', '非法 key');
+    const { done: vDone, events: vEvents } = await memRun(memSrv.base, wfMem(`mem05 负值 mem:smoke:${memTok}:`, 'smoke-mem-negval'), 'MEM05', 'value 超限');
+    const toolLogK = kEvents.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🔧 工具调用'));
+    const toolLogV = vEvents.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🔧 工具调用'));
+    const degradeK = kEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('工具循环异常'));
+    const degradeV = vEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('工具循环异常'));
+    C.ok(kDone.ok === true && vDone.ok === true
+      && mockModel.requests.length - reqBefore === 6
+      && !toolLogK && !toolLogV && !degradeK && !degradeV
+      && memoryRowsOf(`mem:smoke:${memTok}:`).length === 2,
+      'MEM05', '负例不崩 run（AI SDK 7 工具异常语义如实锚定）：非法 key（含空白）与 value 超 4096 字节各一 run——execute 异常被 AI SDK 7 转为 error tool-result 回灌模型（未传播至 llm.ts 工具循环 catch 降级通道），mock 恒返 tool_call 至 3 轮预算耗尽自然收束：run:done 均 ok:true（不崩）；mock 请求增量恰 6（每 run 3 轮）；事件流零 🔧 工具调用行（异常发生在 impl await 处，先于 emit）且零「工具循环异常」warn（不触发降级）；token 域行数仍 2（负例零落库、不截断不写入）。行为特征与可观测性缺口（负例错误对模型可见但运行日志不可见）已按 BUG-0068-05 处置采 A 补记 PRD/ADR 并另立 backlog 建议',
+      { expected: '两 run ok:true + 请求增量 6（3 轮耗尽×2）+ 零 🔧/零降级 warn + token 域零污染', actual: JSON.stringify({ kOk: kDone.ok, vOk: vDone.ok, reqDelta: mockModel.requests.length - reqBefore, toolLogK, toolLogV, degradeK, degradeV, rows: memoryRowsOf(`mem:smoke:${memTok}:`).length }), ctx: `memSrv 两次负例 run（token=${memTok}；BUG-0068-05 VERIFY 探针 S5 实证语义）` });
+  }
+  { /* MEM06 · capabilities 零污染（AC1/MEM06 同证）：默认关与开启实例 builtin
+       仍五条 deepEqual（plain key 前缀派生零命中的机器证明，CAP_EXPECTED_BUILTIN
+       字面量复用） */
+    const capOff = await api(mockSrv.base, 'GET', '/api/v1/capabilities');
+    const capOn = await api(memSrv.base, 'GET', '/api/v1/capabilities');
+    C.ok(capOff.status === 200 && capOn.status === 200
+      && deepEqual(capOff.json?.mcp?.builtin, CAP_EXPECTED_BUILTIN)
+      && deepEqual(capOn.json?.mcp?.builtin, CAP_EXPECTED_BUILTIN)
+      && deepEqual(capOn.json?.mcp?.external, []),
+      'MEM06', 'GET /api/v1/capabilities：默认关实例与 MEMORY_ENABLED=1 实例的 mcp.builtin 均与 CAP_EXPECTED_BUILTIN 逐字段 deepEqual（memory 三 plain key 不进任何 `${id}.` 前缀派生——端点响应逐字节不变），开启实例 external 仍 []（零 MCP env）',
+      { expected: '双实例 builtin 五条 deepEqual + external []', actual: JSON.stringify({ off: capOff.status, on: capOn.status, onBuiltinIds: capOn.json?.mcp?.builtin?.map((s) => s.id), external: capOn.json?.mcp?.external }), ctx: `GET /api/v1/capabilities ×2（mockSrv / memSrv）` });
+  }
+  { /* MEM07 · env fail-fast（AC6）：MEMORY_ENABLED=abc → 启动终止退出码 1 +
+       fatal 日志指明变量名与合法词形（PTY env fail-fast 先例形态，spawn 快速
+       退出自清——config 模块级装载先于 listen） */
+    const failPort = await getFreePort();
+    const r = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(REPO_ROOT, 'apps', 'server', 'dist', 'server.js')], {
+        cwd: path.join(REPO_ROOT, 'apps', 'server'),
+        env: { ...process.env, PORT: String(failPort), MEMORY_ENABLED: 'abc' },
+        shell: false, stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let out = '';
+      child.stdout.setEncoding('utf8'); child.stdout.on('data', (d) => { out += d; });
+      child.stderr.setEncoding('utf8'); child.stderr.on('data', (d) => { out += d; });
+      const timer = setTimeout(() => { try { child.kill('SIGKILL'); } catch { /* 存活兜底 */ } }, 15000);
+      child.once('exit', (code) => { clearTimeout(timer); resolve({ code, out }); });
+    });
+    C.ok(r.code === 1 && r.out.includes('MEMORY_ENABLED') && r.out.includes('只接受 1/true/yes 或 0/false/no'),
+      'MEM07', 'MEMORY_ENABLED=abc 启动 → 进程以退出码 1 终止（config zod fail-fast），fatal 日志含变量名 MEMORY_ENABLED 与合法词形提示「只接受 1/true/yes 或 0/false/no」',
+      { expected: 'exit 1 + 指明变量名与合法词形', actual: `code=${r.code}，out 尾 200 字=${r.out.slice(-200)}`, ctx: `spawn dist/server.js（PORT=${failPort}，MEMORY_ENABLED=abc）` });
   }
 
   /* Z 组：悬挂 run 启动扫尾（迭代 0019 / BK-0011 · PRD REQ-0011-03 / AC1-AC4）——独立实例

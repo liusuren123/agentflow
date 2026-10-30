@@ -9,6 +9,8 @@ import { getModel, providerInfo } from './providers.js';
 import { isStubImpl, TOOL_SPECS } from './tools.js';
 import { buildToolSession } from './mcp/inject.js';
 import { discoveredSysExtension } from './mcp/discovery.js';   /* BK-0014：ALLOW 命中技能/规则正文注入（纯追加，零命中 = ''） */
+import { config } from './config.js';
+import { mergeMemoryTools } from './memory/tools.js';
 import { isAbort, preview, renderIfTemplate, strInput, toStr } from './util.js';
 import type { NodeHandler, NodeResult, WFNode } from './types.js';
 
@@ -41,6 +43,13 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
   const t0 = Date.now();
   const sess = await buildToolSession(n.mcp, ctx.ac.signal);   /* 三分会话：内置/外部动态/降级 stub（迭代 0025 / BK-0030） */
   const toolImpls = sess.impls;
+  /* 跨 run 记忆注入（BK-0018 / ADR-0024 §4.1）：MEMORY_ENABLED=1 时 env 门控合并三工具
+   * （普通 Map set；绝不借道 tools.ts IMPL / mcp 勾选通道——防任意 run body 携 mcp:{memory:…}
+   * 绕过 env 门禁）。注入先于 size 分派 ⇒ 全部 llm 节点进入工具循环分支（纯流式打字机不再）。 */
+  if (config.memoryEnabled) {
+    const memN = mergeMemoryTools(toolImpls);
+    emit('log', { lvl: 'sys', msg: `🧠 跨 run 记忆 ×${memN} 已注入（MEMORY_ENABLED=1）` });
+  }
   let text = '', tokens = 0, stubCount = 0;
 
   if(toolImpls.size){

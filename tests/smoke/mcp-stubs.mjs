@@ -49,15 +49,24 @@ export async function runMcpChecks(C) {
     try { T = await import(pathToFileURL(DIST_TOOLS).href); } catch (e) { loadErr = e; }
   }
   if (T) {
-    /* M02 · 键集恰为冻结面：TOOL_SPECS 12 键 + IMPL 5 服务器（键漂移即红） */
+    /* M02 · 键集恰为冻结面（BUG-0068-01 扩容口径）：TOOL_SPECS 点前缀键恰为
+     * 冻结 12 键（基准=前端 MCP_SERVERS 注册表）+ plain key 白名单恰三条
+     * （BK-0018 / ADR-0024 §2.1：memory_get/set/list 无点前缀——capabilities
+     * `${id}.` 派生零命中与 tools.ts IMPL 豁免的结构前提，两白名单外漂移即红）
+     * + IMPL 5 服务器（键漂移即红；memory 三工具绝不入 IMPL）。 */
     const specKeys = Object.keys(T.TOOL_SPECS).sort();
     const implKeys = Object.keys(T.IMPL).sort();
     const wantSpec = FROZEN.flatMap((g) => g.tools.map((t) => `${g.server}.${t}`)).sort();
     const wantImpl = FROZEN.map((g) => g.server).sort();
-    C.check(JSON.stringify(specKeys) === JSON.stringify(wantSpec) && JSON.stringify(implKeys) === JSON.stringify(wantImpl),
-      'M02', 'TOOL_SPECS 键集恰为冻结 12 键 且 IMPL 键集恰为 5 服务器（基准=前端 MCP_SERVERS 注册表）',
-      { expected: `TOOL_SPECS=[${wantSpec.join(',')}] IMPL=[${wantImpl.join(',')}]`,
-        actual: `TOOL_SPECS=[${specKeys.join(',')}] IMPL=[${implKeys.join(',')}]`, ctx: 'dist/tools.js 导出面' });
+    const PLAIN_ALLOW = ['memory_get', 'memory_list', 'memory_set'];
+    const dottedKeys = specKeys.filter((k) => k.includes('.'));
+    const plainKeys = specKeys.filter((k) => !k.includes('.'));
+    C.check(JSON.stringify(dottedKeys) === JSON.stringify(wantSpec)
+      && JSON.stringify(plainKeys) === JSON.stringify(PLAIN_ALLOW)
+      && JSON.stringify(implKeys) === JSON.stringify(wantImpl),
+      'M02', 'TOOL_SPECS 点前缀键集恰为冻结 12 键 且 plain key 恰 memory_* 白名单三条（无点前缀=capabilities 派生零命中与 IMPL 豁免的结构前提）且 IMPL 键集恰为 5 服务器（基准=前端 MCP_SERVERS 注册表 + ADR-0024 §2.1）',
+      { expected: `TOOL_SPECS 点前缀=[${wantSpec.join(',')}] + plain=[${PLAIN_ALLOW.join(',')}] IMPL=[${wantImpl.join(',')}]`,
+        actual: `TOOL_SPECS 点前缀=[${dottedKeys.join(',')}] + plain=[${plainKeys.join(',')}] IMPL=[${implKeys.join(',')}]`, ctx: 'dist/tools.js 导出面' });
 
     /* M03 · 三未实现项 desc 均以「（未实现）」开头（逐工具命名；摘标记→红） */
     const noPrefix = UNIMPL

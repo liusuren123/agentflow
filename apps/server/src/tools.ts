@@ -155,6 +155,11 @@ export const TOOL_SPECS: Record<string, ToolSpec> = {
   'browser.navigate':          { desc:'（未实现）打开页面', schema:{ url:'URL' } },
   'browser.click':             { desc:'（未实现）点击元素', schema:{ selector:'选择器' } },
   'browser.screenshot':        { desc:'（未实现）截屏', schema:{} },
+  /* 跨 run 记忆三工具（BK-0018 / ADR-0024 §2）：plain key——capabilities.ts `${id}.` 前缀派生零命中
+   * （端点响应逐字节不变）+ llm.ts 安全名清洗恒等；实现体在 memory/tools.ts，注入 = llm.ts env 门控 merge，绝不入上方 IMPL（防绕过 env 门禁）。 */
+  'memory_get':                { desc:'读取跨 run 记忆中一个键的值（全局共享，未命中返回 found:false 不报错）', schema:{ key:'要读取的键名（1-128 字符，字母数字起头，可含 ._:/-）' } },
+  'memory_set':                { desc:'写入或更新跨 run 记忆（同 key 覆盖更新；value 上限 4096 UTF-8 字节，超限报错不截断；全局共享，后续任何 run 可读回）', schema:{ key:'要写入的键名（1-128 字符，字母数字起头，可含 ._:/-）', value:'要记住的内容' } },
+  'memory_list':               { desc:'列出跨 run 记忆的键（按 key 字典序，可选前缀过滤与翻页）', schema:{ prefix:'可选，按键名前缀过滤', count:'可选，返回条数上限（1-100，默认 50）', offset:'可选，跳过条数（≥0，默认 0）' } },
 };
 
 /* 把节点勾选的 mcp 配置（{serverId:[toolName,...]}）展开为 {toolName: impl} 映射。
