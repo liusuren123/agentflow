@@ -1,0 +1,62 @@
+
+> agentflow@1.0.0 test
+> npm run build:shared && npm run build:server && npm test -w @agentflow/shared
+
+
+> agentflow@1.0.0 build:shared
+> npm run build -w @agentflow/shared
+
+
+> @agentflow/shared@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> agentflow@1.0.0 build:server
+> npm run build -w @agentflow/server
+
+
+> @agentflow/server@1.2.0 build
+> tsc -p tsconfig.json
+
+
+> @agentflow/shared@0.1.0 test
+> node --test
+
+✔ 节点注册表完整：21 种节点，字段齐全 (1.0356ms)
+✔ 端口类型合法 (0.2301ms)
+✔ paramDefaultsOf 与注册表一致（抽样） (0.6999ms)
+✔ SSE 事件契约：全部 15 种事件可解析（真实事件样本回放） (0.992ms)
+✔ 前端 legacy 模块必须从 shared 导入 DEFS（ADR-0003 单一事实源） (1.0854ms)
+✔ DEFS 默认值 86/86 全量断言（字面量期望，防未经 ADR 的漂移） (2.2393ms)
+✔ SSE 事件契约反例：12 条坏样本全部被 validateEvent 拒绝 (1.6411ms)
+✔ 后端 HANDLERS 键集 ⊇ NODES 键集（新增节点缺 handler = 红，堵 engine 静默 __pass 假成功） (516.0202ms)
+✔ D===R：nodes.ts 静态 import 集与 nodes/ 目录集一致，且 D ⊆ keys(NODES) (3.3044ms)
+✔ 引用边界（NDP §2.5）：apps 源文本不直引节点定义子模块 (9.9087ms)
+✔ 守卫：参数键名 ↔ handler 引用一致（正向 ∈ 断言 + 反向僵尸清单精确断言） (3.6178ms)
+✔ 表格回比：21 类型 README 端口/参数表 ⇄ dist node.js 源数据 (21.1772ms)
+✔ 总索引 README：恰 21 行且序 = Object.keys(NODES) (0.9899ms)
+✔ 生成器确定性：temp 重生成 21 份产物与在库一致（幂等回比） (236.2444ms)
+✔ 回归免疫自检：在库 README 无 BOM（前 3 字节非 EF BB BF） (1.4737ms)
+✔ 正例：T1/T2/T3 三模板形状均可解析（NDP §9） (5.8812ms)
+✔ 正例：protocol 缺省兜底为 1（NDP §4.1 可省略） (0.5919ms)
+✔ 负例：未知键 identity.keyword（.strict() 拒绝） (0.923ms)
+✔ 负例：combo default 不在 options 值域 (0.6042ms)
+✔ 负例：number default 超过 max (0.4018ms)
+✔ 负例：参数 id 节点内重复 (0.6847ms)
+✔ 负例：visibleIf.param 悬挂 (0.6474ms)
+✔ 负例：toggle default 非 boolean (0.8153ms)
+✔ 负例：输入端口 id 缺 in- 前缀 (0.6193ms)
+✔ 负例：端口 id 节点内重复 (0.6726ms)
+✔ caps 固定序：llm/agent=[mcp,skill] / code=[mcp] / 其余 18 键无 caps 键 (1.4336ms)
+✔ if 编译产物六行真值表（迁移前语义 = 旧 nodes.ts trigger 的 if 谓词） (0.1988ms)
+✔ 10 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即契约） (0.2263ms)
+✔ 快照常驻比对：NODES 运行时输出与迁移前基线逐字节等价（不变式 A，21 键全量） (1.584ms)
+✔ 可写性常驻断言（app.js 运行期覆写现状，聚合层不得 Object.freeze） (0.1676ms)
+ℹ tests 30
+ℹ suites 0
+ℹ pass 30
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 864.4141

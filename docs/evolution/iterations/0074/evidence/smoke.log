@@ -1,0 +1,208 @@
+
+> agentflow@1.0.0 smoke:server
+> node tests/smoke/smoke-server.mjs
+
+PASS P01 apps/web/dist/index.html 在位
+PASS P02 apps/server/dist/server.js 在位
+PASS M01 apps/server/dist/tools.js 在位（M02-M07、M12-M17 行为断言前提）
+PASS M02 TOOL_SPECS 点前缀键集恰为冻结 12 键 且 plain key 恰 memory_* 白名单三条（无点前缀=capabilities 派生零命中与 IMPL 豁免的结构前提）且 IMPL 键集恰为 5 服务器（基准=前端 MCP_SERVERS 注册表 + ADR-0024 §2.1）
+PASS M03 三未实现项 desc 均以「（未实现）」开头（browser.navigate/browser.click/browser.screenshot）
+PASS M04 九已实现项 desc 均不含「（未实现）」（filesystem.read_file/filesystem.write_file/filesystem.list_directory/fetch.fetch/fetch.download/sqlite.query/sqlite.execute/web-search.search/web-search.news；含 sqlite.query/execute）
+PASS M05 collectTools 三未实现项均挂 stub，直调返回 {error:"not implemented",note:"工具 <s>.<t> 未接入真实实现"}（逐工具 deepEqual）
+PASS M06 collectTools 九已实现项均为真实函数且 isStubImpl===false（filesystem/fetch/sqlite/web-search 全组；sqlite 仅类型面，行为面归 M12-M17）
+PASS M07 三向配对自愈（逐服务器组）：IMPL[srv]===null ⟺ 全组 desc 含前缀 ⟺ collectTools 全组挂 stub（任一向漂移→红）
+PASS M12 sqlite.execute 多语句（建表+2 插入）载荷 deepEqual {changes:2,lastInsertRowid:2} 且无 not implemented（DROP 幂等前置不计 changes）
+PASS M13 sqlite.query 往返：整数列文本化（id 1→"1"）且 {rows:[alice,bob],truncated:false}
+PASS M14 限幅：CTE 插入 105 行 changes=105（顺带验计数）；query 全表 rows.length=100 且 truncated=true；600 字符单元格截断为 512+"…"
+PASS M15 越界七探针：a ATTACH 绝对路径 / b ATTACH 主库 / c 注释+小写 attach / d VACUUM INTO / e PRAGMA temp_store_directory / f load_extension 逐条 throw 且消息含「沙箱」；g 反例 vacuum_log 连写词成功（词边界不误伤）
+PASS M16 计数如实：UPDATE 命中=1 / 未命中=0 / DELETE 定命=1（total_changes 前后差值）
+PASS M17 副产与自清：越界探针文件不存在 + data/agentflow.db 存在性与快照一致 + DROP 后 sqlite_master 计数 {rows:[{c:"0"}],truncated:false} + 探针清理
+PASS M08 源锁 llm.ts：SSE 日志 lvl 路由（stub=warn / 真实=sys）
+PASS M09 源锁 llm.ts：pino 日志级别路由（stub=warn / 真实=info）
+PASS M10 源锁 llm.ts：preview 截断边界（stub=200 / 真实=60，如实 note 不截断）
+PASS M11 源锁 llm.ts：✓ 摘要「（N 未接入）」分项
+PASS H01 GET /api/v1/health → 200 且 ok===true
+PASS W01 PUT /workflows 新建 → 返回非空 id + 数字 updated_at
+PASS W02 PUT /workflows/:id 更新 → 返回 id===路径 id（路径优先）
+PASS W03 GET /workflows 列表含自建 id
+PASS W04 GET /workflows/:id 详情与 W02 所存深相等（name/nodes/edges + updated_at 不回退）
+PASS W05 DELETE /workflows/:id → 200 {ok:true}
+PASS W06 删除后 GET → 404 {error:"workflow not found"}
+PASS W07 再次 DELETE → 404（再删反例）
+PASS W08 GET / → 200、Content-Type 含 text/html、响应体与 apps/web/dist/index.html 逐字相等
+PASS W09 GET /index.html → 200、Content-Type 含 text/html、响应体与 apps/web/dist/index.html 逐字相等
+PASS N01 POST /run nodes 非数组 → 400 {error:"body.nodes 必须是数组"}
+PASS N02 GET /runs?limit=0 → 400
+PASS N03 GET /runs?limit=101 → 400
+PASS CAP01 GET /capabilities → 200；mcp.builtin 与迁移期望字面量全字段 deepEqual（id/name/desc/tools 的 n/d 逐字——无 env 时行为 = 现前端回退集等价，双源收口）
+PASS CAP02 GET /capabilities：skills 与 app.js:117-123 迁移字面量全字段 deepEqual；无 MCP env 时 mcp.external deepEqual []
+PASS CAP03 响应顶层键恰 ['mcp','skills']（无多余键，契约面锁定）；两次调用响应 deepEqual（只读派生无状态，确定性）
+PASS CAP04 POST /api/v1/capabilities → 404（仅 GET 注册，清单端点只读）
+PASS CAP05 env MCP_HTTP_SERVERS=caps-ext(合法)+filesystem(内置 id 冲突)：mcp.external 恰 [{serverId:"caps-ext",kind:"http"}]（冲突条被拒，复用 registry 拒条）；builtin 五条不受污染仍 deepEqual 期望；skills 仍五条；随后 health 200（注册 URL 指向 discard 端口 9 不可达也不影响——端点不做发现零出站，进程不崩）
+PASS S01 流首事件 run:accepted 且 runId 为非空字符串
+PASS S02 有序子序列 run:accepted→run:start→node:start→node:done→run:done（跳过 run:progress 等）
+PASS S03 node:start / node:done 的 id 序列均恰为 [1,2]（拓扑序覆盖全部节点）
+PASS S04 末事件 run:done {ok:true, stopped:false, done:2, total:2}
+PASS S05 run:done 后流收束（reader done，无后续事件）
+PASS R01 GET /runs?limit=20 列表含新 runId
+PASS R02 GET /runs/:id → run {status:"done", done:2, total:2, ended_ms:number}
+PASS R03 detail.events 与 SSE 全量事件按序深相等（首条 run:accepted=seq0；seq 升序由 ORDER BY seq ASC 保证）
+PASS D01 waitFor approval:required（nodeId=1；以事件为门，run 确定处于挂起活动态）
+PASS D02 活动 run DELETE → 409 {error:"run is active"}
+PASS D03 POST /run/:id/approve {nodeId:1, approve:true} → 200 {ok:true}
+PASS D04 waitFor run:done {ok:true,stopped:false}，且此前出现 approval:done {nodeId:1, approve:true}
+PASS D05 GET /runs/:id → 200 且 run.status==="done"
+PASS D06 run 收尾后 DELETE → 200 {ok:true}
+PASS D07 删除后 GET → 404
+PASS E01 eng=博查（未配置 key）：run:done {ok:true,done:2,total:2}；out 含 eng=博查+BOCHA_API_KEY 且无 DuckDuckGo；log 含「不回退其他引擎」
+PASS E02 eng=SearXNG（未配置 URL）：run:done {ok:true}；out 含 eng=SearXNG+SEARXNG_URL
+PASS E03 eng=Bing：run:done {ok:true}；log 含「未接入」标注（网络无关）；out 不含 eng=（互斥反证：未误入严格分支文案）
+PASS K01 code 节点 lang=JavaScript 不带 code：run:done {ok:true}、无 node:error、out「执行成功」类文案、log 含兜底告知子串
+PASS K02 code 节点 lang=JavaScript + 自定义码：run:done {ok:true}、无 node:error、out「执行成功」、log 无兜底告知（不误伤）
+PASS K03 code 节点 lang=Python 不带 code：run:done {ok:true}、无 node:error、out「执行成功」（默认样例按 Python 原样执行）、log 无兜底告知
+PASS K04 源锁 JS 等价样例：app.js 与 handlers.ts 各恰 1 处「// 处理输入后返回」字符串字面量，且逐字一致（含 \n 转义形态）
+PASS G01 POST /sessions {title:"测试"} → 201 SessionRow（id 非空、title、"model/sys":null、时间戳 number）
+PASS G02 GET /sessions 列表含自建 id（updated_at 倒序）；limit=0 / limit=101 → 400 {error:"limit 必须是 1-100 的整数"}
+PASS G03 GET /sessions/:id → 200 {session.id===id, messages:[]}；GET 不存在 id → 404 {error:"session not found"}
+PASS G04 POST /sessions/:id/stop（无活动 turn）→ 404 {error:"session turn not found"}
+PASS G05 chat {text:"你好"}：事件序恰 run:accepted→node:start→node:delta×N（末次=全文）→node:done{out=全文,firePort:null,iteration:null}→log→run:done{ok:true,done:1,total:1,outputs:[全文]}；GET :id → messages 恰 2 条（user+assistant 全文，seq 1,2）
+PASS G06 第二轮 chat {text:"再问"}：mock 收到的第二轮请求 messages 含第一轮 user/assistant 历史且末位 {role:"user",content:"再问"}；GET :id → messages 恰 4 条（续聊上下文生效）
+PASS G07 流出中 POST stop → 200 {ok:true} 且 SSE 以 run:done{stopped:true,ok:false,done:0,total:1} 收尾；GET :id → assistant 消息非空且为 MOCK_FULL 前缀（已累积部分保留落库）
+PASS G08 活动 turn 进行中同 session 二次 chat → 409 {error:"session turn is active"}；chat 不存在 session → 404 {error:"session not found"}；对活动会话 stop 清场 → 200
+PASS G09 minimal 实例 chat：事件序恰 run:accepted→log(warn)→run:error→run:done{ok:false,done:0,total:1}；GET :id → messages 恰 1 条 user（assistant 不落库）
+PASS G10 G05 与 G07 捕获的全部事件（run:accepted/node:start/node:delta/node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约，packages/shared 零改动）
+PASS V01 互审正路径：有序子序列 run:accepted→run:start→node:start(1)→log(sys 互审裁决中·审官A·node:2)→approval:done{1,true}→node:done(1)→node:bypass(2)→run:done{ok:true,done:2,total:2}；全程无 approval:required；out 含「智能体裁决」「审官A」；审计恰 1 行 {node:1,reviewer:node:2,mode:agent,verdict:allow,reason:mock 允许：符合规范}
+PASS V02 mock 返回 deny JSON：无 approval:required；approval:done{approve:false}；run:done{ok:true}；out 以「审批拒绝」开头；审计恰 1 行 {mode:agent, verdict:deny, reason:mock 拒绝：内容不合规}
+PASS V03 mock 返回非 JSON + to=自动拒绝：无 approval:required（不挂起）；直接 approval:done{approve:false}；warn log 含「互审裁决失败」「输出不可解析」；审计 {mode:agent-fallback, verdict:deny, reason 前缀「裁决失败：」}
+PASS V04 审官 node:99 不存在 + to=挂起：warn 含「审官节点不可用」；approval:required{nodeId:1, role:node:99} 出现（回退人工）；POST approve {nodeId:1,approve:true} → 200 {ok:true}；run:done{ok:true}；审计恰 1 行 {mode:human, verdict:allow, reviewer:node:99}
+PASS V05 role=普通审批人（无前缀）：①挂起+人工通过——approval:required→approval:done{true}→run:done{ok:true}，out=「审批通过 · 普通审批人」（与现状同型），审计 {mode:human,verdict:allow}；②to=自动拒绝——无 approval:required 且无 approval:done（现状行为），out=「审批拒绝 · 普通审批人」，审计 {mode:auto,verdict:deny}
+PASS V06 minimal 实例（模型必未配置）+ to=自动拒绝：无 approval:required；approval:done{approve:false}；warn 含「模型未配置」；审计 {mode:agent-fallback, verdict:deny}
+PASS V07 mock 返回 {"verdict":"maybe"}（JSON 但 schema 不符）+ to=自动通过：无 approval:required；降级 approval:done{approve:true}；warn 含「输出不符合裁决协议」；审计 {mode:agent-fallback, verdict:allow}
+PASS V08 审官节点 type=prompt（非 LLM）+ to=自动拒绝：无 approval:required；降级 approval:done{approve:false}；warn 含「审官节点不可用」；mock 请求数不增（F2 零模型调用）；审计 {mode:agent-fallback, verdict:deny}
+PASS V09 V01-V04、V06 捕获的全部事件（51 条，含互审 log/approval:done/approval:required）逐条通过 RunEventSchema 校验；git status --porcelain -- packages/shared 为空（DEFS 零漂移）
+PASS A01 trigger→agent→reply：run:done{ok:true}；agent node:done.out 含 mock 终文本；reply node:done inputs[0].val 含 "sessionId"（out-session 出参锚）；GET sessions 按 title=测试智能体 → {model:"MockChat",sys:"你是测试智能体"} 且 messages 恰 2 条（user=智能体直答 / assistant=终文本）
+PASS A02 单 agent（mcp sqlite.execute）+ 恒返 tool_call 两步 mock：请求增量恰 2；log 含「🔧 工具调用 sqlite.execute」与「🤖」工具请求行；node:done.out 含「智能体工具轮完成」且 tokens 为 number；会话 messages 恰 2 条（assistant=终文本）；run:done{ok:true}
+PASS A03 maxSteps=2 + 恒返 tool_call：mock 请求增量恰 2（=maxSteps，绝不超）；node:done.out=「（已达最大步数 2）」（预算耗尽=正常收束 run:done{ok:true}）；✓ log 含「2/2 步」；messages 恰 1 条 user（assistant 空文本不落库）
+PASS A04 node:start(2) 后 POST /run/:id/stop → 200 且 run:done{ok:false,stopped:true}；node:error{id:2,message:"已中止"} 出现且 agent 无 node:done；messages 恰 1 条 user（assistant 零落库）；随后 GET sessions 200（服务健康无孤儿）
+PASS A05 A01/A03/A04 捕获的全部事件（36 条，含 node:delta/node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）
+PASS T01 userinput→prompt→termview：termview node:done.out === 「已呈现流 · 14 字」（N=渲染文本实长）；output 事件恰 1 条且 text=全文；run:done.outputs 含全文（ctx.outputs 汇入）
+PASS T02 trigger→termview 直连（__trigger 对象输入）：node:done.out === 「已呈现流 · 0 字」（toStr 对 __trigger 返回空串，如实降级不伪造）
+PASS T03 T01/T02 两次 termview 全链路 run 的 mock 模型请求数零增量（零出站零进程零新依赖的运行时佐证）
+PASS O01 userinput(defv=https URL)→webshow：run:done{ok:true} 且 outputs 含该 URL；webshow node:done(id=2).out ===「已呈现网页 · <url>」；存在 output 事件且 text === 该 URL
+PASS O02 trigger→webshow(params.url=静态兜底)：trigger 对象输入端口值归空（strInput 语义）→ 兜底参数生效：out ===「已呈现网页 · <兜底URL>」且 outputs 含该 URL；run:done{ok:true}
+PASS O03 javascript: 输入：run:done{ok:true}（降级不崩）且 outputs 深等 []（零汇入）；node:done.out ===「未呈现 · 无有效网址（占位降级）」；log warn 含「webshow」与「占位降级」；无任何 output 事件（不伪造结果）
+PASS O04 空输入 + 空兜底：run:done{ok:true} 且 outputs 深等 []；out ===「未呈现 · 无有效网址（占位降级）」；log warn 含「webshow」与「占位降级」；无任何 output 事件
+PASS O05 O01/O03/O04 捕获的全部事件（30 条，含 node:done/log/run:done）逐条通过 RunEventSchema 校验（零新增契约）
+PASS J01 userinput→prompt(固定 JSON)→jsoncanvas：jsoncanvas node:done.out === 「已呈现 JSON · 2 项」（顶层键数 N=2）；output 事件恰 1 条且 text=该 JSON（字符串原样通道）；run:done.outputs 含该 JSON（ctx.outputs 汇入）
+PASS J02 trigger→jsoncanvas 直连（__trigger 哨兵输入）：node:done.out === 「已呈现 JSON · 0 项」（空输入如实空呈现，不伪造内容）
+PASS J03 prompt(tpl=hello)→jsoncanvas：非 JSON 字符串原样透传（output text=hello）；node:done.out === 「已呈现原文 · 5 字（非 JSON，前端原文降级）」（不谎称已呈现 JSON）
+PASS J04 J01-J03 三次 jsoncanvas 全链路 run 的 mock 模型请求数零增量（零出站零进程零新依赖的运行时佐证）
+PASS B01 GET /api/v1/workbench/git → 200；键集恰 {branch,head,changes,commits}；branch 非空；head 7-40 hex；changes 每项 {status:2字符,path,from?}；commits 1..20 条、每项 {sha:40hex,short:7-40hex,author:非空,ts:正整数毫秒,subject:string}
+PASS B02 GET /workbench/git?limit=1 → commits.length===1；?limit=3 → commits 1..3 条
+PASS B03 limit=0 / limit=101 / limit=abc → 各 400 {error:"limit 必须是 1-100 的整数"}
+PASS B04 探针实例（临时非 git 目录，spawn cwd=仓库根）健康 200 → GET /api/v1/workbench/git → 404 {error:"not a git repository"}（误锚 process.cwd() 会得 200 恰好击穿；与 B01 合成锚定双向证明）
+PASS B05 源码扫描：workbench 三文件 /shell/i 零命中；git.ts 有 setTimeout( 与 .kill()（5s 强杀）；可写命令单引号 argv 字面量零命中；rev-parse/status/log 在场（只读白名单）
+PASS B06 GET /api/v1/workbench/diff（无参 = HEAD↔工作区）→ 200；键集恰 {files,truncated}；files 每项恰五键 {path,status,adds,dels,patch}（path 非空 / status /^[MADR]$/ / adds、dels 非负整数 / patch string）；truncated boolean；条数不定不断言（工作区脏度随轮次变化）
+PASS B07 diff?base=ed2f8ed&head=d880b62 → 200 files=2（.zcode/workflows/evolution-iteration.dwf.ts=(M,21,7)、docs/evolution/STATE.md=(M,2,2)）、truncated=false；&path=docs → 1 条 docs/ 前缀；&path=.zcode → 1 条 .zcode/ 前缀（固定提交对确定性锚）
+PASS B08 diff?base=ed2f8ed&head=d880b62&stat=1 → 200 files=2（与 B07 默认模式跨模式计数一致）；每项 status===""、patch===""、adds/dels 与 B07 逐文件相等；stat=abc → 400 {error:"stat 必须是 0/1/true/false"}
+PASS B09 base=-x / base=main;rm / base=（空串在而缺省不在）/ base=HEAD~1 → 各 400 {error:"base 或 head ref 非法"}；base=deadbeef（合法形状不可解析）→ 400 {error:"base 或 head ref 不存在或不可解析"}（git 语义级 400，用户手误 ref 得 4xx 非 5xx）
+PASS B10 path=../ / path=../../ / path=D:/（win32 绝对注入）/ path=/etc（POSIX 绝对注入）→ 各 400 {error:"path 越界"}（path.resolve 归一后前缀校验，非项目根内即拒）
+PASS B11 探针实例（临时非 git 目录，spawn cwd=仓库根）健康 200 → GET /api/v1/workbench/diff → 404 {error:"not a git repository"}（误锚 process.cwd() 会得 200 恰好击穿；B01/B04 锚定双向证明的 diff 侧延伸）
+PASS B12 源码扫描 diff.ts + routes.ts（扩后）：/shell/i 零命中；可写命令单引号 argv 字面量零命中；diff.ts 含 'diff'/'--no-color'/'--numstat'（只读白名单承载本体）与 './git.js' import（runGit 复用非复制）
+PASS B13 GET /api/v1/workbench/tree → 200；键集恰 {root,truncated}；root.name 非空（不锁字面量）、root.path===""；children 含 apps/docs（锚定合成证明）；递归形状（dir 无 size / file size 非负整数）；.git 零出现；FOLD 占位（node_modules/data/.zcode 根级 + dist 经 apps/server 子树亲核，children 恒 []）；同层 dir 先序；truncated boolean；全树条目 ≤ 500
+PASS B14 tree?path=apps/server → 200 root.name="server"、root.path="apps/server"、children 含 src(dir)；&depth=1 → 非折叠 dir 全部无 children 键（depth 耗尽）；&depth=4 → src 子层出现 workbench 目录且带 children（≥3 层嵌套，深度机器判据）
+PASS B15 depth=0 / depth=7 / depth=abc / depth=2.5 → 各 400 {error:"depth 必须是 1-6 的整数"}
+PASS B16 path=../ / path=../../ / path=D:/（win32 绝对注入）/ path=/etc（POSIX 绝对注入）→ 各 400 {error:"path 越界"}（path.resolve 归一后前缀校验，非项目根内即拒）
+PASS B17 tree?path=no-such-dir-xyz → 404 {error:"path 不存在或不是目录"}；?path=package.json（存在但为文件）→ 404 同字面量；?path=node_modules（折叠目录显式下钻）→ 200 root.children===[] 恒空、truncated=false（折叠语义机器证明）
+PASS B18 源码扫描 tree.ts + routes.ts（扩后）+ root.ts（复扫）：/shell/i 零命中（含注释）；tree.ts 'spawn' 零命中（零 git 子进程）；'readdir'/'lstat' 在场（fs 承载本体）；fs 写面禁词（调用形态）零命中（writeFile/appendFile/unlink/rename/mkdir/chmod/chown/truncate/rm——词表规避 truncated 字段子串误报）；'.git' 排除与 FOLD 四名字面量在场
+PASS PT01 PTY_ENABLED=0：run 含 terminal → log(warn) 固定子串「PTY 会话功能未启用」+ node:done out 含「降级」+ run:done{ok:true} 不挂；GET /pty/sessions → {"sessions":[]}（不伪造会话）
+PASS PT02 PTY_ENABLED=1：run prompt→terminal → node:done out 含「终端会话就绪 · #」+ GET list 恰 1 会话 + pty_audits 该会话含 create(origin=system) 与 write(origin=agent，summary 含注入文本)（agentWrite 服务端通道审计留痕）
+PASS PT03 terminal(绑定 PT02 会话)→termview：output 事件文本 JSON.parse 得 {sessionId} 且 === 绑定会话（接管不新建）；list 仍恰 1 会话（out-session {sessionId} 形状 + 下游 toStr 消费链双断言）
+PASS PT04 PT02/PT03 run 结束后 GET list 仍含该会话（run 与会话正交，ADR-0014 §4.1）→ POST stop → 200 {ok:true} → list 轮询收敛空（close 异步收尾，PY6 时序同款；探针 A 自清理）
+PASS PT05 PTY_MAX_SESSIONS=1：HTTP create 占满（201）→ run terminal → log(warn) 固定子串「并发会话数已达上限」+ run:done{ok:true} 不挂 + list 仍恰 1（内部通道护栏挡下第 2 会话，未偷偷新建）→ stop 200 清理
+PASS PT06 源码扫描 handlers.ts terminal 段：agentWrite(signal: ctx.ac.signal 透传) + ptySessionActive/activePtyCount/createPtySession 在场 + userWrite/guardedFetch 零混入 + 「PTY 会话功能未启用」字面量在场；前端源锁：app.js #term-panel + nodesLayer 双 dblclick 监听器 + ICON_PATHS 无 terminal 键；app.css tp- 家族在场
+PASS KB01 GET /api/v1/kb → 恒 200；顶层恰一键 {kbs}；每行恰四键 {name,docs,chunks,updated_at}（类型/非空如 SPEC §4.2）；两次调用 deepEqual；行序 name 码点升序
+PASS KB02 seed 播种可见性：清单含三固定名（产品手册 v2.3/FAQ-售前/工单历史 2026）且 docs/chunks ≥ 12/8/6（恰等置 pristine 标记）
+PASS KB03 seed 检索等价回归·命中：三固定库检索输出（score/src/text）与改造前基线逐位 deepEqual（pristine · 零漂移机器锁）
+PASS KB04 seed 检索等价回归·未命中：`zzzqqq 无关词` 三库 hits 空（output="[]"）+ node:done out 含「命中 0 条片段」+ run:done vars.confidence=0
+PASS KB05 上传正例：POST /kb/smoke-kb-upload/documents?filename=sample.md → 201 出参恰五键 {ok,kb,filename,bytes,chunks}（bytes=UTF-8 字节数、chunks ≥ 1）；随后清单含该库 docs=1、chunks=出参值（独占库绝对计数，跨轮幂等）
+PASS KB06 切分参数行为锚：1200 字单段 → chunks=3（硬切步幅 450 / 窗 500 / 尾窗收尾）；两段各 200 字 → chunks=1（段落边界优先贪心合并 ≤500）
+PASS KB07 上传负例 415 族：spec.pdf → 415「不支持的文件类型」；spec.docx → 415；Content-Type=application/json → 415 传输形态（附 text/* 直传指引）；响应均 {error} 形态
+PASS KB08 上传负例 400 族：name 含 `/`、name=`..`、name 65 字、filename 缺失、filename=`../x.txt` 形态 → 各 400 {error}；清单零残留（无新库出现）
+PASS KB09 上传负例 413：超 5 MiB body（text/plain 直传）→ 413「文件超限：单文件上限 5 MiB」（kbUploadErrorMapper 映射路径，{error} 形态）
+PASS KB10 空文档 400：空 body 与纯空白 body → 400「文档内容为空或无可切分文本」；清单零残留（smoke-kb-empty 未出现）
+PASS KB11 新语料可检索 + 替换语义：上传 rag.md → retrieval(kb=smoke-kb-main) 查特征串命中 ≥1 且首条 src=`rag.md §1`；重传 rag.md（新特征串）→ 201、清单 docs 不增（同 filename 整替）、旧特征串零命中、新特征串命中（首条同 src）
+PASS MEM01 MEMORY_ENABLED 未配置：单 llm 节点 run:done{ok:true}；mock 端点请求体无 tools 键（更无 memory_*）；事件流无 🧠 注入 log；SQLite 直查本轮 token 命名域零写入（零强制漂移：不建表由 server.ts 门控接线承载，表存在态见 actual 记录）
+PASS MEM02 MEMORY_ENABLED=1：mock 请求体 tools 键集恰 [memory_get,memory_list,memory_set]（零 mcp 选择时注入即全部工具面）；注入 sys log「🧠 跨 run 记忆 ×3 已注入」出现在 run 事件流；node:delta 恰 1 条（工具循环形态，纯流式打字机不再——ADR-0024 §4.1 声明行为）；开启实例启动后 memory_entries 表在库（门控建表）
+PASS MEM03 跨 run 持久化：run1（smoke-mem-write）模型调 memory_set(mem:smoke:<tok>:alpha, 跨run记忆值) → 工具 log「🔧 工具调用 memory_set」；run2（smoke-mem-read，不同工作流）memory_get 读回同值（out 含「读回:跨run记忆值」）；SQLite 直查 memory_entries 恰 1 行且 key/value/bytes(UTF-8)/created_at/updated_at 对账一致
+PASS MEM04 list 语义：count=1 + offset 0/1/2 三页——首页恰 1 条（字典序 alpha）且 truncated=true、次页恰 l1 且 truncated=false（offset+limit=total 公式如实）、第三页空且 truncated=false（终文本逐字对账）；域外键 zz<tok>other 被 prefix=mem:smoke:<tok>: 过滤；SQLite 直查恰 2 行且 key BINARY 升序
+PASS MEM05 负例不崩 run（AI SDK 7 工具异常语义如实锚定）：非法 key（含空白）与 value 超 4096 字节各一 run——execute 异常被 AI SDK 7 转为 error tool-result 回灌模型（未传播至 llm.ts 工具循环 catch 降级通道），mock 恒返 tool_call 至 3 轮预算耗尽自然收束：run:done 均 ok:true（不崩）；mock 请求增量恰 6（每 run 3 轮）；事件流零 🔧 工具调用行（异常发生在 impl await 处，先于 emit）且零「工具循环异常」warn（不触发降级）；token 域行数仍 2（负例零落库、不截断不写入）。行为特征与可观测性缺口（负例错误对模型可见但运行日志不可见）已按 BUG-0068-05 处置采 A 补记 PRD/ADR 并另立 backlog 建议
+PASS MEM06 GET /api/v1/capabilities：默认关实例与 MEMORY_ENABLED=1 实例的 mcp.builtin 均与 CAP_EXPECTED_BUILTIN 逐字段 deepEqual（memory 三 plain key 不进任何 `${id}.` 前缀派生——端点响应逐字节不变），开启实例 external 仍 []（零 MCP env）
+PASS MEM07 MEMORY_ENABLED=abc 启动 → 进程以退出码 1 终止（config zod fail-fast），fatal 日志含变量名 MEMORY_ENABLED 与合法词形提示「只接受 1/true/yes 或 0/false/no」
+PASS Z01 WFAPPR run 挂起中 GET /runs/:id → 200 {status:"running", ended_ms:null}，events 长度 N≥1（击杀前采样；事件为门，挂起后无新事件，N 稳定）
+PASS Z02 SIGKILL → exitPromise 到达（崩溃退出，不经优雅停机）；同端口重启健康 200（扫尾在 listen 前，health 即扫尾完成时序门）
+PASS Z03 重启后 GET /runs/:id → 200 {status:"stopped", ended_ms:null, done/total 保持击杀前值}；events 仍恰 N 条（零伪造终结事件，回放止于最后一条真实事件）；重启实例日志含「启动扫尾」
+PASS Z04 DELETE /runs/:id → 200 {ok:true}（重启后非活动，无 409）；删除后 GET → 404（零残留）
+PASS OE01 未配置 on-error：失败节点 node:error 恰 1 次（id=2）、下游节点 3 无 node:start（失活形态与现状逐位一致）、run:done{ok:true,stopped:false}（ok 不反映节点失败）、GET /runs/:id status="done"
+PASS OE02 ON_ERROR=skip 显式配置：行为与未配置逐位一致（ADR-0022 §2.1 案 a named 化）——node:error 恰 1、下游失活、run:done{ok:true}、status="done"
+PASS OE03 ON_ERROR=retry ×2：mock 命中计数恰 3（=1+2 次尝试硬证据，且 node:start 未重跑）、log warn 恰 2 条「第 2/3 次尝试」通报、node:error 恰 1 次 message 含「已重试 2 次」概要、耗尽后按 skip 终态下游失活（starts=[1,2]）、run:done{ok:true} ok 语义不变、status="done"
+PASS OE04 ON_ERROR=retry：前两次失败第三次成功 → mock 命中恰 3、零 node:error、node:done 恰 [1,2,3]（下游按成功路径继续）、节点 out 以末次成功尝试为准（200 开头）、run:done{ok:true}
+PASS OE05 ON_ERROR=abort：guard 拦截确定性失败 → node:error 恰 1 次（message 含「已拦截」）、下游节点 3 与同级分支节点 4 全部不再调度（starts=[1,2]）、run:done{ok:false,stopped:false,done=2}（fail-fast 收尾且 stopped 语义不被污染）、GET /runs/:id status="error"（store.ts:302 既有派生链路）
+PASS OE06 retry 退避等待期内 POST stop：run 即时中断（stop→run:done 实测 <7s，30s 退避未到期 = abortable sleep 弃眠、无孤儿等待）、run:done{ok:false,stopped:true}（stopped 恒为用户中止独占语义）、node:error「已中止」走既有中止级联
+PASS OE07 env fail-fast 非法值 ×3：ON_ERROR=boom / ON_ERROR_RETRIES=9 / ON_ERROR_RETRY_DELAY_MS=abc → 各自启动即退出 code=1，报文指明变量名与约束（枚举值域 / 0-5 / 必须是整数，PTY 先例形态）
+PASS OE08 边界值通过：ON_ERROR_RETRIES=0 + DELAY=0（下端）与 ON_ERROR=abort + RETRIES=5 + DELAY=60000（上端）两实例健康 200 ok:true（zod 值域闭区间可装载）
+PASS OEN01 节点 onError=跟随全局（显式哨兵）：env 承接（未配置=内建 skip）——node:error 恰 1 次（id=2）、下游节点 3 无 node:start、run:done{ok:true,stopped:false}、GET /runs/:id status="done"（与 OE01 同型零漂移）
+PASS OEN02 节点哨兵 + ON_ERROR=retry×2：env 策略与次数承接生效——mock 命中恰 3（1+2）、log warn 恰 2、node:error 恰 1 含「已重试 2 次」、耗尽按 skip 终态 run:done{ok:true}
+PASS OEN03 节点 onError=重试×1 + env=skip：mock 命中恰 2（1+1，节点策略压制 env skip——节点胜）、log warn 恰 1、node:error 恰 1 含「已重试 1 次」、耗尽降级 run:done{ok:true}（退避取实例 DELAY 缺省 1000ms）
+PASS OEN04 节点 onError=重试（次数缺省，env 三键钉空）：DEFS 默认 onErrorRetries=2 注入 → mock 命中恰 3（1+2）——env retries=0 未使节点 retry 退化（陷阱破解机器证明）、node:start 未重跑、log warn 恰 2、耗尽按 skip 终态 ok:true
+PASS OEN05 节点 onError=中止：失败后下游节点 3 与同级分支节点 4 全部不再调度（starts=[1,2]）、run:done{ok:false,stopped:false,done=2}（fail-fast 且 stopped 恒用户中止独占）、GET /runs/:id status="error"
+PASS OEN06 节点 onError=中止 + env=retry×2：mock 命中恰 1（零重试——节点策略类型覆盖 env 策略类型，env 次数不叠加）、fail-fast starts=[1,2]、run:done{ok:false,stopped:false}
+PASS OEN07 loop 闭包子图内 http 节点 onError=重试×1：循环子节点经 sub() 逐 runNode 调用独立解析——mock 命中恰 2（1+1）、log warn 恰 1、node:error 恰 1 含「已重试 1 次」、node:start 恰 1 次（重试不重跑）、run:done{ok:true}
+PASS C01 清理自建 run aadd9ac3…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 2260d99b…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 6f040451…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run d7bd4277…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run e4aad437…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 0497273a…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run bdaee85d…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 86f1d2d5…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 7a11e558…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 85208c10…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 53001abc…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 18a63f6e…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run a019d165…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 79ee22f8…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 470405de…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 82cfd5d8…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 3de9921e…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 7c8cdfb2…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 2508abd1…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run f76ab1e2…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 3c5e1847…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 55400a24…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 3de55244…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 26d643c0…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run cf78269c…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 86d50efd…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 4bec4933…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 745b241c…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 98fb14f6…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 5c533d90…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run fe9d4f74…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run ef7749d1…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 1a53247a…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 97dca047…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 0e1c3b4b…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 7decd810…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run e2f1011e…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 5af10124…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 8007ab9d…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 10705b83…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 0d9d0dfb…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 33d0d68e…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 5bf235e1…（DELETE → 200；404=已删容忍）
+PASS C01 清理自建 run 4418421f…（DELETE → 200；404=已删容忍）
+PASS C02 清理自建 workflow 519294d2…（404=已删，容忍）
+PASS C03 复查：workflows 与 runs 列表均不含任何自建 id（零残留）
+PASS C04 server 子进程已终止（kill → 3s → SIGKILL 兜底）
+==== smoke:server：203 passed / 0 failed ====
