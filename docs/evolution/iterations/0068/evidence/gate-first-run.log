@@ -1,0 +1,56 @@
+> 迭代 0068 工作树内像素门禁首跑留档（issue#12 处置口径：双留档 + 复跑为准，绝不 gate:update）
+> 留档时间：2026-10-31（BUILD 修复轮 R2 处置，脚本执行 npm run gate 首跑产出）
+> 结论：s3-library 单场景 FAIL，diffPx=21 落 issue#12 已知本机亚像素渲染噪声带宽（≈21~23）；
+> DOM 不变量语义逐位全等（invDiff=false）；s3 为纯离线场景（gate.mjs:577 无 routes），
+> 与本迭代后端改动零因果路径。复跑转绿归脚本（先例 0050「diffPx≈23，rerun 即绿」）。
+
+==== 门禁首跑场景输出（脚本执行 npm run gate，工作树 feat/0068-iter；协调者转述原件） ====
+ffPx=0
+✓ s7-log-filter-warn pass · diffPx=0
+✓ s8-agent-node    pass · diffPx=0
+✓ s9-goal-panel-online pass · diffPx=0
+✓ s10-webshow-node pass · diffPx=0
+✓ s11-termview-node pass · diffPx=0
+✓ s12-jsoncanvas-node pass · diffPx=0
+✓ s13-approval-role-picker pass · diffPx=0
+✓ s14-code-lang-sync pass · diffPx=0
+✓ s15-caps-panel   pass · diffPx=0
+✓ s16-workbench-git-online pass · diffPx=0
+✓ s17-workbench-diff-online pass · diffPx=0
+✓ s18-workbench-tree-online pass · diffPx=0
+✓ s19-terminal-panel-online pass · diffPx=0
+✓ s20-retrieval-kb-online pass · diffPx=0
+
+宪法门禁：1 个场景违宪 ✗（差异详见 tests/golden/diff/）
+
+（注：原件头部被截断——s0~s6 行未见于转述；diff 目录实证唯一 FAIL 场景 = s3-library，
+仅 s3-library.{current,diff}.png + s3-library.invariants.json 三文件落盘。）
+
+==== R2 处置实测证据（2026-10-31 修复轮 agent 实跑命令与输出） ----
+
+[1] 差异目录清点（ls tests/golden/diff/）→ 唯一场景 s3-library：
+    s3-library.current.png (118776B) · s3-library.diff.png (97370B) · s3-library.invariants.json (1429B)
+
+[2] DOM 不变量语义比较（node -e JSON.parse + JSON.stringify 全等判定，基线
+    tests/golden/ui/s3-library.invariants.json vs 实测 tests/golden/diff/s3-library.invariants.json）：
+    semantically equal: true
+    base bytes: 1485, CRLF count: 56（基线 CRLF）
+    current bytes: 1429, CRLF count: 0（gate 落盘 LF——报告文件行尾差异，gate 比较用
+    JSON.stringify 语义口径（gate.mjs:683），无关）
+    ⇒ invDiff=false，FAIL 纯由像素 diff（gate.mjs:687-690 判定链）。
+
+[3] 像素差异量化（node + pngjs 统计 diff.png 红色差异像素，r>200 && g<100 && b<100）：
+    diff.png 1600x900 red-diff-px: 21, rows-hit: 18
+    ⇒ diffPx=21，正中 issue#12 已知本机亚像素渲染噪声带宽 ≈21~23
+    （PRD 风险 4 原文；0050 JOURNAL:121「s3-library 亚像素渲染噪声（diffPx≈23，rerun 即绿）」）。
+
+[4] 场景因果面（gate.mjs:577）：{ id: 's3-library', steps: [clickRail('nodes')] }
+    —— 纯离线场景（无 routes/无后端端点依赖），与本迭代后端 memory 改动零因果路径；
+    前端 apps/web/**、packages/shared/** 本迭代零 diff（AC9 机器证明）。
+
+==== 处置（先例口径） ====
+- 不重录 golden、不运行 gate:update（issue#12 属 golden/CI 需批准射程，未经用户批准零动作）；
+- 不改 tools/pixel-gate、不改 tests/golden/ui 基线；
+- 产品代码零改动（修复面仅断言与文档，apps/server/src diff 与 R1 后一致）；
+- 复跑为准归脚本（先例 0050「rerun 即绿」；BK-0042 行「s3 依 issue#12 纪律不消费抖动重录、
+  golden 权威在 CI」；若复跑仍命中，按 0054 §6 P1 同型口径在主干合并复测阶段以 CI 为权威）。
