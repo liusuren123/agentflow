@@ -19,6 +19,8 @@
 | 1 | `mode` | 触发方式 | combo | 手动触发 | 手动触发 / 定时触发 / Webhook | **UI-only（implemented:false）** |
 | 2 | `cron` | Cron 表达式 | text | 0 9 * * 1-5 | — | **UI-only（implemented:false）** |
 | 3 | `path` | Webhook 路径 | text | /api/run | — | **UI-only（implemented:false）** |
+| 4 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 5 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

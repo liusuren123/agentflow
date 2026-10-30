@@ -18,6 +18,8 @@
 | 2 | `vtype` | 值类型 | combo | 文本 | 文本 / 数字 / 布尔 | **UI-only（implemented:false）** |
 | 3 | `req` | 必填 | toggle | true | — | **UI-only（implemented:false）** |
 | 4 | `defv` | 默认值 | text | 如何申请退货? | — | 已实现 |
+| 5 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 6 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

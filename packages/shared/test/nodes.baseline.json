@@ -34,6 +34,27 @@
         "l": "Webhook 路径",
         "t": "text",
         "d": "/api/run"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "trigger start 开始 入口 启动"
@@ -79,6 +100,27 @@
         "l": "默认值",
         "t": "text",
         "d": "如何申请退货?"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "input variable 变量 用户 参数"
@@ -146,6 +188,27 @@
         "min": 64,
         "max": 32768,
         "step": 64
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "llm gpt 大模型 对话 chat glm 生成"
@@ -208,6 +271,27 @@
         "min": 1,
         "max": 256,
         "step": 1
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "agent 智能体 goal 会话 自主 loop 预算"
@@ -235,6 +319,27 @@
         "l": "模板内容",
         "t": "textarea",
         "d": "你是一名金牌客服。请结合以下资料回答用户问题：\n{{context}}\n\n用户问题：{{question}}"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "prompt template 模板 提示词"
@@ -285,6 +390,27 @@
         "min": 0,
         "max": 1,
         "step": 0.05
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "rag knowledge retrieve 检索 知识库 向量"
@@ -326,6 +452,27 @@
         "d": 5,
         "min": 1,
         "max": 20,
+        "step": 1
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
         "step": 1
       }
     ],
@@ -375,6 +522,27 @@
         "min": 1,
         "max": 120,
         "step": 1
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "http api request 接口 请求 rest"
@@ -415,6 +583,27 @@
         "l": "代码",
         "t": "textarea",
         "d": "# 处理输入后返回\nresult = input\nreturn result"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "code python js 执行 脚本"
@@ -449,6 +638,27 @@
         "l": "接收人",
         "t": "text",
         "d": "support@team.com"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "notify message send 通知 邮件 短信"
@@ -482,6 +692,27 @@
         "l": "会话绑定",
         "t": "text",
         "d": ""
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "terminal 终端 交互 shell pty 会话 共享 接管"
@@ -513,6 +744,27 @@
         "l": "条件表达式",
         "t": "text",
         "d": "confidence > 0.7"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "if else condition branch 分支 判断 条件"
@@ -549,6 +801,27 @@
         "l": "并发执行",
         "t": "toggle",
         "d": false
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "loop for each 循环 遍历 迭代"
@@ -578,6 +851,27 @@
         "d": 2,
         "min": 1,
         "max": 60,
+        "step": 1
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
         "step": 1
       }
     ],
@@ -614,6 +908,27 @@
           "任一到达"
         ],
         "d": "等待全部"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "merge join 合并 汇聚"
@@ -636,6 +951,27 @@
         "l": "输出模板",
         "t": "textarea",
         "d": "{{content}}"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "reply output answer 输出 回复 结果 终点"
@@ -667,6 +1003,27 @@
         "l": "自动滚动",
         "t": "toggle",
         "d": true
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "termview 终端 只读 流式 呈现 输出"
@@ -694,6 +1051,27 @@
         "l": "变量名",
         "t": "text",
         "d": "answer"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "variable set assign 变量 赋值 保存"
@@ -722,6 +1100,27 @@
         "l": "沙箱隔离",
         "t": "toggle",
         "d": true
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "webshow 网页 展示 预览 iframe 呈现"
@@ -753,6 +1152,27 @@
         "l": "格式化缩进",
         "t": "toggle",
         "d": true
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "jsoncanvas json 画布 结构化 树 呈现"
@@ -791,6 +1211,27 @@
           "挂起"
         ],
         "d": "挂起"
+      },
+      {
+        "k": "onError",
+        "l": "失败策略",
+        "t": "combo",
+        "o": [
+          "跟随全局",
+          "跳过",
+          "重试",
+          "中止"
+        ],
+        "d": "跟随全局"
+      },
+      {
+        "k": "onErrorRetries",
+        "l": "重试次数",
+        "t": "number",
+        "d": 2,
+        "min": 0,
+        "max": 5,
+        "step": 1
       }
     ],
     "kw": "human approval audit 人工 审批 审核"

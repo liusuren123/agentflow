@@ -18,6 +18,8 @@
 | 1 | `kb` | 知识库 | combo | 产品手册 v2.3 | 产品手册 v2.3 / FAQ-售前 / 工单历史 2026 | 已实现 |
 | 2 | `topk` | Top K | number | 3 | [1–20] step 1 | 已实现 |
 | 3 | `th` | 相似度阈值 | number | 0.5 | [0–1] step 0.05 | 已实现 |
+| 4 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 5 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

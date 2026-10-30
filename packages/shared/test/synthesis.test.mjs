@@ -41,17 +41,20 @@ test('if 编译产物六行真值表（迁移前语义 = 旧 nodes.ts trigger �
 });
 
 test('10 已迁移键 params[].k 声明序逐字搬运（不变式 C：顺序即契约）', () => {
+  /* 迭代 0070 / BK-0048（ADR-0025）：全 21 类 params 尾部统一追加
+   * onError/onErrorRetries 双参数——本表 10 型尾键随声明序同步（defs-drift
+   * 的 .sort() 键集断言覆盖其余 11 型）。 */
   const EXPECTED_ORDER = {
-    trigger: ['mode', 'cron', 'path'],
-    userinput: ['var', 'vtype', 'req', 'defv'],
-    llm: ['model', 'sys', 'temp', 'max'],
-    agent: ['model', 'sys', 'maxSteps'],
-    retrieval: ['kb', 'topk', 'th'],
-    http: ['m', 'url', 'to'],
-    code: ['lang', 'code'],
-    condition: ['expr'],
-    delay: ['s'],
-    webshow: ['url', 'sandbox'],
+    trigger: ['mode', 'cron', 'path', 'onError', 'onErrorRetries'],
+    userinput: ['var', 'vtype', 'req', 'defv', 'onError', 'onErrorRetries'],
+    llm: ['model', 'sys', 'temp', 'max', 'onError', 'onErrorRetries'],
+    agent: ['model', 'sys', 'maxSteps', 'onError', 'onErrorRetries'],
+    retrieval: ['kb', 'topk', 'th', 'onError', 'onErrorRetries'],
+    http: ['m', 'url', 'to', 'onError', 'onErrorRetries'],
+    code: ['lang', 'code', 'onError', 'onErrorRetries'],
+    condition: ['expr', 'onError', 'onErrorRetries'],
+    delay: ['s', 'onError', 'onErrorRetries'],
+    webshow: ['url', 'sandbox', 'onError', 'onErrorRetries'],
   };
   for (const [type, ks] of Object.entries(EXPECTED_ORDER))
     assert.deepEqual(NODES[type].params.map(p => p.k), ks, `${type} params 序漂移`);

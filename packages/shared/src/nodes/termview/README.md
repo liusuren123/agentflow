@@ -18,6 +18,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | `lines` | 缓冲行数 | number | 200 | [20–2000] step 20 | 已实现 |
 | 2 | `autoscroll` | 自动滚动 | toggle | true | — | 已实现 |
+| 3 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 4 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

@@ -20,6 +20,8 @@
 | 1 | `m` | 请求方法 | combo | GET | GET / POST / PUT / DELETE | 已实现 |
 | 2 | `url` | URL | text | https://api.example.com/v1/orders | — | 已实现 |
 | 3 | `to` | 超时 (秒) | number | 30 | [1–120] step 1 | 已实现 |
+| 4 | `onError` | 失败策略 | combo | 跟随全局 | 跟随全局 / 跳过 / 重试 / 中止 | 已实现 |
+| 5 | `onErrorRetries` | 重试次数 | number | 2 | [0–5] step 1 | 已实现 |
 
 ## 能力与护栏
 

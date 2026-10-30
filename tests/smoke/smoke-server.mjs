@@ -2,7 +2,7 @@
 /* ================================================================
  * smoke-server.mjs — 后端 E2E 冒烟编排层（迭代 0002 / BK-0002 · SPEC §6-§8）
  * 一键入口：npm run smoke:server（根 package.json scripts）
- * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→B→KB→Z→OE→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
+ * 步骤编排 P→M→H→W→N→CAP→S→R→D→E→K→G→V→A→T→O→J→B→KB→Z→OE→OEN→C；fail-fast（首 FAIL 打印上下文 + server 日志尾，
  * 进 finally 清理）；SIGINT/SIGBREAK 触发同一清理后 exit 130；
  * 汇总 `==== smoke:server：X passed / Y failed ====`，退出码 Y===0 ? 0 : 1。
  * G 组（迭代 0015 / BK-0016）：三实例矩阵——主实例 G01-G04（CRUD/404/limit
@@ -67,6 +67,16 @@
  * 中断（stop 探针实例 30s 退避不拖穿：log「第 2 次尝试」后 stop → 8s 内收束
  * stopped:true、stopped 语义不污染）；OE07 env fail-fast 非法值 ×3（提前退出 code=1
  * + 报文指明变量名与约束）；OE08 边界值 0/5 · 0/60000 双实例健康通过。
+ * OEN 组（迭代 0070 / BK-0048）：节点级 on-error 参数（ADR-0025 · issue#6 批复承继）
+ * ——OEN01 显式哨兵「跟随全局」（主实例）：与 OE01 同型零漂移；OEN02 哨兵 + env
+ * retry×2 承接（retry 探针：mock 恰 3 + warn 恰 2）；OEN03 节点=重试×1 压制 env=skip
+ * （skip 探针 + ALLOW_PRIVATE_NET=1 回环触达：mock 恰 2 = 节点胜）；OEN04 节点=重试
+ * 次数缺省（主实例 env 钉空 + ALLOW_PRIVATE_NET=1 触达计数 mock：恰 3 = env retries=0
+ * 未使节点 retry 退化，陷阱破解机器证明）；OEN05 节点=中止 fail-fast（abort 探针：
+ * 同级分支不再调度 + ok:false/stopped:false + status=error）；OEN06 节点=中止覆盖
+ * env=retry（retry 探针：mock 恰 1 零重试 = 策略类型节点胜）；OEN07 循环子节点
+ * per-call（retry 探针 + loop 闭包子图：sub() 逐 runNode 调用独立解析，mock 恰 2）。
+ * 夹具复用 wfOeFail（扩展 params 入参）与六探针实例/oeMock，零新增探针实例与 mock。
  * ================================================================ */
 import http from 'node:http';
 import { spawn } from 'node:child_process';
@@ -162,12 +172,14 @@ const wfKb = (kb, q, th, name) => ({
 
 /* OE 组夹具工厂（迭代 0069 / BK-0020 · ADR-0022 §2/§4）：根 userinput → 失败 http
  * 节点 → 下游 prompt（失活断言面）；sibling=true 时追加根的第二分支 prompt（fail-fast
- * 调度断言面：边序保证失败节点先于同级分支出队，失败即 break）。 */
-const wfOeFail = (failUrl, name, sibling) => ({
+ * 调度断言面：边序保证失败节点先于同级分支出队，失败即 break）。np（迭代 0070 /
+ * BK-0048 · ADR-0025）：node#2 追加节点级 onError/onErrorRetries 键（缺省 undefined
+ * = 既有 OE 用例逐字不变）。 */
+const wfOeFail = (failUrl, name, sibling, np) => ({
   name,
   nodes: [
     { id: 1, type: 'userinput', x: 100, y: 100, params: { var: 'question', defv: '冒烟' } },
-    { id: 2, type: 'http', x: 320, y: 100, params: { url: failUrl, m: 'GET', to: 5 } },
+    { id: 2, type: 'http', x: 320, y: 100, params: { url: failUrl, m: 'GET', to: 5, ...(np || {}) } },
     { id: 3, type: 'prompt', x: 540, y: 100, params: { tpl: '下游 {{question}}' } },
     ...(sibling ? [{ id: 4, type: 'prompt', x: 540, y: 320, params: { tpl: '同级 {{question}}' } }] : []),
   ],
@@ -243,6 +255,9 @@ let oeSrvAbort = null;  /* OE 组探针：ON_ERROR=abort 实例（OE05） */
 let oeSrvStop = null;   /* OE 组探针：ON_ERROR=retry + 30s 退避实例（OE06 stop 窗） */
 let oeSrvB1 = null;     /* OE 组探针：边界值下端（RETRIES=0 + DELAY=0，OE08） */
 let oeSrvB2 = null;     /* OE 组探针：边界值上端（RETRIES=5 + DELAY=60000，OE08） */
+/* OEN 组（迭代 0070 / BK-0048）零新增探针实例：复用 oeSrvSkip（OEN03，env 加
+ * ALLOW_PRIVATE_NET=1 回环触达计数 mock）/ oeSrvRetry（OEN02/OEN06/OEN07）/
+ * oeSrvAbort（OEN05）与主实例（OEN01/OEN04，env 加 ALLOW_PRIVATE_NET=1 同径触达）。 */
 let oeMock = null;      /* OE 组：进程内计数 mock 端点（连接销毁=必失败 / 命中数=尝试次数） */
 let cleanupPromise = null;
 
@@ -456,7 +471,8 @@ function startOeMock() {
       const p = String(req.url || '/').split('?')[0];
       const n = (hits.get(p) || 0) + 1;
       hits.set(p, n);
-      if (p === '/oe-fail-always' || (p === '/oe-fail-twice' && n <= 2)) {
+      if (p === '/oe-fail-always' || p.startsWith('/oen') || (p === '/oe-fail-twice' && n <= 2)) {
+        /* /oen*（OEN 组，迭代 0070）：恒失败路径——命中即销毁连接（OE03 同款确定性失败源） */
         req.socket.destroy();
         return;
       }
@@ -541,9 +557,11 @@ async function main() {
 
   /* H 组：起进程 + 健康等待（H01）；env 空串双重压制 BOCHA_API_KEY/SEARXNG_URL
    * （SPEC §6.1：.env 不覆盖已有键 + config 空串归一为未配置 → E 组受控环境）；
-   * ON_ERROR 三键空串同径钉空（迭代 0069：OE01「未配置零漂移」前提防开发者 env 泄入） */
+   * ON_ERROR 三键空串同径钉空（迭代 0069：OE01「未配置零漂移」前提防开发者 env 泄入）；
+   * ALLOW_PRIVATE_NET=1（迭代 0070：OEN04 节点级重试需回环触达计数 mock，
+   * 既有 env 语义——OE01 断言不涉失败成因，其余主实例用例零 http 出站面） */
   try {
-    srv = await startServer(port, { env: { BOCHA_API_KEY: '', SEARXNG_URL: '', ON_ERROR: '', ON_ERROR_RETRIES: '', ON_ERROR_RETRY_DELAY_MS: '' } });
+    srv = await startServer(port, { env: { BOCHA_API_KEY: '', SEARXNG_URL: '', ON_ERROR: '', ON_ERROR_RETRIES: '', ON_ERROR_RETRY_DELAY_MS: '', ALLOW_PRIVATE_NET: '1' } });
   } catch (e) {
     C.fail('H01', 'GET /api/v1/health → 200 且 ok===true',
       { expected: '200 + ok:true', actual: String(e.message ?? e), ctx: `PORT=${port}` });
@@ -2454,10 +2472,11 @@ async function main() {
       'OE01', '未配置 on-error：失败节点 node:error 恰 1 次（id=2）、下游节点 3 无 node:start（失活形态与现状逐位一致）、run:done{ok:true,stopped:false}（ok 不反映节点失败）、GET /runs/:id status="done"',
       { expected: 'starts=[1,2] + 恰 1 node:error + ok:true + status=done', actual: JSON.stringify({ starts, errs: errs.length, ok: done.ok, stopped: done.stopped, status: r.json?.run?.status, msg: errs[0]?.message?.slice(0, 60) }), ctx: ctxOf(r) });
   }
-  { /* OE02 · skip 显式等价（探针实例 ON_ERROR=skip，AC2）：断言集与 OE01 同型（named 化零行为差） */
+  { /* OE02 · skip 显式等价（探针实例 ON_ERROR=skip，AC2）：断言集与 OE01 同型（named 化零行为差）；
+       ALLOW_PRIVATE_NET=1（迭代 0070：OEN03 复用本实例触达计数 mock，OE02 断言不涉失败成因） */
     try {
       oeSrvSkip = await startServer(await getFreePort(), {
-        env: { ON_ERROR: 'skip', ON_ERROR_RETRIES: '', ON_ERROR_RETRY_DELAY_MS: '' },
+        env: { ON_ERROR: 'skip', ON_ERROR_RETRIES: '', ON_ERROR_RETRY_DELAY_MS: '', ALLOW_PRIVATE_NET: '1' },
       });
     } catch (e) {
       C.fail('OE02', 'skip 探针实例启动（ON_ERROR=skip）', { expected: '健康 200', actual: String(e?.message ?? e), ctx: String(e?.logTail ?? '').slice(0, 200) });
@@ -2599,6 +2618,95 @@ async function main() {
       && oeSrvB2.health.status === 200 && oeSrvB2.health.json?.ok === true,
       'OE08', '边界值通过：ON_ERROR_RETRIES=0 + DELAY=0（下端）与 ON_ERROR=abort + RETRIES=5 + DELAY=60000（上端）两实例健康 200 ok:true（zod 值域闭区间可装载）',
       { expected: '健康 200 ×2', actual: JSON.stringify({ b1: oeSrvB1.health.json?.ok, b2: oeSrvB2.health.json?.ok }), ctx: 'startServer 健康等待' });
+  }
+
+  /* OEN 组：节点级 on-error 参数（OEN01-OEN07 · 迭代 0070 / BK-0048 · ADR-0025 ·
+   * issue#6 批复承继）——优先序三层矩阵（节点参数（若设）> env 全局默认 > 内建缺省，
+   * ADR-0022 §5）+ 陷阱破解（节点 retry 次数由节点参数承载，env retries=0 不使之
+   * 退化）+ abort fail-fast + 循环子节点 per-call（ADR-0022 §2.4）。夹具复用
+   * wfOeFail（np 入参）与既有探针实例/计数 mock，零新增探针实例与 mock。 */
+  { /* OEN01 · 显式哨兵「跟随全局」（主实例三 env 钉空，AC1 显式形态）：与 OE01 同型零漂移 */
+    const { done, events, runId } = await oeRun(srv.base, wfOeFail('http://127.0.0.1:9/oen01', 'smoke-oen01-sentinel', false, { onError: '跟随全局' }), 'OEN01', '节点哨兵「跟随全局」');
+    const starts = events.filter((e) => e.type === 'node:start').map((e) => e.id);
+    const errs = events.filter((e) => e.type === 'node:error');
+    const r = await api(srv.base, 'GET', `/api/v1/runs/${runId}`);
+    C.ok(JSON.stringify(starts) === '[1,2]' && errs.length === 1 && errs[0]?.id === 2
+      && done.ok === true && done.stopped === false && r.status === 200 && r.json?.run?.status === 'done',
+      'OEN01', '节点 onError=跟随全局（显式哨兵）：env 承接（未配置=内建 skip）——node:error 恰 1 次（id=2）、下游节点 3 无 node:start、run:done{ok:true,stopped:false}、GET /runs/:id status="done"（与 OE01 同型零漂移）',
+      { expected: '与 OE01 同型', actual: JSON.stringify({ starts, errs: errs.length, ok: done.ok, stopped: done.stopped, status: r.json?.run?.status }), ctx: ctxOf(r) });
+  }
+  { /* OEN02 · 哨兵 + env=retry×2 承接（retry 探针，AC2 ①）：env 策略与次数全量生效 */
+    const { done, events } = await oeRun(oeSrvRetry.base, wfOeFail(`http://127.0.0.1:${oeMock.port}/oen02`, 'smoke-oen02-env-adopt', false, { onError: '跟随全局' }), 'OEN02', '哨兵承接 env retry×2');
+    const errs = events.filter((e) => e.type === 'node:error');
+    const retryLogs = events.filter((e) => e.type === 'log' && /第 \d+ 次尝试/.test(String(e.msg ?? '')));
+    C.ok(oeMock.hits.get('/oen02') === 3 && retryLogs.length === 2 && errs.length === 1
+      && String(errs[0]?.message ?? '').includes('已重试 2 次') && done.ok === true,
+      'OEN02', '节点哨兵 + ON_ERROR=retry×2：env 策略与次数承接生效——mock 命中恰 3（1+2）、log warn 恰 2、node:error 恰 1 含「已重试 2 次」、耗尽按 skip 终态 run:done{ok:true}',
+      { expected: 'hits=3 + warn×2 + 概要 + ok:true', actual: JSON.stringify({ hits: oeMock.hits.get('/oen02'), retryLogs: retryLogs.length, errMsg: errs[0]?.message?.slice(0, 60), ok: done.ok }), ctx: '-' });
+  }
+  { /* OEN03 · 节点=重试×1 压制 env=skip（skip 探针，AC2 ②）：策略维度节点胜 */
+    const { done, events } = await oeRun(oeSrvSkip.base, wfOeFail(`http://127.0.0.1:${oeMock.port}/oen03`, 'smoke-oen03-node-win', false, { onError: '重试', onErrorRetries: 1 }), 'OEN03', '节点重试×1 压制 env skip');
+    const errs = events.filter((e) => e.type === 'node:error');
+    const retryLogs = events.filter((e) => e.type === 'log' && /第 \d+ 次尝试/.test(String(e.msg ?? '')));
+    C.ok(oeMock.hits.get('/oen03') === 2 && retryLogs.length === 1 && errs.length === 1
+      && String(errs[0]?.message ?? '').includes('已重试 1 次') && done.ok === true,
+      'OEN03', '节点 onError=重试×1 + env=skip：mock 命中恰 2（1+1，节点策略压制 env skip——节点胜）、log warn 恰 1、node:error 恰 1 含「已重试 1 次」、耗尽降级 run:done{ok:true}（退避取实例 DELAY 缺省 1000ms）',
+      { expected: 'hits=2 + warn×1 + 概要 + ok:true', actual: JSON.stringify({ hits: oeMock.hits.get('/oen03'), retryLogs: retryLogs.length, errMsg: errs[0]?.message?.slice(0, 60), ok: done.ok }), ctx: '-' });
+  }
+  { /* OEN04 · 节点=重试次数缺省（主实例三 env 钉空，AC3 陷阱破解）：DEFS 默认 2 注入 → 恰 3 次尝试 */
+    const { done, events } = await oeRun(srv.base, wfOeFail(`http://127.0.0.1:${oeMock.port}/oen04`, 'smoke-oen04-default-retries', false, { onError: '重试' }), 'OEN04', '节点重试次数缺省=2');
+    const errs = events.filter((e) => e.type === 'node:error');
+    const retryLogs = events.filter((e) => e.type === 'log' && /第 \d+ 次尝试/.test(String(e.msg ?? '')));
+    const starts = events.filter((e) => e.type === 'node:start').map((e) => e.id);
+    C.ok(oeMock.hits.get('/oen04') === 3 && retryLogs.length === 2 && errs.length === 1
+      && String(errs[0]?.message ?? '').includes('已重试 2 次') && JSON.stringify(starts) === '[1,2]' && done.ok === true,
+      'OEN04', '节点 onError=重试（次数缺省，env 三键钉空）：DEFS 默认 onErrorRetries=2 注入 → mock 命中恰 3（1+2）——env retries=0 未使节点 retry 退化（陷阱破解机器证明）、node:start 未重跑、log warn 恰 2、耗尽按 skip 终态 ok:true',
+      { expected: 'hits=3 + warn×2 + 概要 + ok:true', actual: JSON.stringify({ hits: oeMock.hits.get('/oen04'), retryLogs: retryLogs.length, errMsg: errs[0]?.message?.slice(0, 60), starts, ok: done.ok }), ctx: '-' });
+  }
+  { /* OEN05 · 节点=中止（abort 探针，AC4）：fail-fast 全链与 OE05 同型（status='error'
+       持久层派生 + stopped 语义独占），触发面在节点参数；节点胜因果由 OEN06 承载 */
+    const { done, events, runId } = await oeRun(oeSrvAbort.base, wfOeFail('http://127.0.0.1:9/oen05', 'smoke-oen05-abort', true, { onError: '中止' }), 'OEN05', '节点中止 fail-fast');
+    const starts = events.filter((e) => e.type === 'node:start').map((e) => e.id);
+    const errs = events.filter((e) => e.type === 'node:error');
+    const r = await api(oeSrvAbort.base, 'GET', `/api/v1/runs/${runId}`);
+    C.ok(JSON.stringify(starts) === '[1,2]' && errs.length === 1 && errs[0]?.id === 2
+      && done.ok === false && done.stopped === false && done.done === 2
+      && r.status === 200 && r.json?.run?.status === 'error',
+      'OEN05', '节点 onError=中止：失败后下游节点 3 与同级分支节点 4 全部不再调度（starts=[1,2]）、run:done{ok:false,stopped:false,done=2}（fail-fast 且 stopped 恒用户中止独占）、GET /runs/:id status="error"',
+      { expected: 'starts=[1,2] + ok:false/stopped:false + status=error', actual: JSON.stringify({ starts, errs: errs.length, ok: done.ok, stopped: done.stopped, status: r.json?.run?.status }), ctx: ctxOf(r) });
+  }
+  { /* OEN06 · 节点=中止覆盖 env=retry×2（retry 探针，AC2 ② 延伸/B4）：策略类型节点胜 */
+    const { done, events } = await oeRun(oeSrvRetry.base, wfOeFail(`http://127.0.0.1:${oeMock.port}/oen06`, 'smoke-oen06-abort-over-env', true, { onError: '中止' }), 'OEN06', '节点中止覆盖 env retry');
+    const starts = events.filter((e) => e.type === 'node:start').map((e) => e.id);
+    const errs = events.filter((e) => e.type === 'node:error');
+    C.ok(oeMock.hits.get('/oen06') === 1 && JSON.stringify(starts) === '[1,2]' && errs.length === 1
+      && done.ok === false && done.stopped === false,
+      'OEN06', '节点 onError=中止 + env=retry×2：mock 命中恰 1（零重试——节点策略类型覆盖 env 策略类型，env 次数不叠加）、fail-fast starts=[1,2]、run:done{ok:false,stopped:false}',
+      { expected: 'hits=1 + starts=[1,2] + ok:false/stopped:false', actual: JSON.stringify({ hits: oeMock.hits.get('/oen06'), starts, errs: errs.length, ok: done.ok, stopped: done.stopped }), ctx: '-' });
+  }
+  { /* OEN07 · 循环子节点 per-call（retry 探针，AC7 · ADR-0022 §2.4）：loop 闭包子图内
+       节点策略经 sub() 逐 runNode 调用独立解析——userinput → loop → http(重试×1)，
+       单元素 1 次迭代 → mock 恰 2 命中（1+1） */
+    const wfOenLoop = {
+      name: 'smoke-oen07-loop',
+      nodes: [
+        { id: 1, type: 'userinput', x: 100, y: 100, params: { var: 'question', defv: '冒烟' } },
+        { id: 2, type: 'loop', x: 320, y: 100, params: { max: 10, conc: false } },
+        { id: 3, type: 'http', x: 540, y: 100, params: { url: `http://127.0.0.1:${oeMock.port}/oen07`, m: 'GET', to: 5, onError: '重试', onErrorRetries: 1 } },
+      ],
+      edges: [
+        { id: 1, fn: 1, fp: 0, tn: 2, tp: 0 },
+        { id: 2, fn: 2, fp: 0, tn: 3, tp: 0 },
+      ],
+    };
+    const { done, events } = await oeRun(oeSrvRetry.base, wfOenLoop, 'OEN07', '循环子节点 per-call 重试×1');
+    const errs = events.filter((e) => e.type === 'node:error');
+    const retryLogs = events.filter((e) => e.type === 'log' && /第 \d+ 次尝试/.test(String(e.msg ?? '')));
+    const httpStarts = events.filter((e) => e.type === 'node:start' && e.id === 3).length;
+    C.ok(oeMock.hits.get('/oen07') === 2 && retryLogs.length === 1 && errs.length === 1 && httpStarts === 1
+      && String(errs[0]?.message ?? '').includes('已重试 1 次') && done.ok === true,
+      'OEN07', 'loop 闭包子图内 http 节点 onError=重试×1：循环子节点经 sub() 逐 runNode 调用独立解析——mock 命中恰 2（1+1）、log warn 恰 1、node:error 恰 1 含「已重试 1 次」、node:start 恰 1 次（重试不重跑）、run:done{ok:true}',
+      { expected: 'hits=2 + warn×1 + 概要 + ok:true', actual: JSON.stringify({ hits: oeMock.hits.get('/oen07'), retryLogs: retryLogs.length, httpStarts, errMsg: errs[0]?.message?.slice(0, 60), ok: done.ok }), ctx: '-' });
   }
 }
 
