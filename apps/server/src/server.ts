@@ -172,7 +172,7 @@ const runHandler: RequestHandler = (req, res)=>{
 
   let outcome: { ms: number; ok: boolean; stopped: boolean } | null = null;
   executeWorkflow(ctx)
-    .then(r=>{ outcome = { ms: r.ms, ok: !r.stopped, stopped: r.stopped }; })
+    .then(r=>{ outcome = { ms: r.ms, ok: r.ok, stopped: r.stopped }; })   /* ok 消费引擎返回值（ADR-0022 §4.4：abort 策略 ok=false，与 SSE run:done 同源） */
     .catch(err=>{
       outcome = { ms: Date.now() - (ctx.progress?.t0 ?? Date.now()), ok: false, stopped: false };
       ctx.log.error({ err: String((err as Error).message || err) }, 'run 异常');

@@ -32,6 +32,7 @@ for(const key of [
   'DEEPSEEK_API_KEY', 'ZHIPU_API_KEY', 'OPENAI_API_KEY', 'MOONSHOT_API_KEY',
   'MCP_HTTP_SERVERS', 'MCP_STDIO_SERVERS',
   'PTY_ENABLED', 'PTY_IDLE_TIMEOUT_MS', 'PTY_MAX_SESSION_MS', 'PTY_MAX_SESSIONS',
+  'ON_ERROR', 'ON_ERROR_RETRIES', 'ON_ERROR_RETRY_DELAY_MS',
 ]){
   const v = process.env[key];
   rawEnv[key] = v !== undefined && v !== '' ? v : undefined;
@@ -80,6 +81,13 @@ const EnvSchema = z.object({
   PTY_IDLE_TIMEOUT_MS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1000, '必须 ≥1000ms（防误配亚秒级）').optional(),
   PTY_MAX_SESSION_MS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1000, '必须 ≥1000ms').optional(),
   PTY_MAX_SESSIONS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(1, '必须在 1-16').max(16, '必须在 1-16').optional(),
+  /* 节点失败全局策略（BK-0020 / ADR-0022 §3 · issue#15 批复）：ON_ERROR 枚举默认
+   * skip（= 三 env 全未配置时引擎行为与现状逐位一致，零强制漂移）；RETRIES 整数
+   * 0-5 默认 0（仅 retry 策略消费，0 = 退化 skip）；DELAY_MS 退避基值整数 0-60000
+   * 默认 1000（指数退避 ×2^(n-1)，单次封顶 30000ms）。 */
+  ON_ERROR: z.enum(['skip', 'retry', 'abort']).optional(),
+  ON_ERROR_RETRIES: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(0, '必须在 0-5').max(5, '必须在 0-5').optional(),
+  ON_ERROR_RETRY_DELAY_MS: z.coerce.number({ invalid_type_error: '必须是整数' }).int('必须是整数').min(0, '必须在 0-60000').max(60000, '必须在 0-60000').optional(),
 });
 
 function fail(problems: string[]): never {
@@ -129,6 +137,9 @@ function loadConfig(){
     ptyIdleTimeoutMs: env.PTY_IDLE_TIMEOUT_MS ?? 600000,
     ptyMaxSessionMs: env.PTY_MAX_SESSION_MS ?? 3600000,
     ptyMaxSessions: env.PTY_MAX_SESSIONS ?? 4,
+    onError: env.ON_ERROR ?? 'skip',
+    onErrorRetries: env.ON_ERROR_RETRIES ?? 0,
+    onErrorRetryDelayMs: env.ON_ERROR_RETRY_DELAY_MS ?? 1000,
     aiBaseUrl: env.AI_BASE_URL,
     aiApiKey: env.AI_API_KEY,
     aiModels: env.AI_MODELS,

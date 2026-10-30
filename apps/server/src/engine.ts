@@ -8,13 +8,16 @@
  *  · 代码节点：Python / JavaScript 均以独立子进程执行（code.ts，
  *    5s 超时强杀，JSON over stdio 交换数据，服务进程内存不与用户代码共享）
  *  · HTTP / 知识库检索(TF-IDF) / 网页搜索 / Webhook 通知均为真实调用
+ *  · 节点失败 on-error 策略：skip（默认，= 下游失活形态）/ retry（指数退避重试）/
+ *    abort（run 级 fail-fast）——env 全局承载（BK-0020 / ADR-0022）
  * ================================================================ */
 import { NODE_NAMES, paramDefaultsOf } from '@agentflow/shared';
-import { isAbort, preview } from './util.js';
+import { ABORT_MSG, abortableSleep, isAbort, preview } from './util.js';
+import { config } from './config.js';
 import { BASIC_HANDLERS } from './handlers.js';
 import { llmHandler } from './llm.js';
 import { agentHandler } from './agent.js';
-import type { ApprovalWaiters, HandlerArgs, NodeResult, RunCtx, Scope, WFEdge, WFNode } from './types.js';
+import type { ApprovalWaiters, HandlerArgs, NodeHandler, NodeResult, RunCtx, Scope, WFEdge, WFNode, WorkflowRunResult } from './types.js';
 
 /* ---------------- 节点元信息（来自 @agentflow/shared 单一事实源） ----------------
  * DEFS_META 与参数默认值原为前端 DEFS 的手工副本（两处同步漂移风险），
@@ -31,7 +34,7 @@ export const HANDLERS: Record<string, (ctx: RunCtx, args: HandlerArgs) => Promis
 };
 
 /* ---------------- 主入口 ---------------- */
-export async function executeWorkflow(ctx: RunCtx): Promise<{ ms: number; done: number; outputs: string[]; stopped: boolean }> {
+export async function executeWorkflow(ctx: RunCtx): Promise<WorkflowRunResult> {
   const { wf, emit, ac } = ctx;
   const nodes: WFNode[] = wf.nodes || [], edges: WFEdge[] = wf.edges || [];
   const byId = new Map<number, WFNode>(nodes.map(n=>[n.id, n]));
@@ -70,6 +73,43 @@ export async function executeWorkflow(ctx: RunCtx): Promise<{ ms: number; done: 
 
   const mainScope: Scope = { results:new Map(), executed:new Set(), firedEdges:new Set() };
 
+  /* ---- on-error 策略（BK-0020 / ADR-0022 §2/§5）：本层承载「env 全局默认 > 内建
+   * 缺省」两层（节点参数层归 BK-0048，零预写）。三 env 全未配置时 onError='skip' +
+   * retries=0 ≡ 现状行为逐位一致（零强制漂移，硬护栏）。 ---- */
+  const onErrorStrategy = config.onError;   // 'skip' | 'retry' | 'abort'（未配置默认 skip）
+  const onErrorRetries = onErrorStrategy === 'retry' ? config.onErrorRetries : 0;   // 重试次数仅 retry 策略消费（ADR-0022 §3）
+  const onErrorRetryDelayMs = config.onErrorRetryDelayMs;
+  let onErrorAborted = false;   /* abort 策略 run 级独立标志位：不调 ac.abort，stopped 恒保持「用户/停机中止」独占语义（§2.3） */
+
+  /* 重试宿主（ADR-0022 §4.2）：仅包裹 handler 调用的循环——args 在 runNode 内重建
+   * （入参快照不变），不重跑 bypass / node:start；过程经既有 log 事件 lvl:'warn'
+   * 通报（零新事件类型）；退避 = abortable sleep 竞速 ac.signal（stop 端点与优雅
+   * 停机在等待期内即时中断，不等待到期）；中止一律原样上抛（策略不截获中止）。 */
+  async function callHandlerWithRetry(handler: NodeHandler, args: HandlerArgs, title: string): Promise<NodeResult> {
+    const maxAttempts = 1 + onErrorRetries;
+    let lastErr: unknown;
+    for(let attempt = 1; attempt <= maxAttempts; attempt++){
+      if(ac.signal.aborted) throw Object.assign(new Error(ABORT_MSG), { name:'AbortError' });   // 每次尝试前复查
+      try{
+        return await handler(ctx, args);
+      }catch(err){
+        if(isAbort(err) || ac.signal.aborted) throw err;   // 中止优先级最高，重试不截获
+        lastErr = err;
+        if(attempt < maxAttempts){
+          const delay = Math.min(onErrorRetryDelayMs * 2 ** (attempt - 1), 30000);
+          /* 通报先行（退避等待窗内即达消费端：流式 delta 叠加观感由此可解释——issue#15
+           * ③知悉项；OE06 stop 即时中断亦以该事件为时序门），随后 abortable sleep 竞速
+           * ac.signal（stop 端点与优雅停机在等待期内即时中断，不等待到期）。 */
+          emit('log', { lvl:'warn', msg:`⚠ [${title}] 第 ${attempt + 1} 次尝试将在 ${delay}ms 退避后执行（前次失败：${String((lastErr as Error)?.message || lastErr)}）` });
+          await abortableSleep(delay, ac.signal);   // 指数退避 ×2^(n-1)，单次封顶 30000ms
+        }
+      }
+    }
+    if(maxAttempts === 1) throw lastErr;   // 零重试路径：错误原样上抛（未配置/skip/abort 行为逐位一致）
+    throw new Error(`${String((lastErr as Error)?.message || lastErr)}（已重试 ${maxAttempts - 1} 次）`);   // 耗尽：末次错误 + 尝试概要（外层按 skip 终态收尾，§2.2）
+  }
+
+
   function edgeValue(e: WFEdge, scope: Scope): unknown {
     const src = scope.results.get(e.fn);
     if(!src) return undefined;
@@ -98,16 +138,21 @@ export async function executeWorkflow(ctx: RunCtx): Promise<{ ms: number; done: 
       const args: HandlerArgs = { n, p, def: meta, input, inVals, vars: effVars, scope, emit, iteration,
         approvalWaiters, byId, edges, outEs, inEs, ctx,
         sub: (cid, s2, v2, idx) => runNode(cid, s2, idx, v2) };
-      r = await (HANDLERS[n.type] || HANDLERS.__pass)!(ctx, args);
+      r = await callHandlerWithRetry((HANDLERS[n.type] || HANDLERS.__pass)!, args, title);
     }catch(e){
       scope.executed.add(id);
       prog.done++; progress();
-      if(isAbort(e) || ac.signal.aborted){
+      if(isAbort(e) || ac.signal.aborted){   /* 中止判定：位置与语义不动，重试/策略不截获中止（ADR-0022 §4.1） */
         emit('node:error', { id, title, message:'已中止' });
         throw e;
       }
-      emit('node:error', { id, title, message: String((e as Error).message || e) });
-      ctx.log.warn({ nodeId: id, title, err: String((e as Error).message || e) }, '节点执行失败');
+      /* 策略分派点（ADR-0022 §4.1）：skip（默认；retry 耗尽同径）= 既有失活形态
+       * named 化，序列零搬移零行为差；abort = 同一终态序列 + run 级标志位（主循环
+       * 同位检查，失败后停止调度全部后续节点，stopped 语义不被污染，§2.3）。 */
+      const message = String((e as Error).message || e);
+      emit('node:error', { id, title, message });
+      ctx.log.warn({ nodeId: id, title, err: message }, '节点执行失败');
+      if(onErrorStrategy === 'abort') onErrorAborted = true;
       return;
     }
     scope.executed.add(id);
@@ -135,6 +180,7 @@ export async function executeWorkflow(ctx: RunCtx): Promise<{ ms: number; done: 
   try{
     for(const id of topo){
       if(ac.signal.aborted){ stopped = true; break; }
+      if(onErrorAborted) break;   /* abort 策略 fail-fast：全部后续节点（含同级独立分支）不再调度（ADR-0022 §2.3） */
       if(mainScope.executed.has(id)) continue;            // 已被循环迭代执行过
       const es = inEs(id);
       if(es.length && !es.some(e=>mainScope.firedEdges.has(e.id))) continue;
@@ -149,6 +195,7 @@ export async function executeWorkflow(ctx: RunCtx): Promise<{ ms: number; done: 
   /* 变量表快照（属性面板「可用变量」提示的数据来源） */
   const varsSnap: Record<string, string> = {};
   for(const [k,v] of Object.entries(vars)) varsSnap[k] = preview(v, 100);
-  emit('run:done', { ms, done: prog.done, total: Math.max(prog.total, prog.done), ok: !stopped, stopped, outputs, vars: varsSnap });
-  return { ms, done: prog.done, outputs, stopped };
+  const ok = !stopped && !onErrorAborted;   /* ok 语义扩展仅 abort 策略可达（标志位仅该策略置位），未配置/skip/retry 恒 ≡ !stopped（ADR-0022 §4.4） */
+  emit('run:done', { ms, done: prog.done, total: Math.max(prog.total, prog.done), ok, stopped, outputs, vars: varsSnap });
+  return { ms, done: prog.done, outputs, stopped, ok };
 }

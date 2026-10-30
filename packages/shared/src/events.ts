@@ -29,7 +29,7 @@ export const RunEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('run:done'),
     ms: z.number(), done: z.number(), total: z.number(),
-    /* ok = 本次运行未被中止（≠全部节点成功）；消费端 apps/web/src/server-sync.js:105-107 按「ok !== false && !ev.stopped」定级渲染 */
+    /* ok = 本次运行未被中止且未因节点失败中止（≠全部节点成功；仅显式配置 ON_ERROR=abort 时节点失败可使 ok=false，ADR-0022 §4.4，issue#15 批复知悉）；消费端 apps/web/src/server-sync.js:295-297 按「ok !== false && !ev.stopped」定级渲染 */
     ok: z.boolean(), stopped: z.boolean().optional(),
     outputs: z.array(z.string()).optional(),
     vars: z.record(z.string()).optional(),
