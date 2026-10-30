@@ -73,6 +73,7 @@ import { kbListHandler, kbUploadHandler, kbUploadErrorMapper } from './kb/routes
 import { initKbStore, closeKbStore } from './kb/store.js';
 import { seedKbs } from './kb/seed.js';
 import { initKbIndex } from './kb.js';
+import { initMemoryStore, closeMemoryStore } from './memory/store.js';
 import type { RunCtx } from './types.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -132,6 +133,9 @@ initDiscoveryAuditStore();
 initKbStore();
 seedKbs();
 initKbIndex();
+/* 跨 run 记忆存储（迭代 0068 / BK-0018 · ADR-0024 §4.2 案甲）：同库第二连接自有仓储（kb/pty
+ * 先例同型）。env 门控——MEMORY_ENABLED=0/未配置不建表不连接（US-2 零强制漂移）；注入面在 llm.ts。 */
+if (config.memoryEnabled) initMemoryStore();
 
 /* ---------- 状态 ---------- */
 const healthHandler: RequestHandler = (_q, res)=>{
@@ -336,6 +340,7 @@ async function shutdown(signal: string): Promise<void> {
   closePtyAuditStore();                              /* PTY 审计先关（时序保证停机 close 审计行已落库） */
   closeDiscoveryAuditStore();                        /* 扩展发现审计连接（先于主仓储，同 PTY 时序不变式） */
   closeKbStore();                                   /* kb 自有仓储第二连接（PTY 审计同型，先于主仓储） */
+  closeMemoryStore();                               /* memory 自有仓储第二连接（kb 同型，先于主仓储；未启用时零操作） */
   closeStore();                                     /* SQLite 关闭（WAL checkpoint 落盘，ADR-0005） */
   process.exit(0);                                   /* ③ 退出码 0 */
 }
