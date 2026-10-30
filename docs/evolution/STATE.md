@@ -4,11 +4,11 @@
 > 任何定时唤起/新会话均以本文件为循环状态的唯一依据。
 
 ```yaml
-iteration: 0069      # 当前/下一个迭代号（CLOSE 时 +1）
+iteration: 0070      # 当前/下一个迭代号（CLOSE 时 +1）
 phase: idle      # idle | PLAN | SPEC | BUILD | VERIFY | CLOSE | stuck
 item: -       # 处理中的 BACKLOG 项 ID（idle 时为 `-`）
 started: 2026-10-26 13:47  # 本次迭代开始时间
-updated: 2026-10-31 09:05  # 最近更新时间
+updated: 2026-10-31 02:07  # 最近更新时间
 repair_round: 0     # VERIFY→BUILD 修复轮次（上限 2）
-last_result: 迭代 0068（BK-0018 记忆工具组实装，#17 批复解阻入选）终态 failed（修复循环耗尽）——**产品面大面积 PASS**（跨 run 读写真实直证 + 手动 E2E 全链 + AC7/AC9 机器证明维持），判红集中于验收断言套件自身 6 缺陷（行号级修复方案在 REPORT §二/§6-3）；唯一产品语义落差 BUG-05（工具异常用户零可见，AI SDK 7 平台既有行为）按选项 A 剥离另立 BK-0064；成果保全 feat/0068-iter（d5ddb27）+ 工作树保留；**协调者翻回 ready 重试（0033/0057 同径）**，重试范围=MEM 套件断言面修复 + BUG-05 选项 A 文档对齐，产品代码预期零改动；本项已 1 败，再败即同项两连败熔断；主干健康，ready 队列：BK-0020 / BK-0014（#15/#16 批复解阻在案）/ BK-0018（重试）
+last_result: 迭代 0069（BK-0020 引擎级 on-error 策略：重试/跳过/中止，issue#15 批复解阻、S 项 skipSpec、ADR-0022 权威蓝图，v3 工作树轮 feat/0069-iter）终态 done——产品提交 1b2dbdb（+327/−16 恰 7 路径：engine 策略分派 / config 三 env zod / types ok 字段 / server 一行 / events 注释 / .env.example / smoke OE01-08）已并入主干（合并 65e8c98 零冲突）；主干复测四项全绿 exit 0（merge-arbiter 实跑，MERGE.md §3）：build ✓ · gate 21 场景首跑全绿 diffPx=0（零 gate:update）· npm test 30/30 · smoke 182/0（=0065 基线 168 + OE01-08 8 条 + C 组清理 6 条，账目吻合）；VERIFY PASS 零产品缺陷零修复轮（AC1~AC10 全过）；证据 docs/evolution/iterations/0069/evidence/（4 PNG + build/gate/test/smoke 四日志 + manifest）与 REPORT/MERGE/JOURNAL；issue#15 关单回执归脚本；解阻 BK-0048（晋升条件兑现归下轮 PLAN 轮晋升）与 BK-9006 收官路径；主干健康，ready 队列：BK-0014 / BK-0018（重试），BK-0048 待下轮晋升
 ```
