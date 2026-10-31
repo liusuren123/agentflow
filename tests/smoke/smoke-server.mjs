@@ -42,6 +42,13 @@
  * （含 .git 排除/FOLD 占位/先序/条目上限性质断言）/ path 前缀与 depth 语义 /
  * depth 界值 400 / 防越界矩阵双形态 / 404 与折叠恒空 / tree.ts 纪律源扫描
  * （零子进程 + fs 只读白名单）。
+ * B19-B23（迭代 0076 / BK-0066）攻击面反演补钉：E1 limit 负例扩钉（-1 / 2.5 /
+ * 数组多值 / 空串）+ E2 ref 增量负例（换行注入 %0A、REF_MAX 201 拒与 200 过门二态
+ * 集、ref 数组多值）+ E2/E3 path 反斜杠逃逸与数组多值双端点补钉 + pathspec-magic
+ * 实测良性形态锁定（:(top)/:/docs/./空串，固定提交对锚）+ argv 装配形态源码锁
+ * （spawn 恒 1 处且 'git'+args 数组形态、装配行零模板字面量零拼接、runGit 首参恒
+ * 数组/args——BK-0066「argv 零 shell」机器哨兵，审计报告 docs/
+ * workbench-security-audit.md §6/§7 在案）。
  * PT01-PT06（迭代 0057 / BK-0045）terminal handler 契约（ADR-0014 §7）：
  * ENABLED=0 降级 / ENABLED=1 建会话 + agentWrite 注入 + 审计 origin=agent /
  * out-session 形状 + 下游消费 / run 正交存续 / 内部通道满员护栏 /
@@ -2172,6 +2179,106 @@ async function main() {
       && t18.includes("'.git'") && foldWords18.every(w => t18.includes(w)),
       'B18', '源码扫描 tree.ts + routes.ts（扩后）+ root.ts（复扫）：/shell/i 零命中（含注释）；tree.ts \'spawn\' 零命中（零 git 子进程）；\'readdir\'/\'lstat\' 在场（fs 承载本体）；fs 写面禁词（调用形态）零命中（writeFile/appendFile/unlink/rename/mkdir/chmod/chown/truncate/rm——词表规避 truncated 字段子串误报）；\'.git\' 排除与 FOLD 四名字面量在场',
       { expected: 'shell/spawn/写面零命中 + readdir/lstat/.git/FOLD 四名在场', actual: JSON.stringify({ shell18, spawn18, write18, fsOk: t18.includes('readdir') && t18.includes('lstat'), gitExcl: t18.includes("'.git'"), foldOk: foldWords18.every(w => t18.includes(w)) }), ctx: 'apps/server/src/workbench/{tree,routes,root}.ts readFileSync 字面扫描' });
+  }
+
+  /* B 组续：攻击面反演补钉（B19-B23 · 迭代 0076 / BK-0066）—— Mimosa 两项 high
+   * （routes.ts:21 command-injection 一跳 / routes.ts:76 path-traversal）对抗取证
+   * 的机器钉死面：既有 B03/B09/B10/B15/B16 主干负例之外，补六类增量形态（PRD §2.3）
+   * 与 argv 装配形态源码锁。编号顺延不撞既有组（BUG-0057-01 教训）；Number()/stat
+   * 宽松放行语义与 pathspec-magic 裁定详见 docs/workbench-security-audit.md。 */
+  { /* B19 · E1 limit 反演补钉（B03 扩）：-1（整数门下界穿越）/ 2.5（非整数）/
+       limit=1&limit=2（express 同名多值 → 数组 → Number(array)=NaN → 400）/
+       limit=（空串在而缺省不在 → Number('')=0 < 1 → 400）→ 各 400 同 B03 字面量。
+       Number() 宽松放行形态（' 20 '/'1e2'/'0x64'/'+20'/'20.' → 200）系既有语义，
+       只取证记录于审计报告 §6.2 不进断言不改动（REQ-0076-02 第 5 类二分口径） */
+    const bads19 = ['limit=-1', 'limit=2.5', 'limit=1&limit=2', 'limit='];
+    const rs19 = [];
+    for (const q of bads19) rs19.push(await api(srv.base, 'GET', `/api/v1/workbench/git?${q}`));
+    C.ok(rs19.every(r => r.status === 400 && r.json?.error === 'limit 必须是 1-100 的整数'),
+      'B19', 'limit=-1 / limit=2.5 / limit=1&limit=2（数组多值）/ limit=（空串）→ 各 400 {error:"limit 必须是 1-100 的整数"}（Number() 宽松放行形态仅取证不钉死）',
+      { expected: '4× 400 + error 字面量', actual: rs19.map((r, i) => `${bads19[i]}:${r.status}:${r.json?.error ?? r.text.slice(0, 40)}`).join(' | '), ctx: rs19.map(ctxOf).join(' | ') });
+  }
+  { /* B20 · E2 ref 增量负例（B09 扩）：换行注入（%0A 解码后 \n 不在 REF_RE 字符类
+       ——command-injection 启发式经典形态，恰对应 Mimosa 提示面）/ head 同形对称 /
+       base 数组多值（typeof 非 string → 400）/ REF_MAX 边界：201 字符拒
+       （length>200 → 400 非法）；200 字符过形状门 → git 语义二态（git 对非法对象名
+       长串按 pathspec 解释 stat 探测：win32 长根路径 stat 'Filename too long' →
+       500 {error:"git command failed"}；POSIX/短根 stat 干净 miss → 400 ref 不存在
+       或不可解析）——集合断言钉「恒定字面量零泄露」，本机实测与机制解释见审计
+       报告 §6.1，不强预设单一状态码（PRD §7.1 实测优先口径） */
+    const a200 = 'a'.repeat(200), a201 = 'a'.repeat(201);
+    const probes20 = [
+      ['base 换行', `base=${encodeURIComponent('main\nx')}`, 400, 'base 或 head ref 非法'],
+      ['head 换行', `head=${encodeURIComponent('main\nx')}`, 400, 'base 或 head ref 非法'],
+      ['base 数组', 'base=a&base=b', 400, 'base 或 head ref 非法'],
+      ['base 201 字符', `base=${a201}`, 400, 'base 或 head ref 非法'],
+    ];
+    const rs20 = [];
+    for (const [, q] of probes20) rs20.push(await api(srv.base, 'GET', `/api/v1/workbench/diff?${q}`));
+    const r20long = await api(srv.base, 'GET', `/api/v1/workbench/diff?base=${a200}`);
+    const longOk20 = (r20long.status === 400 && r20long.json?.error === 'base 或 head ref 不存在或不可解析')
+      || (r20long.status === 500 && r20long.json?.error === 'git command failed');
+    C.ok(rs20.every((r, i) => r.status === probes20[i][2] && r.json?.error === probes20[i][3]) && longOk20,
+      'B20', 'base=main%0Ax（换行）/ head=main%0Ax / base=a&base=b（数组多值）/ base=201字符 → 各 400 {error:"base 或 head ref 非法"}；base=200字符（过形状门）→ 400 {error:"base 或 head ref 不存在或不可解析"} 或 500 {error:"git command failed"} 二态集（git stat 语义环境相关，两态皆固定字面量零泄露）',
+      { expected: '4× 400 非法 + 200 字符二态集', actual: rs20.map((r, i) => `${probes20[i][0]}:${r.status}:${r.json?.error}`).join(' | ') + ` | 200字符:${r20long.status}:${r20long.json?.error}`, ctx: rs20.map(ctxOf).concat([ctxOf(r20long)]).join(' | ') });
+  }
+  { /* B21 · path 反斜杠逃逸 + 数组多值补钉（B10/B16 扩，双端点同锁）：..\..\（win32
+       分隔符变体——path.resolve 在 win32 将 \ 视分隔符，归一后越出项目根）/
+       path=a&path=b（express 数组多值 → typeof 非 string → 400，双端点）/ E3
+       depth=1&depth=2（数组 → Number(array)=NaN → 400）→ 各契约内 400 固定字面量 */
+    const bs21 = '..\\..\\';
+    const e2bs = await api(srv.base, 'GET', `/api/v1/workbench/diff?path=${encodeURIComponent(bs21)}`);
+    const e3bs = await api(srv.base, 'GET', `/api/v1/workbench/tree?path=${encodeURIComponent(bs21)}`);
+    const e2arr = await api(srv.base, 'GET', '/api/v1/workbench/diff?path=a&path=b');
+    const e3arr = await api(srv.base, 'GET', '/api/v1/workbench/tree?path=a&path=b');
+    const e3darr = await api(srv.base, 'GET', '/api/v1/workbench/tree?depth=1&depth=2');
+    C.ok(e2bs.status === 400 && e2bs.json?.error === 'path 越界'
+      && e3bs.status === 400 && e3bs.json?.error === 'path 越界'
+      && e2arr.status === 400 && e2arr.json?.error === 'path 越界'
+      && e3arr.status === 400 && e3arr.json?.error === 'path 越界'
+      && e3darr.status === 400 && e3darr.json?.error === 'depth 必须是 1-6 的整数',
+      'B21', 'diff/tree path=..\\..\\（反斜杠逃逸）→ 各 400 {error:"path 越界"}；diff/tree path=a&path=b（数组多值）→ 各 400 {error:"path 越界"}；tree depth=1&depth=2（数组多值）→ 400 {error:"depth 必须是 1-6 的整数"}',
+      { expected: '5× 400 双字面量', actual: JSON.stringify({ e2bs: `${e2bs.status}:${e2bs.json?.error}`, e3bs: `${e3bs.status}:${e3bs.json?.error}`, e2arr: `${e2arr.status}:${e2arr.json?.error}`, e3arr: `${e3arr.status}:${e3arr.json?.error}`, e3darr: `${e3darr.status}:${e3darr.json?.error}` }), ctx: [ctxOf(e2bs), ctxOf(e3bs), ctxOf(e2arr), ctxOf(e3arr), ctxOf(e3darr)].join(' | ') });
+  }
+  { /* B22 · pathspec-magic 实测形态锁定（REQ-0076-02 第 6 类：实测为良性语义 →
+       断言锁定实测形态，不新增 400 拒绝分支——审计报告 §6.3 裁定在案）：:(top)
+       （根锚定 magic，过滤面=全仓库→与无过滤同集 2 文件）/ :/docs（仓库根相对
+       magic → docs/ 前缀 1 文件）/ path=.（相对 pathspec → 2 文件）/ path=（空串
+       = 不过滤既有语义，diff.ts:55 → 2 文件）——全部落在 git 仓库内容面，零越界
+       读；固定提交对 ed2f8ed↔d880b62 确定性锚（B07 同款） */
+    const pair22 = 'base=ed2f8ed&head=d880b62';
+    const r22top = await api(srv.base, 'GET', `/api/v1/workbench/diff?${pair22}&path=${encodeURIComponent(':(top)')}`);
+    const r22root = await api(srv.base, 'GET', `/api/v1/workbench/diff?${pair22}&path=${encodeURIComponent(':/docs')}`);
+    const r22dot = await api(srv.base, 'GET', `/api/v1/workbench/diff?${pair22}&path=.`);
+    const r22empty = await api(srv.base, 'GET', `/api/v1/workbench/diff?${pair22}&path=`);
+    const rootOk22 = r22root.status === 200 && r22root.json?.files?.length === 1
+      && String(r22root.json?.files?.[0]?.path ?? '').startsWith('docs/');
+    C.ok(r22top.status === 200 && r22top.json?.files?.length === 2 && r22top.json?.truncated === false
+      && rootOk22
+      && r22dot.status === 200 && r22dot.json?.files?.length === 2
+      && r22empty.status === 200 && r22empty.json?.files?.length === 2,
+      'B22', 'diff(固定提交对)&path=:(top) → 200 files=2、truncated=false；path=:/docs（pathspec magic 根相对）→ 200 files=1 且 docs/ 前缀；path=. → 200 files=2；path=（空串=不过滤）→ 200 files=2（pathspec-magic 实测良性语义锁定，零越界读）',
+      { expected: '4× 200 实测形态', actual: JSON.stringify({ top: `${r22top.status}:${r22top.json?.files?.length}:${r22top.json?.truncated}`, rootMagic: `${r22root.status}:${r22root.json?.files?.[0]?.path}`, dot: `${r22dot.status}:${r22dot.json?.files?.length}`, empty: `${r22empty.status}:${r22empty.json?.files?.length}` }), ctx: [ctxOf(r22top), ctxOf(r22root)].join(' | ') });
+  }
+  { /* B23 · argv 装配形态源码锁（REQ-0076-03「argv 零 shell」机器哨兵，B05/B12/B18
+       命令词扫描的形态级补强）：① workbench 五文件 spawn( 调用恰 1 处且形态为
+       spawn('git', args（命令名字面量 + argv 数组第二参，永不拼接命令行）；②
+       git.ts+diff.ts argv 装配行（含 runGit( / args.push( 的非注释行）零反引号、
+       零字符串拼接（+ 与引号邻接任一侧）；③ runGit( 首参恒数组字面量或 args 标识符
+       （runGit('diff '+x) / runGit(`...`) 即红）。反演口径见审计报告 §7 */
+    const wb23 = ['root.ts', 'git.ts', 'routes.ts', 'diff.ts', 'tree.ts'];
+    const src23 = Object.fromEntries(wb23.map(f =>
+      [f, readFileSync(path.join(REPO_ROOT, 'apps', 'server', 'src', 'workbench', f), 'utf8')]));
+    const spawn23 = wb23.map(f => src23[f]).join('\n').match(/\bspawn\s*\(/g) ?? [];
+    const g23 = src23['git.ts'], d23 = src23['diff.ts'];
+    const spawnForm23 = /spawn\s*\(\s*'git'\s*,\s*args\b/.test(g23);
+    const isCode23 = (l) => { const t = l.trim(); return t !== '' && !t.startsWith('//') && !t.startsWith('/*') && !t.startsWith('*'); };
+    const asm23 = (g23 + '\n' + d23).split(/\r?\n/).filter(l => /runGit\(|args\.push\(/.test(l) && isCode23(l));
+    const badAsm23 = asm23.filter(l => l.includes('`') || /(\+\s*['"]|['"]\s*\+)/.test(l));
+    const badRunGit23 = (g23 + '\n' + d23).match(/runGit\((?!\s*(?:\[|args\b))/g) ?? [];
+    C.ok(spawn23.length === 1 && spawnForm23 && badAsm23.length === 0 && badRunGit23.length === 0,
+      'B23', '源码形态扫描（workbench 五文件）：spawn( 恰 1 处且为 spawn(\'git\', args 数组形态；git.ts+diff.ts argv 装配行（runGit(/args.push( 非注释行）零反引号、零字符串拼接；runGit( 首参恒数组字面量或 args 标识符',
+      { expected: 'spawn 恒 1 + git 数组形态 + 装配行零模板/零拼接 + runGit 首参恒数组/args', actual: JSON.stringify({ spawnCount: spawn23.length, spawnForm: spawnForm23, asmLines: asm23.length, badAsm: badAsm23.length, badRunGit: badRunGit23 }), ctx: 'apps/server/src/workbench/{root,git,routes,diff,tree}.ts readFileSync 形态扫描' });
   }
 
   /* T 组（PT 系断言 ID，BUG-0057-01）：terminal 节点 handler 契约（PT01-PT06 · 迭代 0057 / BK-0045 · ADR-0014 §7
