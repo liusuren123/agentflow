@@ -56,6 +56,7 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
     /* ---- 工具循环（generateText，最多 3 轮；失败自动降级为无工具调用） ---- */
     const zTools: ToolSet = {};
     const keyOf = new Map<string, string>();   // 安全工具名 → 原名
+    let toolErr: string | null = null;   /* BK-0064：本轮首个工具执行异常摘要（非 abort）；null = 本轮无工具异常 */
     for(const [name, impl] of toolImpls){
       if(isStubImpl(impl)) stubCount++;   /* 未接入工具计数（✓ 摘要分项，迭代 0009） */
       const ext = sess.extSpecs.get(name);   /* 分支②：发现快照桥接 spec（mcp/inject.ts bridgeSpec） */
@@ -68,7 +69,16 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
       const safe = name.replace(/[^\w]/g,'_');   /* OpenAI 函数名仅允许 \w，连字符/点号一并清洗 */
       keyOf.set(safe, name);
       zTools[safe] = tool({ description: spec.desc, inputSchema: z.object(shape), execute: async (a: any)=>{
-        const res = await impl(a || {});
+        let res: unknown;
+        try{
+          res = await impl(a || {});   /* BK-0064：impl 异常被 AI SDK 7 静默转为 error tool-result 回灌（不传播至下方 catch），故须在此捕获 */
+        }catch(e){
+          if(isAbort(e) || ctx.ac.signal.aborted) throw e;   /* abort 不吞（外层 catch 同语义保持） */
+          toolErr = String((e as Error).message || e);   /* 循环层检测后 break 出工具轮走既有降级直生成（REQ-0075-02） */
+          ctx.log.warn({ tool: name, args: preview(a, 40), err: preview(toolErr, 120) }, '工具执行异常');
+          emit('log', { lvl:'warn', msg:`工具执行异常 ${name}：${preview(toolErr, 120)}` });
+          return { __toolError: toolErr };   /* 正常 tool-result 兜底回灌（模型可见）；降级触发不依赖它 */
+        }
         const stub = isStubImpl(impl);   /* 未接入工具如实降级（tools.ts STUB_MARK） */
         const bound = stub ? 200 : 60;   /* F3：stub 载荷 ≤66 字符，200 保证如实 note 不被截断 */
         ctx.log[stub ? 'warn' : 'info']({ tool: name, stub, args: preview(a, 40), result: preview(res, bound) }, '工具调用');
@@ -82,6 +92,7 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
       for(let round=1; round<=3; round++){
         const res = await generateText({ model, system: sys || undefined, messages, tools: zTools, temperature, maxOutputTokens, abortSignal: ctx.ac.signal });
         tokens += (res.usage?.totalTokens || res.usage?.outputTokens || 0);
+        if(toolErr) break;   /* BK-0064：本轮工具执行异常 → 跳出工具轮走降级直生成（下方） */
         if(res.toolCalls && res.toolCalls.length){
           emit('log', { lvl:'sys', msg:`🤖 模型请求调用工具：${res.toolCalls.map(tc=>keyOf.get(tc.toolName) || tc.toolName).join(', ')}（第 ${round} 轮）` });
           /* 工具已在 execute 回调中真实执行；response.messages 已含 assistant 调用与 tool 结果，直接续接 */
@@ -90,6 +101,12 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
         }
         text = res.text || '';
         break;
+      }
+      if(toolErr){   /* BK-0064（REQ-0075-02）：工具异常触发的既有降级直生成轮（无工具 generateText，与下方 catch 降级同形态；fallback 若再抛仍由 catch 承接） */
+        emit('log', { lvl:'warn', msg:`工具执行异常（${toolErr}），降级为直接生成` });
+        const fb = await generateText({ model, system: sys || undefined, prompt: userMsg, temperature, maxOutputTokens, abortSignal: ctx.ac.signal });
+        tokens += (fb.usage?.totalTokens || fb.usage?.outputTokens || 0);
+        text = fb.text || '';
       }
     }catch(e){
       if(isAbort(e) || ctx.ac.signal.aborted) throw e;
