@@ -319,12 +319,34 @@ else if (mode === 'evidence') {
 /* ---------------- claim-item / claimed-items：选题占位互斥 ----------------
    并行工作流各自持有 BACKLOG 的独立副本，PM 可能选中同一项 → 两路做同一件事，
    最终在产品代码上冲突。迭代号分配防的是「撞号」，选题占位防的是「撞项」：
-   原子 mkdir 即互斥，谁先建目录谁占住该项。 */
+   原子 mkdir 即互斥，谁先建目录谁占住该项。
+   2026-10-31 根治（0068 残留锁 + 0073 自撞两案）：claim-item 支持 --run <token>
+   所有权感知——EEXIST 时读 owner.json：①run 与令牌相同 = 本运行早前自建占位，
+   幂等复用（防「PM 自建/重复派发」自撞误判，0073 五派循环形态）；②目录存在但
+   无 owner.json = 不可归属碎片（PM 裸 mkdir 残留），回收重建；③owner.json 无
+   run 字段（历史格式）或 run 不同 = 真他路占位，busy 退出 3（保守不回收——pid
+   系瞬态进程号不能作存活判据，防误回收在途并行路占位）。 */
 else if (mode === 'claim-item') {
   const [itemId] = rest;
   if (!itemId) fail('claim-item 需要 <itemId>');
+  const runIdx = rest.indexOf('--run');
+  const runToken = runIdx >= 0 ? rest[runIdx + 1] || '' : '';
   const dir = path.join(WT_PARENT_LOCKS, 'items', itemId);
   mkdirSync(path.dirname(dir), { recursive: true });
+  const writeOwner = () => {
+    let wrote = false;
+    let lastWriteErr = null;
+    for (let i = 0; i < 3 && !wrote; i++) {
+      try {
+        writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ itemId, run: runToken, at: new Date().toISOString(), pid: process.pid }));
+        wrote = true;
+      } catch (werr) {
+        lastWriteErr = werr;
+        if (i < 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60);
+      }
+    }
+    return { wrote, lastWriteErr };
+  };
   try {
     mkdirSync(dir);            /* 原子：已存在则 EEXIST */
     /* 2026-10-28 修复（0063 实发）：mkdir 成功后 owner.json 写入在高负载机上可被
@@ -332,17 +354,7 @@ else if (mode === 'claim-item') {
        工具错误误读为「被他路占位」（三选题连撞空转）。修复：写入重试 ×3（60ms
        间隔）；终败撤销自建目录（防自阻塞泄漏）后按工具错误退出——与 claimed-busy
        的 exit 3 显式区分，供调用方分类处置。 */
-    let wrote = false;
-    let lastWriteErr = null;
-    for (let i = 0; i < 3 && !wrote; i++) {
-      try {
-        writeFileSync(path.join(dir, 'owner.json'), JSON.stringify({ itemId, at: new Date().toISOString(), pid: process.pid }));
-        wrote = true;
-      } catch (werr) {
-        lastWriteErr = werr;
-        if (i < 2) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60);
-      }
-    }
+    const { wrote, lastWriteErr } = writeOwner();
     if (!wrote) {
       try { rmSync(dir, { recursive: true, force: true }); } catch { /* 撤销失败留人工清理 */ }
       fail(`claim-item owner.json 写入失败（重试 3 次终败，已撤销自建目录）：${lastWriteErr && lastWriteErr.message}`);
@@ -351,6 +363,28 @@ else if (mode === 'claim-item') {
     process.exit(0);
   } catch (err) {
     if (err.code !== 'EEXIST') fail(`claim-item 失败：${err.message}`);
+    /* 2026-10-31 所有权感知裁决（见段首注）：空目录碎片回收 / 自令牌幂等复用；
+       其余（含历史格式无 run 字段）一律保守 busy，绝不误回收他路在途占位。 */
+    let owner = null;
+    try { owner = JSON.parse(readFileSync(path.join(dir, 'owner.json'), 'utf8')); } catch { /* 无/坏 owner.json */ }
+    if (owner && owner.run && runToken && owner.run === runToken) {
+      console.log(`claimed-existing ${itemId}（本运行自建占位，幂等复用）`);
+      process.exit(0);
+    }
+    if (!owner) {
+      try { rmSync(dir, { recursive: true, force: true }); } catch (rerr) { fail(`claim-item 碎片回收失败：${rerr.message}`); }
+      try {
+        mkdirSync(dir);
+        const { wrote, lastWriteErr } = writeOwner();
+        if (!wrote) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* 撤销失败留人工清理 */ } fail(`claim-item 碎片回收后 owner.json 写入失败：${lastWriteErr && lastWriteErr.message}`); }
+        console.log(`claimed-reclaim-debris ${itemId}（无 owner.json 碎片已回收重建）`);
+        process.exit(0);
+      } catch (err2) {
+        if (err2.code !== 'EEXIST') fail(`claim-item 碎片回收失败：${err2.message}`);
+        console.error(`claimed-busy ${itemId}`);
+        process.exit(3);
+      }
+    }
     console.error(`claimed-busy ${itemId}`);
     process.exit(3);
   }
