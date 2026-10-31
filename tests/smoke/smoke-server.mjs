@@ -62,9 +62,10 @@
  * 钉值防泄漏；mock 端点 tool_call 两步循环 A02 同通道）：恰三键注入 + 🧠 sys
  * 锚 + 工具循环形态（node:delta 一次性）/ 跨 run 持久化 + SQLite 直查对账
  * （memoryRowsOf 只读直查，auditsOf 同款窄口径）/ list 前缀过滤-字典序-分页-
- * truncated / 负例不崩 run（BUG-0068-05 对齐现实：AI SDK 7 把 execute 异常转为
- * error tool-result 回灌模型、不传播至 llm catch——3 轮预算耗尽收束，安全核
- * ok:true/零落库/不截断如实锚定，可观测性缺口另立 backlog）；MEM06
+ * truncated / 负例可观测（迭代 0075 / BK-0064 改写：execute 异常由 llm.ts 包装器
+ * 捕获（abort 除外）emit warn「工具执行异常」+ 触发既有降级直生成轮——warn 锚定 +
+ * 请求流降级特征（每 run 恰 1 携 tools + 1 无 tools）+ ok:true/零落库/不截断如实
+ * 锚定；BUG-0068-05 静默回灌形态已被改写，历史见 ADR-0024 §4.1）；MEM06
  * capabilities 零污染（默认关与开启实例双 deepEqual，plain key 前缀派生零命中
  * 的机器证明）；MEM07 env fail-fast（MEMORY_ENABLED=abc 启动终止退出码 1 且
  * fatal 日志指明变量名与合法词形，PTY env fail-fast 先例形态）。
@@ -398,14 +399,14 @@ function startMockModel() {
           }
           const hasTools = Array.isArray(body?.tools) ? body.tools.length > 0   /* BUG-0068-03：AI SDK 7 数组形态，防空数组 truthy 陷阱 */
             : !!(body?.tools && typeof body.tools === 'object');
-          if (c.includes('mem05 负键')) {            /* 非法 key：恒返 tool_call——AI SDK 7 把 execute 异常转为
-             error tool-result 回灌模型继续循环（不传播至 llm.ts catch 降级通道，BUG-0068-05 探针实证），3 轮预算耗尽 */
+          if (c.includes('mem05 负键')) {            /* 非法 key：携 tools → 恒返 tool_call（impl 抛错）；无 tools → 直生成文本
+             （BK-0064：llm.ts 包装器捕获异常后 break 出工具轮走降级直生成——第 2 请求无 tools 命中此支） */
             agentJson(hasTools
               ? memToolCall('memory_set', { key: 'bad key!', value: 'x' })
               : { role: 'assistant', content: '负键降级完成' }, hasTools ? 'tool_calls' : 'stop');
             return;
           }
-          if (c.includes('mem05 负值')) {            /* value 超 4096 字节：同上，如实 throw 不截断 */
+          if (c.includes('mem05 负值')) {            /* value 超 4096 字节：同负键形态（降级支返直生成文本），如实 throw 不截断 */
             const tok = memTokOf(c);
             agentJson(hasTools
               ? memToolCall('memory_set', { key: `mem:smoke:${tok}:big`, value: 'x'.repeat(4097) })
@@ -2508,7 +2509,8 @@ async function main() {
       { expected: '命中+替换全链', actual: JSON.stringify({ up1: up1.status, n1: hits1?.length, src1: hits1?.[0]?.src, up2: up2.status, docs: `${docsBefore}→${docsAfter}`, oldMiss: text2, n3: hits3?.length, src3: hits3?.[0]?.src }), ctx: ctxOf(up1) });
   }
 
-  /* MEM 组：跨 run 记忆工具组（MEM01-MEM07 · 迭代 0068 / BK-0018 · ADR-0024 §4.4）
+  /* MEM 组：跨 run 记忆工具组（MEM01-MEM07 · 迭代 0068 / BK-0018 · ADR-0024 §4.4；
+   * MEM05 负例面已由迭代 0075 / BK-0064 改写为可观测锚定——warn + 降级直生成轮）
    * ——MEM01 mock 实例（MEMORY_ENABLED='' 钉未配置语义）；MEM02-MEM05 开启探针
    * 实例（memSrv）；MEM06 双实例对照；MEM07 env fail-fast 探针（快速退出自清，
    * 无实例收尾）。记忆键命名域 mem:smoke:<token>:（token 进程内生成）跨轮幂等。 */
@@ -2619,23 +2621,36 @@ async function main() {
       'MEM04', 'list 语义：count=1 + offset 0/1/2 三页——首页恰 1 条（字典序 alpha）且 truncated=true、次页恰 l1 且 truncated=false（offset+limit=total 公式如实）、第三页空且 truncated=false（终文本逐字对账）；域外键 zz<tok>other 被 prefix=mem:smoke:<tok>: 过滤；SQLite 直查恰 2 行且 key BINARY 升序',
       { expected: `rows=[alpha,l1] 字典序 + 「${page12}」+「${page3}」`, actual: JSON.stringify({ pOk: pDone.ok, rows: rows.map((r) => r.key), outL, outO }), ctx: `memSrv 三次 run（token=${memTok}）` });
   }
-  { /* MEM05 · 负例不崩 run（AC5 安全核；BUG-0068-05 对齐现实）：非法 key /
-       value 超 4097 字节 → execute 异常被 AI SDK 7 转为 error tool-result 回灌
-       模型继续循环（未传播至 llm.ts 工具循环 catch 降级通道——VERIFY 探针 S5
-       请求流实证），3 轮预算耗尽自然收束 → run:done ok:true；库零污染 */
+  { /* MEM05 · 负例可观测（AC5 安全核；迭代 0075 / BK-0064 改写）：非法 key /
+       value 超 4097 字节 → execute 异常由 llm.ts 包装器捕获（abort 除外）emit
+       warn「工具执行异常」+「…降级为直接生成」，并触发既有降级直生成轮（无工具
+       generateText——请求流实证：每 run 恰 1 携 tools + 1 无 tools）→ run:done
+       ok:true 且 out 为降级轮直生成文本（不再空串静默）；库零污染 */
     const reqBefore = mockModel.requests.length;
     const { done: kDone, events: kEvents } = await memRun(memSrv.base, wfMem(`mem05 负键 mem:smoke:${memTok}:`, 'smoke-mem-negkey'), 'MEM05', '非法 key');
     const { done: vDone, events: vEvents } = await memRun(memSrv.base, wfMem(`mem05 负值 mem:smoke:${memTok}:`, 'smoke-mem-negval'), 'MEM05', 'value 超限');
     const toolLogK = kEvents.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🔧 工具调用'));
     const toolLogV = vEvents.some((e) => e.type === 'log' && String(e.msg ?? '').includes('🔧 工具调用'));
-    const degradeK = kEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('工具循环异常'));
-    const degradeV = vEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('工具循环异常'));
+    const warnK = kEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('工具执行异常'));
+    const warnV = vEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('工具执行异常'));
+    const degradeK = kEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('降级为直接生成'));
+    const degradeV = vEvents.some((e) => e.type === 'log' && e.lvl === 'warn' && String(e.msg ?? '').includes('降级为直接生成'));
+    /* 降级请求流实证（REQ-0075-02）：负例 run 恰 2 请求——第 1 携 tools（收 tool_call）、
+     * 第 2 无 tools（降级直生成，非仅日志措辞）；memToolsOf 语义见上（数组/对象双形态容忍） */
+    const reqsK = mockModel.requests.slice(reqBefore).filter((r) => (r?.messages ?? []).some((m) => String(m?.content ?? '').includes('mem05 负键')));
+    const reqsV = mockModel.requests.slice(reqBefore).filter((r) => (r?.messages ?? []).some((m) => String(m?.content ?? '').includes('mem05 负值')));
+    const outK = String(kEvents.find((e) => e.type === 'node:done')?.out ?? '');
+    const outV = String(vEvents.find((e) => e.type === 'node:done')?.out ?? '');
     C.ok(kDone.ok === true && vDone.ok === true
-      && mockModel.requests.length - reqBefore === 6
-      && !toolLogK && !toolLogV && !degradeK && !degradeV
+      && warnK && warnV && degradeK && degradeV
+      && !toolLogK && !toolLogV
+      && reqsK.length === 2 && reqsV.length === 2
+      && memToolsOf(reqsK[0]).length > 0 && memToolsOf(reqsK[1]).length === 0
+      && memToolsOf(reqsV[0]).length > 0 && memToolsOf(reqsV[1]).length === 0
+      && outK.includes('负键降级完成') && outV.includes('负值降级完成')
       && memoryRowsOf(`mem:smoke:${memTok}:`).length === 2,
-      'MEM05', '负例不崩 run（AI SDK 7 工具异常语义如实锚定）：非法 key（含空白）与 value 超 4096 字节各一 run——execute 异常被 AI SDK 7 转为 error tool-result 回灌模型（未传播至 llm.ts 工具循环 catch 降级通道），mock 恒返 tool_call 至 3 轮预算耗尽自然收束：run:done 均 ok:true（不崩）；mock 请求增量恰 6（每 run 3 轮）；事件流零 🔧 工具调用行（异常发生在 impl await 处，先于 emit）且零「工具循环异常」warn（不触发降级）；token 域行数仍 2（负例零落库、不截断不写入）。行为特征与可观测性缺口（负例错误对模型可见但运行日志不可见）已按 BUG-0068-05 处置采 A 补记 PRD/ADR 并另立 backlog 建议',
-      { expected: '两 run ok:true + 请求增量 6（3 轮耗尽×2）+ 零 🔧/零降级 warn + token 域零污染', actual: JSON.stringify({ kOk: kDone.ok, vOk: vDone.ok, reqDelta: mockModel.requests.length - reqBefore, toolLogK, toolLogV, degradeK, degradeV, rows: memoryRowsOf(`mem:smoke:${memTok}:`).length }), ctx: `memSrv 两次负例 run（token=${memTok}；BUG-0068-05 VERIFY 探针 S5 实证语义）` });
+      'MEM05', '负例可观测（迭代 0075 / BK-0064 改写后形态）：非法 key 与 value 超 4096 字节各一 run——execute 异常由 llm.ts 包装器捕获（abort 除外）emit warn「工具执行异常 <工具名>：<摘要>」+「工具执行异常（…），降级为直接生成」，触发既有降级直生成轮：mock 请求每 run 恰 2（第 1 携 tools 收 tool_call、第 2 无 tools = 降级直生成请求流实证），out 为降级轮直生成文本（不再空串静默）；事件流仍零 🔧 工具调用行（异常发生在 impl await 处，先于正常路径 emit）；run:done 均 ok:true（不崩）；token 域行数仍 2（负例零落库、不截断不写入）',
+      { expected: '两 run ok:true + warn「工具执行异常」+ 降级 warn + 每 run 请求恰 [携tools,无tools] + out 降级文本 + 零 🔧 + token 域零污染', actual: JSON.stringify({ kOk: kDone.ok, vOk: vDone.ok, warnK, warnV, degradeK, degradeV, reqK: reqsK.length, reqV: reqsV.length, kTools: [memToolsOf(reqsK[0]).length, memToolsOf(reqsK[1]).length], vTools: [memToolsOf(reqsV[0]).length, memToolsOf(reqsV[1]).length], outK: outK.slice(0, 30), outV: outV.slice(0, 30), toolLogK, toolLogV, rows: memoryRowsOf(`mem:smoke:${memTok}:`).length }), ctx: `memSrv 两次负例 run（token=${memTok}；BK-0064 改写后形态锚定）` });
   }
   { /* MEM06 · capabilities 零污染（AC1/MEM06 同证）：默认关与开启实例 builtin
        仍五条 deepEqual（plain key 前缀派生零命中的机器证明，CAP_EXPECTED_BUILTIN
