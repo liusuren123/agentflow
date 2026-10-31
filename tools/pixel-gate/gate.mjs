@@ -10,6 +10,8 @@
  *    目录树页，BK-0042）、s19 溯源迭代 0057（PTY_ROUTES mock + UTC，
  *    终端面板，BK-0045）、s20 溯源迭代 0065（KB_ROUTES mock + UTC，retrieval kb
  *    combo 在线供数，BK-0047 / ADR-0021）；其余 s6~s8、s10~s14 为离线扩展场景
+ *  · 采样稳定化（issue#12 方案 A，用户批准 2026-10-31）：rail 图标亚像素稳定判据
+ *    + 连续两帧一致双复核，前置加严、比对 0 容差语义不变（见 runScenario 内注）
  *    （日志面板 after 钩子 / seed 预置工作流 / 步进交互）
  *  · npm run gate         → 校验（CI required check）
  *    npm run gate:update  → 重录 golden（宪法第 3 条：需 ADR + 用户批准后使用）
@@ -633,6 +635,26 @@ const runScenario = async (browser, sc) => {
   if (sc.ready) await sc.ready(page);
   await normalize(page);
   if (sc.after) await sc.after(page);   /* s6/s7 post-normalize 钩子（迭代 0013）；s0~s5 无此字段=无操作 */
+  /* 方案 A 强化（issue#12 用户批准「按方案A走 + 批准」，2026-10-31 落地）：
+     亚像素稳定判据——rail 图标等关键元素 getBoundingClientRect（两位小数精度）
+     跨 rAF 两帧不变，才进入下方稳定双帧采样。针对诊断定位的 s3-library rail 底部
+     三图标首帧光栅化/亚像素定位漂移（CI diffPx≈21~23、双帧可能一致地停在未稳帧
+     的形态，包围盒 x∈[20,29]·y∈[794,887]）。只加严采样前置条件，0 容差比对
+     语义与 golden 零接触（护栏 2 不涉：非 gate:update 通道）。 */
+  await page.evaluate(() => new Promise((resolve) => {
+    const key = () => [...document.querySelectorAll('#rail .rail-btn')]
+      .map((el) => { const r = el.getBoundingClientRect(); return `${r.x.toFixed(2)},${r.y.toFixed(2)},${r.width.toFixed(2)},${r.height.toFixed(2)}`; }).join('|');
+    let last = key();
+    let n = 0;
+    const tick = () => {
+      const cur = key();
+      if (cur === last || n >= 30) { resolve(); return; }   /* 30 帧兜底（~0.5s），永不死等 */
+      last = cur;
+      n += 1;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }));
   /* 稳定性等待：连续两帧一致 */
   let prev = await page.screenshot();
   for (let i = 0; i < 10; i++) {
