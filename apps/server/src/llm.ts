@@ -56,7 +56,7 @@ export const llmHandler: NodeHandler = async (ctx, args) => {
     /* ---- 工具循环（generateText，最多 3 轮；失败自动降级为无工具调用） ---- */
     const zTools: ToolSet = {};
     const keyOf = new Map<string, string>();   // 安全工具名 → 原名
-    let toolErr: string | null = null;   /* BK-0064：本轮首个工具执行异常摘要（非 abort）；null = 本轮无工具异常 */
+    let toolErr: string | null = null;   /* BK-0064：本轮末次工具执行异常摘要（多异常时后者覆写，非 abort；OBS-0075-01 措辞更正）；null = 本轮无工具异常 */
     for(const [name, impl] of toolImpls){
       if(isStubImpl(impl)) stubCount++;   /* 未接入工具计数（✓ 摘要分项，迭代 0009） */
       const ext = sess.extSpecs.get(name);   /* 分支②：发现快照桥接 spec（mcp/inject.ts bridgeSpec） */
